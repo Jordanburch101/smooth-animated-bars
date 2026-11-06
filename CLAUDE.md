@@ -42,3 +42,42 @@ Every release, before tagging:
    with the release, so the README and the store pages show the version being released. Recapture the
    frame art first (`/sab capture`, then `tools/capture_art.py`) if the game's frame art has changed.
 3. Run the tests, commit and push `main`, and check that CI passes.
+4. Tag and push the tag: `git tag -a vX.Y.Z -m "Smooth Animated Bars X.Y.Z"`, then `git push origin vX.Y.Z`.
+   The version comes from the tag (the toc says `@project-version@`; `scripts/package.ps1` fills it in).
+
+There is no release workflow and no CurseForge project yet (1.0.0 was tagged without publishing). When
+there is, port Smooth Experience Bar's `release.yml`, `curseforge-check.yml` and `scripts/changelog.sh`
+/ `curseforge.sh`, and fill in the project ID. The addon's icon is the game's Trade_Alchemy (file ID
+136240), and it is the icon for the CurseForge project too.
+
+## What we learned about Forever
+
+Facts found while building this, which the code relies on and which are not obvious from it:
+
+- **Forever's UI source** is the `forever` branch of github.com/Gethe/wow-ui-source:
+  `gh api "repos/Gethe/wow-ui-source/contents/Interface/AddOns/<path>?ref=forever"`. The unit frames are
+  `Blizzard_UnitFrame/Camelot/*` (Forever's overrides) on top of `Blizzard_UnitFrame/Mainline/*.xml`.
+  Forever uses the modern atlas names (`UI-HUD-UnitFrame-...`) and draws them with its classic gold art.
+  Other installed addons in `_forever_\Interface\AddOns` (Details, GlowingBars, ItemTree, Leatrix Plus) are
+  worth grepping for working Forever API use.
+- **Secret values:** confirmed in game with `/sab debug`. The player's health and power are secret even out
+  of combat. A StatusBar takes a secret through `SetValue` / `SetMinMaxValues`, with
+  `Enum.StatusBarInterpolation.ExponentialEaseOut` for the client's smoothing, and frames can anchor to its
+  fill texture. So the liquid never learns which way a bar moved; any change only stirs it.
+- **Layering:** the bars use `useParentLevel`, and the bar text is in the container's `OVERLAY` layer at the
+  same frame level. Our frames take the bar's level (`SetUsingParentLevel`) so the text stays above the
+  liquid. The game's bar masks (`HealthBarMask` on the player's container, `ManaBarMask` and the target's
+  `HealthBarMask` on the bar) also cut textures in child frames, so the liquid uses them.
+- **Health-loss animation:** after damage the player frame shows `healthBar.AnimatedLossBar`, a red bar
+  behind the game's fill. Once shown, it draws over anything else at that frame level, so its texture is
+  kept transparent while the liquid shows (`Bars.lua`, `HideGameFill`).
+- **Toc changes** (a new file) need a full game restart; `/reload` does not pick them up.
+- **Capture:** `/sab capture` uses `Screenshot()` and the `screenshotFormat` CVar (TGA, put back after).
+  The screenshot is the full render resolution (an ultrawide 3440x1440 here), and the red "?" target
+  portrait once fooled the marker search, which now looks only at the top of the screen.
+
+## Dev setup
+
+`_forever_\Interface\AddOns\SmoothAnimatedBars` is a junction to this repo's `SmoothAnimatedBars/`, so
+`/reload` loads the working copy. Settings are account-wide in `SmoothAnimatedBarsDB`; `setupDone` marks
+that the setup wizard has run. The tools need `tools/venv` (`pip install lupa numpy pillow`).
