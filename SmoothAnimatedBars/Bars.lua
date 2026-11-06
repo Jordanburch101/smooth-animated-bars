@@ -85,8 +85,15 @@ local function BarMask(bar, kind)
     if type(mask) == "table" and mask.GetObjectType and mask:GetObjectType() == "MaskTexture" then return mask end
 end
 
-local bars = {} -- spot -> bar state, for the bars built so far
+local bars = {}     -- spot -> bar state, for the game's bars built so far
+local previews = {} -- bar states on the setup wizard's preview frames
 local driver
+
+-- Every bar state, the game's and the previews'.
+local function Each(fn)
+    for _, b in pairs(bars) do fn(b) end
+    for _, b in ipairs(previews) do fn(b) end
+end
 
 local INTERPOLATION = Enum and Enum.StatusBarInterpolation and Enum.StatusBarInterpolation.ExponentialEaseOut
 
@@ -94,10 +101,16 @@ local INTERPOLATION = Enum and Enum.StatusBarInterpolation and Enum.StatusBarInt
 -- Colours
 --------------------------------------------------------------------------------
 
--- The bar's own colour: health green, or the game's colour for the unit's power type.
+-- The bar's own colour: health green, or the game's colour for the unit's power type (a preview
+-- bar names its power type).
 local function GameColor(b)
     if b.kind == "health" then return HEALTH_COLOR, "HEALTH" end
-    local index, token = UnitPowerType(b.unit)
+    local index, token
+    if b.spot.token then
+        token = b.spot.token
+    else
+        index, token = UnitPowerType(b.unit)
+    end
     if Secret(index, token) then return POWER_COLORS.MANA, "MANA" end
     local c = PowerBarColor and (PowerBarColor[token] or PowerBarColor[index])
     if c and c.r then return { c.r, c.g, c.b }, token end
@@ -273,17 +286,17 @@ end
 local function OnUpdate(_, elapsed)
     local dt = min(elapsed, 0.1)
     if dt <= 0 then return end
-    for _, b in pairs(bars) do
+    Each(function(b)
         if b.live and not b.err then
             local ok, err = pcall(UpdateBar, b, dt)
             if not ok then
                 b.err = tostring(err)
                 pcall(SetLive, b, false)
-                ns.Core.Print("Error in the " .. b.unit .. " " .. b.kind .. " bar, which is back to the game's own: "
-                    .. b.err)
+                ns.Core.Print("Error in the " .. (b.spot.preview and "preview " or "") .. b.unit .. " " .. b.kind
+                    .. " bar, which is back to the game's own: " .. b.err)
             end
         end
-    end
+    end)
 end
 
 local STIR_EVENTS = { UNIT_HEALTH = "health", UNIT_MAXHEALTH = "health", UNIT_POWER_UPDATE = "power",
@@ -316,7 +329,7 @@ local EVENTS = { "PLAYER_TARGET_CHANGED", "UNIT_DISPLAYPOWER", "UNIT_HEALTH", "U
 --------------------------------------------------------------------------------
 
 -- Show the liquid on the bars that are switched on, building each the first time it is wanted.
--- Returns how many bars are showing it and how many were wanted but not found.
+-- Returns how many of the game's bars are showing it and how many were wanted but not found.
 function Bars.Apply()
     local live, missing = 0, 0
     for _, spot in ipairs(SPOTS) do
@@ -336,13 +349,19 @@ function Bars.Apply()
             if b.live then live = live + 1 end
         end
     end
-    if live > 0 and not driver then
+    -- Previews follow the same settings, so the wizard shows each choice on them.
+    local any = live
+    for _, b in ipairs(previews) do
+        SetLive(b, ns.Core.Get(b.spot.key) and not b.err and true or false)
+        if b.live then any = any + 1 end
+    end
+    if any > 0 and not driver then
         driver = CreateFrame("Frame")
         driver:SetScript("OnUpdate", OnUpdate)
         driver:SetScript("OnEvent", OnEvent)
     end
     if driver then
-        driver:SetShown(live > 0)
+        driver:SetShown(any > 0)
         for _, event in ipairs(EVENTS) do
             if live > 0 then driver:RegisterEvent(event) else driver:UnregisterEvent(event) end
         end
@@ -350,14 +369,29 @@ function Bars.Apply()
     return live, missing
 end
 
+-- The liquid on a bar of a preview frame. spec: { key = its on/off setting, unit, kind, token = power
+-- type for a power bar }. Returns its state, for Bars.Stir.
+function Bars.Preview(bar, spec)
+    spec.preview = true
+    local b = NewBar(spec, bar)
+    previews[#previews + 1] = b
+    Bars.Apply()
+    return b
+end
+
+-- A preview bar's value changed.
+function Bars.Stir(b)
+    if b.live then Stir(b) end
+end
+
 -- After a colour choice changes, or once the player is known (class and faction themes).
 function Bars.ApplyColors()
-    for _, b in pairs(bars) do ApplyColor(b, true) end
+    Each(function(b) ApplyColor(b, true) end)
 end
 
 -- After an effect toggle: clear what was just switched off.
 function Bars.ApplyOptions()
-    for _, b in pairs(bars) do b.liquid:ApplyOptions() end
+    Each(function(b) b.liquid:ApplyOptions() end)
 end
 
 local function YesNo(v) return v and "yes" or "no" end

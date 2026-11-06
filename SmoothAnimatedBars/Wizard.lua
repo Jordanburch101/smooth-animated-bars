@@ -1,6 +1,7 @@
 -- First-time setup in three short steps: which bars, their colours and how lively they are. Each pick
--- is applied at once, so the player frame itself is the preview; Skip (or closing the window) puts
--- the settings back as they were, Finish keeps them. Opens once, on the first login with the addon,
+-- is applied at once, on the real frames and on the preview player and target frames at the top of
+-- the window (Preview.lua); Skip (or closing the window) puts the settings back as they were, Finish
+-- keeps them. Opens once, on the first login with the addon,
 -- and again with /sab setup or from the settings page.
 --
 -- Built from the game's own window (as Road to Sixty's), button, radio button and font templates;
@@ -11,7 +12,7 @@ local _, ns = ...
 local Wizard = {}
 ns.Wizard = Wizard
 
-local W, H = 620, 330
+local W, H = 620, 430
 local GOLD = { 1, 0.82, 0 }
 local EDGE = { 0.32, 0.30, 0.36 }
 
@@ -154,7 +155,7 @@ end
 local BUILD = {}
 
 function BUILD.bars(p)
-    Heading(p, "Which bars?", "Your player frame shows each choice as you pick it.")
+    Heading(p, "Which bars?", "The frames above show each choice as you pick it.")
     ui.cards.bars = Cards(p, BARS, -46)
 end
 
@@ -246,8 +247,7 @@ local function Build()
         close:SetPoint("TOPRIGHT", -8, -8)
     end
     frame:SetSize(W, H)
-    -- Right of centre, clear of the player and target frames it previews on.
-    frame:SetPoint("CENTER", 160, -40)
+    frame:SetPoint("CENTER")
     frame:SetFrameStrata("DIALOG")
     frame:SetToplevel(true)
     frame:SetClampedToScreen(true)
@@ -272,8 +272,19 @@ local function Build()
     end
 
     ui = { cards = {}, pages = {} }
+    -- Preview frames on a dark strip under the title, the steps below them.
+    local strip = CreateFrame("Frame", nil, frame)
+    strip:SetPoint("TOPLEFT", 36, -34)
+    strip:SetPoint("TOPRIGHT", -36, -34)
+    strip:SetHeight(116)
+    local stripBg = strip:CreateTexture(nil, "BACKGROUND")
+    stripBg:SetAllPoints()
+    stripBg:SetColorTexture(0, 0, 0, 0.45)
+    Outline(strip, EDGE)
+    ui.preview = ns.Preview.Create(strip)
+    ui.preview:SetPoint("CENTER")
     ui.body = CreateFrame("Frame", nil, frame)
-    ui.body:SetPoint("TOPLEFT", 36, -40)
+    ui.body:SetPoint("TOPLEFT", 36, -170)
     ui.body:SetPoint("BOTTOMRIGHT", -36, 56)
 
     ui.footer = CreateFrame("Frame", nil, frame)

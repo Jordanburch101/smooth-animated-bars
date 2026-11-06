@@ -136,6 +136,7 @@ function Region:SetToplevel() end
 function Region:SetChecked(v) self.checked = not not v end
 function Region:GetChecked() return self.checked end
 function Region:SetText(t) self.text = t end
+function Region:GetText() return self.text end
 function Region:SetFormattedText(fmt, ...) self.text = string.format(fmt, ...) end
 function Region:GetStringWidth()
     local plain = (self.text or ""):gsub("|c%x%x%x%x%x%x%x%x", ""):gsub("|r", "")
@@ -170,6 +171,7 @@ local FONT_OBJECTS = {
     GameFontNormal = true, GameFontNormalSmall = true, GameFontNormalLarge = true, GameFontNormalHuge = true,
     GameFontHighlight = true, GameFontHighlightSmall = true, GameFontHighlightLarge = true,
     GameFontHighlightHuge = true, GameFontDisableSmall = true,
+    TextStatusBarText = true, WhiteLargeNumberFont = true,
 }
 function Region:CreateFontString(_, layer, template)
     assert(template == nil or FONT_OBJECTS[template], "unknown font object " .. tostring(template))
@@ -350,6 +352,22 @@ function Region:GetDrawLayer() return self.layer, self.sub end
 function Region:GetDebugName() return self.debugName or "?" end
 
 function Region:SetUsingParentLevel(v) self.useParentLevel = v end
+-- Atlases by name; __missingAtlases[name] makes one fail, as an atlas the client does not have.
+__missingAtlases = {}
+function Region:SetAtlas(name, useSize)
+    assert(type(name) == "string", "SetAtlas needs an atlas name")
+    if __missingAtlases[name] then return false end
+    self.atlas, self.file, self.color = name, nil, nil
+    return true
+end
+function SetPortraitTexture(tex, unit)
+    assert(tex and tex.kind == "Texture", "SetPortraitTexture needs a texture")
+    tex.portrait = unit
+end
+function UnitLevel() return 10 end
+-- The player frame's name text, first name and surname on Forever.
+PlayerName = NewRegion("FontString", UIParent)
+PlayerName.text = "Hotdog Hootsman"
 function Region:SetEnabled(v) self.enabled = not not v end
 function Region:IsEnabled() return self.enabled ~= false end
 function Region:SetClipsChildren(v) self.clipsChildren = v end

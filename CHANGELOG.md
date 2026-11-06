@@ -18,5 +18,6 @@ Sections are `### New` and `### Fixed`; skip one that would be empty.
   Animated Bars, or with `/sab`. `/sab on` and `/sab off` switch all four
   bars at once.
 - A short setup on your first login: which bars, their colours and how
-  lively they are, each shown on your own frame as you pick it. Skip puts
-  everything back. Open it again with `/sab setup` or from the settings.
+  lively they are, each shown as you pick it on preview player and target
+  frames (and your own frame). Skip puts everything back. Open it again
+  with `/sab setup` or from the settings.

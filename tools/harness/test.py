@@ -308,6 +308,58 @@ if button:
 check(wz.eval("SmoothAnimatedBarsSetup.shown"), "which opens it")
 check(not any("Error in" in m for m in chat(wz)), "no errors")
 
+print("== wizard previews")
+pv = session("nil")
+run(pv, 3)
+pv.execute("""
+    function __pv(which, kind) return __ns.Wizard.State().ui.preview[which][kind] end
+    function __pick(field, key) local c = __ns.Wizard.State().ui.cards[field][key]; c.scripts.OnClick(c) end
+""")
+check(pv.eval("SmoothAnimatedBarsSetup.shown"), "wizard open with its previews")
+check(all(pv.eval(f"(select(2, __liquid(__pv('{w}', '{k}'))))") > 0
+          for w in ("player", "target") for k in ("health", "power")),
+      "liquid on all four preview bars")
+check(pv.eval("__pv('player', 'health').HealthBarMask.atlas") == "UI-HUD-UnitFrame-Player-PortraitOn-Bar-Health-Mask"
+      and pv.eval("__pv('target', 'power').ManaBarMask.atlas") == "UI-HUD-UnitFrame-Target-PortraitOn-Bar-Mana-Mask",
+      "preview bars take Forever's bar masks by atlas name")
+check(pv.eval("(select(4, __liquid(__pv('player', 'health'))))") > 0, "the preview liquid is cut by them")
+check(pv.eval("__pv('player', 'health').text.text") == "271 / 271", "bar text as on the game's frame")
+check(pv.eval("""(function()
+    for _, r in ipairs(__regions) do
+        if r.kind == "FontString" and r.text == "Hotdog Hootsman" and r ~= PlayerName then return true end
+    end
+end)()"""), "the player preview shows the name as the game's frame does, surname included")
+r, g, b = pv.eval("__tint(__pv('player', 'power'))")
+check(r > 0.5 and b < 0.3, f"player preview power takes your power type (rage: {r:.2f}, {g:.2f}, {b:.2f})")
+before = pv.eval("__pv('player', 'health').shownValue")
+run(pv, 0.35)  # the loop's first hit lands 1.2 s after the wizard opens
+after = pv.eval("__pv('player', 'health').shownValue")
+check(after < before and pv.eval("__motes(__pv('player', 'health'))") > 0,
+      f"the loop plays a hit: {before} then {after}, and the liquid stirs")
+pv.execute("__pick('bars', 'mine')")
+run(pv, 0.2)
+check(pv.eval("(select(2, __liquid(__pv('target', 'health'))))") == 0 and pv.eval("__pv('target', 'health').fill.alpha") == 1
+      and pv.eval("(select(2, __liquid(__pv('player', 'health'))))") > 0,
+      "Just mine: the target preview shows the game's plain bars")
+pv.execute("__pick('bars', 'all'); __ns.Wizard.State().ui.next.scripts.OnClick(__ns.Wizard.State().ui.next); __pick('healthColor', 'frost')")
+run(pv, 0.2)
+r, g, b = pv.eval("__tint(__pv('target', 'health'))")
+check(b > 0.8 and r < 0.8, f"Frost on health shows on the target preview too ({r:.2f}, {g:.2f}, {b:.2f})")
+pv.execute("SmoothAnimatedBarsSetup:Hide()")
+run(pv, 0.5)
+check(not pv.eval("SmoothAnimatedBarsSetup.shown") and pv.eval("SmoothAnimatedBarsDB.healthColor") == "game",
+      "closing the wizard: previews hidden with it, settings back")
+check(not any("Error in" in m for m in chat(pv)), "no errors")
+
+# A client without one of the atlases: that piece is left out, the liquid still shows.
+pm = session("nil", "__missingAtlases['UI-HUD-UnitFrame-Player-PortraitOn-Bar-Health-Mask'] = true;"
+                    " __missingAtlases['UI-HUD-UnitFrame-Player-PortraitOn'] = true")
+run(pm, 3)
+pm.execute("function __pv(which, kind) return __ns.Wizard.State().ui.preview[which][kind] end")
+check(pm.eval("SmoothAnimatedBarsSetup.shown") and pm.eval("(select(2, __liquid(__pv('player', 'health'))))") > 0
+      and pm.eval("__pv('player', 'health').HealthBarMask") is None and not any("Error in" in m for m in chat(pm)),
+      "a missing atlas leaves that piece out: no mask, liquid uncut, no error")
+
 if failures:
     print(f"\n{len(failures)} check(s) failed:")
     for f in failures:
