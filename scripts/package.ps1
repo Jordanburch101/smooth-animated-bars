@@ -4,7 +4,7 @@
 #   ./scripts/package.ps1 -Version 1.0.0   explicit version
 #
 # Steps:
-#   1. Copies SmoothAnimatedBars/ to build/SmoothAnimatedBars/.
+#   1. Copies SmoothAnimatedBars/ to build/SmoothAnimatedBars/, with the LICENSE.
 #   2. Puts the version in place of @project-version@ in the toc.
 #   3. Checks the build: every file the toc lists exists, no markers are left,
 #      and, with LuaJIT installed, every Lua file compiles.
@@ -48,6 +48,8 @@ Write-Host "Packaging $addonName $Version"
 if (Test-Path $buildRoot) { Remove-Item $buildRoot -Recurse -Force }
 New-Item -ItemType Directory -Path $build -Force | Out-Null
 Copy-Item -Path (Join-Path $source "*") -Destination $build -Recurse
+# The MIT notices (ours and DoesItDie's, which Dots.lua also carries) travel with every copy.
+Copy-Item -Path (Join-Path $root "LICENSE") -Destination $build
 
 # 2. Version in the toc, written as UTF-8 without BOM and LF endings on every platform.
 $tocPath = Join-Path $build "$addonName.toc"

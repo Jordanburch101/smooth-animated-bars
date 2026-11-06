@@ -97,10 +97,21 @@ Download the latest version from the [tags page](https://github.com/Jordanburch1
 
 ## Credits
 
-The liquid comes from [Smooth Experience Bar](https://www.curseforge.com/wow/addons/smooth-experience-bar),
-whose look is based on the [Luxthos Experience Bar](https://wago.io/LuxthosExperienceBar) WeakAura by
-Luxthos & Daemoos. The DoT marker's tracking is ported from DoesItDie by Joe Greive (MIT licence), which
-worked out how to follow DoTs on WoW Forever. Smooth Animated Bars is not affiliated with or endorsed by
-Blizzard Entertainment.
+- **The liquid** comes from [Smooth Experience Bar](https://www.curseforge.com/wow/addons/smooth-experience-bar),
+  whose look is based on the [Luxthos Experience Bar](https://wago.io/LuxthosExperienceBar) WeakAura by
+  Luxthos & Daemoos.
+- **The DoT tracking** is ported from DoesItDie by Joe Greive (MIT licence), which worked out how to follow
+  your DoTs on WoW Forever, where the combat log is closed to addons. The idea of marking them on the
+  target's health bar is its too.
+- **The art** is the game's own: the addon's icon (Greater Nether Essence), the kill icon's skull, and the
+  unit frames in the images above, captured in game.
+
+Smooth Animated Bars is not affiliated with or endorsed by Blizzard Entertainment. World of Warcraft and its
+art belong to Blizzard Entertainment.
+
+## License
+
+[MIT](LICENSE). `SmoothAnimatedBars/Dots.lua` contains code from DoesItDie, also under the MIT licence; its
+notice is kept in that file and listed in [LICENSE](LICENSE). The game's art is not covered by the licence.
 
 Building, testing or adding a theme: see [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md).
