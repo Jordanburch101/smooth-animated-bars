@@ -164,9 +164,16 @@ function Options.Register(savedDB, defaultValues)
     Checkbox("ambient", "Theme Particles", "Embers, snow, spores, stars and the like from themes that have them.")
     Checkbox("lightning", "Lightning", "Faint flashes in the liquid that build into a storm when the bar changes a lot.")
 
+    Header("Damage Over Time")
+    Checkbox("dots", "DoT Marker",
+        "The health your damage-over-time spells will still burn away turns into a liquid of their own colour, "
+        .. "eating into your target's health. If no health liquid is left, they will kill the target.")
+    Checkbox("dotKillIcon", "Kill Icon",
+        "The game's skull on your target's portrait when your DoTs will finish it off.")
+
     Header("Setup")
     Button("Setup Wizard", "Open", function() ns.Wizard.Open() end,
-        "Pick the bars, their colours and how lively they are again, seeing each choice on your frame.")
+        "Pick the bars, their colours, how lively they are and the DoT marker again, seeing each choice on your frame.")
 
     LayoutRows()
     Settings.RegisterAddOnCategory(category)

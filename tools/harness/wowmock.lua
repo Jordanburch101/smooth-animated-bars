@@ -53,6 +53,7 @@ function Region:SetSize(w, h)
     self.w, self.h = w, h
     if changed and self.scripts.OnSizeChanged then self.scripts.OnSizeChanged(self, w, h) end
 end
+function Region:GetSize() return self.w, self.h end
 function Region:GetWidth() return self.w end
 function Region:GetHeight() return self.h end
 function Region:GetLeft() return 660 end
@@ -110,8 +111,20 @@ function Region:EnableMouse(v) self.mouse = v end
 function Region:StartMoving() self.moving = true end
 function Region:StopMovingOrSizing() self.moving, self.sizing = nil, nil end
 function Region:SetScript(name, fn) self.scripts[name] = fn end
-function Region:RegisterEvent(e) self.events[e] = true end
+-- Forever blocks the combat log for addons, with a popup naming the addon.
+local FORBIDDEN_EVENTS = { COMBAT_LOG_EVENT_UNFILTERED = true }
+function Region:RegisterEvent(e)
+    assert(not FORBIDDEN_EVENTS[e], e .. " is blocked for addons on Forever")
+    self.events[e] = true
+end
+-- A unit event registered for a unit only reaches the frame for that unit.
+function Region:RegisterUnitEvent(e, unit)
+    assert(not FORBIDDEN_EVENTS[e], e .. " is blocked for addons on Forever")
+    assert(type(unit) == "string", "RegisterUnitEvent needs a unit")
+    self.events[e] = unit
+end
 function Region:UnregisterEvent(e) self.events[e] = nil end
+function Region:UnregisterAllEvents() self.events = {} end
 function Region:IsEventRegistered(e) return self.events[e] end
 function Region:SetTexture(file, wh, wv) self.file, self.wrap, self.wrapV, self.color = file, wh, wv or wh, nil end
 function Region:SetColorTexture(r, g, b, a) self.file, self.color = "SOLID", { r, g, b, a or 1 } end
@@ -120,6 +133,8 @@ function Region:SetGradient(_, c1, c2)
     self.grad = { { c1:GetRGBA() }, { c2:GetRGBA() } }
 end
 function Region:SetBlendMode(m) self.blend = m end
+function Region:SetHorizTile(v) self.horizTile = v end
+function Region:SetVertTile(v) self.vertTile = v end
 function Region:SetTexCoord(l, r, t, b) self.tc = { l, r, t, b } end
 function Region:SetRotation(rad) self.rotation = rad end
 function Region:SetDrawLayer(layer, sub) self.layer, self.sub = layer, sub or 0 end
@@ -267,7 +282,10 @@ __player.class, __player.faction = "PALADIN", "Alliance"
 __player.name, __player.realm = "Testchar", "Mockrealm"
 -- Like the client, UnitName gives no realm for your own character; GetRealmName has it. On Forever
 -- the second value is the character's surname: set __player.surname for that.
-function UnitName(unit) if unit == "player" then return __player.name, __player.surname end end
+function UnitName(unit)
+    if unit == "player" then return __player.name, __player.surname end
+    if unit == "target" and __target then return __target.name end
+end
 function GetRealmName() return __player.realm end
 function UnitClass() return "Paladin", __player.class end
 function UnitFactionGroup() return __player.faction end
@@ -391,6 +409,7 @@ function StatusBar:GetMinMaxValues() return self.min, self.max end
 function StatusBar:SetValue(v, interpolation) self.value, self.interpolation = v, interpolation end
 function StatusBar:GetValue() return self.value end
 function StatusBar:GetStatusBarTexture() return self.fill end
+function StatusBar:SetReverseFill(v) self.reverse = v end
 function StatusBar:SetStatusBarTexture(t)
     assert(type(t) == "table" and t.kind == "Texture", "SetStatusBarTexture takes a texture here")
     self.fill = t
@@ -428,6 +447,33 @@ do
     loss:Hide()
 end
 TargetFrame = UnitFrame("TargetFrame", "TargetFrameContent", "TargetFrameContentMain")
+-- The target's portrait, on the frame's container (TargetFrame.xml).
+TargetFrame.TargetFrameContainer = CreateFrame("Frame", nil, TargetFrame)
+TargetFrame.TargetFrameContainer.Portrait = TargetFrame.TargetFrameContainer:CreateTexture(nil, "BACKGROUND")
+
+-- The target: nil for none, else { guid, name, dead }. Its health is secret like the player's.
+__target = nil
+function UnitExists(unit)
+    if unit == "player" then return true end
+    return unit == "target" and __target ~= nil
+end
+function UnitGUID(unit)
+    if unit == "player" then return "Player-1-00000001" end
+    if unit == "target" and __target then return __target.guid end
+end
+function UnitIsDead(unit) return unit == "target" and __target ~= nil and __target.dead or false end
+function UnitCanAttack(_, unit) return unit == "target" and __target ~= nil end
+function GetComboPoints() return 0 end
+
+-- Spells by ID: __spells[id] = { name, description }.
+__spells = {}
+C_Spell = {
+    GetSpellName = function(id) return __spells[id] and __spells[id][1] end,
+    GetSpellDescription = function(id) return __spells[id] and __spells[id][2] end,
+}
+-- Other addons loaded: __addons[name] = true.
+__addons = {}
+C_AddOns = { IsAddOnLoaded = function(name) return __addons[name] or false end }
 __player.power = 0 -- UnitPowerType index: 0 mana, 1 rage, 3 energy
 local POWER_TOKENS = { [0] = "MANA", [1] = "RAGE", [2] = "FOCUS", [3] = "ENERGY" }
 function UnitPowerType() return __player.power, POWER_TOKENS[__player.power] end
@@ -596,8 +642,10 @@ end
 __markCFunctions()
 
 function __fire(event, ...)
+    local unit = ...
     for _, f in ipairs(__frames) do
-        if f.events[event] and f.scripts.OnEvent then f.scripts.OnEvent(f, event, ...) end
+        local reg = f.events[event]
+        if reg and (reg == true or reg == unit) and f.scripts.OnEvent then f.scripts.OnEvent(f, event, ...) end
     end
 end
 

@@ -2,7 +2,7 @@
 
 Usage: python gallery.py <addon dir> [out dir] [scenario ...]
 Default out dir: branding/gallery. Writes each scenario as an animated WebP (hero is the warrior, then
-mage and rogue), frames.png (a still of the warrior) and themes.png (the player frame in a few themes).
+mage, rogue and warlock, whose target carries the DoT marker), frames.png (a still of the warrior) and themes.png (the player frame in a few themes).
 A full run takes about a quarter of an hour.
 
 The frame art comes from branding/art, which tools/capture_art.py cuts out of the screenshots /sab
@@ -69,7 +69,39 @@ SCENARIOS = {
                 (4.0, 0.83, 0.60, 0.72, 0.70), (4.2, 0.83, 0.25, 0.42, 0.70), (5.0, 0.76, 0.25, 0.42, 0.70),
                 (6.0, 0.76, 0.45, 0.42, 0.70), (6.4, 0.76, 0.05, 0.00, 0.70), (7.4, 0.76, 0.05, 1.00, 0.70),
                 (8.0, 0.76, 0.25, 1.00, 0.70)]),
+    # The DoT marker: Corruption and Immolate tick away while Shadow Bolts land, until the DoTs will finish
+    # the conjurer and the skull comes up. The casts and ticks go through the addon's own tracking (events).
+    "warlock": dict(
+        player="Hexbag Hootsman", level="12", power="MANA", target="Defias Conjurer", target_level="11",
+        maxes=(220, 380, 240, 300), loop=8.8, dots=True,
+        script=[(0.0, 1.00, 1.00, 1.000, 1.0), (0.4, 1.00, 0.91, 1.000, 1.0), (1.4, 1.00, 0.79, 0.896, 1.0),
+                (2.2, 1.00, 0.68, 0.667, 1.0), (3.4, 1.00, 0.68, 0.604, 1.0), (4.4, 1.00, 0.68, 0.571, 1.0),
+                (4.9, 0.88, 0.68, 0.571, 1.0), (5.6, 0.88, 0.57, 0.342, 1.0), (6.4, 0.88, 0.57, 0.279, 1.0),
+                (7.4, 0.88, 0.57, 0.246, 1.0), (8.4, 0.88, 0.62, 1.000, 1.0)],
+        events=[(0.4, "__dotsCast(172, 'Cast-1')"), (1.4, "__dotsCast(348, 'Cast-2')"),
+                (1.4, "__fire('UNIT_COMBAT', 'target', 'WOUND', '', 25, 4)"),
+                (2.2, "__fire('UNIT_COMBAT', 'target', 'WOUND', '', 55, 32)"),
+                (3.4, "__fire('UNIT_COMBAT', 'target', 'WOUND', '', 15, 32)"),
+                (4.4, "__fire('UNIT_COMBAT', 'target', 'WOUND', '', 8, 4)"),
+                (5.6, "__fire('UNIT_COMBAT', 'target', 'WOUND', '', 55, 32)"),
+                (6.4, "__fire('UNIT_COMBAT', 'target', 'WOUND', '', 15, 32)"),
+                (7.4, "__fire('UNIT_COMBAT', 'target', 'WOUND', '', 8, 4)"),
+                (8.4, "__target = { guid = 'Creature-0-1-2-3-40-0002', name = 'Defias Conjurer' };"
+                      " __fire('PLAYER_TARGET_CHANGED')")]),
 }
+# The warlock's spells, as the client describes them.
+DOT_SPELLS = """
+    __spells[172] = { 'Corruption', 'Corrupts the target, causing 90 Shadow damage over 18 sec.' }
+    __spells[348] = { 'Immolate', 'Burns the enemy for 25 Fire damage and then an additional 40 Fire damage over 15 sec.' }
+    __target = { guid = 'Creature-0-1-2-3-40-0001', name = 'Defias Conjurer' }
+    function __dotsCast(id, guid)
+        __fire('UNIT_SPELLCAST_SENT', 'player', __target.name, guid, id)
+        __fire('UNIT_SPELLCAST_SUCCEEDED', 'player', guid, id)
+    end
+"""
+MARKER_LONG = 10000       # Marker.lua: LONG
+OVERLAP = 6               # Marker.lua: how far the DoT liquid reaches under the health liquid
+PORTRAIT_CENTRE = (177, 48)  # the target's portrait: TOPRIGHT -26, -19, 58 across (Preview.lua LAYOUT)
 
 
 # ---------------------------------------------------------------------------- art
@@ -107,10 +139,11 @@ def circle_centre(art, which):
 
 # ---------------------------------------------------------------------------- the addon
 
-def start(settings, power="RAGE"):
+def start(settings, power="RAGE", dots=False, events=()):
     """The addon in the mock with its four bars sized as Forever's, the player on the given power type
-    and the target on mana; returns the session. Each bar's liquid frame becomes __mover_<unit>_<kind>."""
-    before = f"""
+    and the target on mana; returns the session. Each bar's liquid frame becomes __mover_<unit>_<kind>.
+    dots: the DoT marker on, with the warlock's spells and a target to cast them on; events: (time, Lua)."""
+    before = (DOT_SPELLS + "SmoothAnimatedBarsDB.dots = true\n" if dots else "") + f"""
         SmoothAnimatedBarsDB.setupDone = true
         TargetFrame.healthbar.w, TargetFrame.manabar.w = 126, 134
         UnitPowerType = function(unit)
@@ -124,6 +157,7 @@ def start(settings, power="RAGE"):
     after = """
         local bars = { player_health = PlayerFrame.healthbar, player_power = PlayerFrame.manabar,
                        target_health = TargetFrame.healthbar, target_power = TargetFrame.manabar }
+        -- The liquid's clip frame is the bar's first frame that is not a StatusBar (the DoT marker's comes after).
         for key, bar in pairs(bars) do
             for _, clip in ipairs(__frames) do
                 if clip.parent == bar and not clip.SetValue then
@@ -133,42 +167,91 @@ def start(settings, power="RAGE"):
                             f.w, f.h = bar.w, bar.h -- the client sizes it from its anchors
                         end
                     end
+                    break
                 end
             end
+        end
+        -- The DoT liquid's frame, sized as the client sizes it from its anchors.
+        local marker = (__ns.Marker.State())
+        if marker then
+            __dotMover = marker.mover
+            __dotMover.w, __dotMover.h = TargetFrame.healthbar.w, TargetFrame.healthbar.h
         end
         -- The bar masks have no art in the mock; the captured ones are applied here instead.
         for _, r in ipairs(__regions) do r.masks = nil end
     """
-    return render.Session(ADDON, settings=settings, before_login=before, after_login=after)
+    return render.Session(ADDON, settings=settings, before_login=before, after_login=after, scenario=events)
 
 
 def is_mote(r):
-    return r.layer == "OVERLAY" and r.sub == 4
+    """Liquid.lua's motes: OVERLAY 4, or -4 on the DoT liquid, which lies 8 sublevels under the health liquid."""
+    return r.layer == "OVERLAY" and r.sub in (4, -4)
 
 
-def draw_bar(session, img, art, fx, fy, which, kind, frac):
-    """The liquid of one bar onto img (RGB), the frame's top-left at (fx, fy) px."""
+def draw_bar(session, img, art, fx, fy, which, kind, frac, frame=None, cut=0.0):
+    """The liquid of one bar onto img (RGB), the frame's top-left at (fx, fy) px. frame: the global name of
+    the liquid's frame, if not the bar's own liquid (the DoT liquid); cut: where its clip frame starts, in bar
+    units from the bar's left edge."""
     x, y, w, h = BARS[(which, kind)]
     # Work on the bar's surroundings only: the bar, and the room motes have around it.
     sx, sy = int(fx + (x - 4) * K), int(fy + (y - SPILL) * K)
     sw, sh = int((w + SPILL + 8) * K), int((h + 2 * SPILL) * K)
     sub = img.crop((sx, sy, sx + sw, sy + sh))
-    session.frame = f"__mover_{which}_{kind}"
+    session.frame = frame or f"__mover_{which}_{kind}"
     ox, oy = fx + (x + frac * w - w) * K - sx, fy + y * K - sy
+    clip = np.zeros((sh, sw), np.float32)
+    clip[:, max(0, int((4 + max(0.0, cut)) * K)):] = 1
     liquid = session.render(sub, ox, oy, K, only=lambda r: not is_mote(r))
     # The captured mask covers the whole frame, from its top-left.
     mask = Image.new("L", (sw, sh), 0)
     mask.paste(art[f"{which}-{kind}-mask"].getchannel("A"), (int(fx) - sx, int(fy) - sy))
-    m = np.asarray(mask).astype(np.float32) / 255
+    m = np.asarray(mask).astype(np.float32) / 255 * clip
     a, b = np.asarray(sub).astype(np.float32), np.asarray(liquid).astype(np.float32)
     sub = Image.fromarray((a + (b - a) * m[..., None]).astype(np.uint8))
-    # Motes, cut only by the clip frame: from the bar's left edge to SPILL past its end.
+    # Motes, cut only by the clip frame: from the bar's left edge (or the cut) to SPILL past its end.
     motes = session.render(sub, ox, oy, K, only=is_mote)
-    clip = np.zeros((sh, sw), np.float32)
-    clip[:, int(4 * K):] = 1
     a, b = np.asarray(sub).astype(np.float32), np.asarray(motes).astype(np.float32)
     sub = Image.fromarray((a + (b - a) * clip[..., None]).astype(np.uint8))
     img.paste(sub, (sx, sy))
+
+
+def marker_state(session):
+    """What the target's DoT marker is showing, from the addon: the span's value as it glides, the damage,
+    and the kill icon (shown, alpha). None when hidden."""
+    m = session.lua.eval("(__ns.Marker.State())")
+    if m is None or not m.clip.shown:
+        return None
+    return dict(shown=m.shown, value=m.value, icon=m.window.shown, icon_alpha=m.icon.alpha)
+
+
+_warned = set()
+
+
+def draw_kill_icon(img, art, fx, fy, health, state):
+    """The game's skull (captured as target-killicon) on the portrait. It slides in over the last
+    icon-width of a LONG bar as the damage reaches the health, cut by its icon-sized window."""
+    if not state["icon"]:
+        return
+    if "target-killicon" not in art:
+        if "icon" not in _warned:
+            _warned.add("icon")
+            print("  no target-killicon.png yet: the kill icon is left out (recapture with /sab capture)")
+        return
+    cell = art["target-killicon"]
+    box = cell.getchannel("A").getbbox()
+    if not box:
+        return
+    icon = cell.crop(box)
+    iw = icon.width / K
+    short = (1 - min(1.0, state["value"] / max(health, 1e-6))) * MARKER_LONG
+    if short >= iw:
+        return
+    alpha = np.asarray(icon.getchannel("A")).astype(np.float32) * state["icon_alpha"]
+    icon.putalpha(Image.fromarray(alpha.astype(np.uint8)))
+    cut = round(short * K)
+    canvas = img.convert("RGBA")
+    canvas.alpha_composite(icon.crop((cut, 0, icon.width, icon.height)), (int(fx) + box[0], int(fy) + box[1]))
+    img.paste(canvas.convert("RGB"))
 
 
 def text(draw, x, y, s, size, color, outline):
@@ -181,8 +264,9 @@ def text(draw, x, y, s, size, color, outline):
         draw.text((x, y), s, font=f, fill=color, anchor="mm")
 
 
-def draw_frame(session, img, art, fx, fy, which, fills, values, sc, portrait):
-    """A whole frame onto img (RGB): art, liquid, then the level circle and text above them."""
+def draw_frame(session, img, art, fx, fy, which, fills, values, sc, portrait, marker=None):
+    """A whole frame onto img (RGB): art, liquid, the DoT marker (its state from marker_state), then the
+    level circle and text above them."""
     canvas = img.convert("RGBA")
     pieces = [portrait if which == "player" else "target-portrait", f"{which}-art"]
     if which == "target":
@@ -191,10 +275,20 @@ def draw_frame(session, img, art, fx, fy, which, fills, values, sc, portrait):
         canvas.alpha_composite(art[piece], (int(fx), int(fy)))
     img.paste(canvas.convert("RGB"))
     for kind in ("health", "power"):
-        draw_bar(session, img, art, fx, fy, which, kind, fills[(which, kind)])
+        frac = fills[(which, kind)]
+        if which == "target" and kind == "health" and marker:
+            # The DoT liquid on the health's edge, cut a little under where the health will end; the health
+            # liquid over it, its front moved back there.
+            w = BARS[(which, kind)][2]
+            end = frac - marker["shown"] / dict(zip(ORDER, sc["maxes"]))[(which, kind)]
+            draw_bar(session, img, art, fx, fy, which, kind, frac, frame="__dotMover", cut=end * w - OVERLAP)
+            frac = end
+        draw_bar(session, img, art, fx, fy, which, kind, frac)
     canvas = img.convert("RGBA")
     canvas.alpha_composite(art[f"{which}-circle"], (int(fx), int(fy)))
     img.paste(canvas.convert("RGB"))
+    if which == "target" and marker:
+        draw_kill_icon(img, art, fx, fy, values[("target", "health")], marker)
     draw = ImageDraw.Draw(img)
     nx, ny = NAME_AT[which]
     text(draw, fx + nx * K, fy + ny * K, sc["player"] if which == "player" else sc["target"], 10, (255, 209, 0), False)
@@ -235,7 +329,7 @@ def portrait_for(art, key):
 def scenario(art, key):
     """Both frames through a scenario's loop, as a GIF; the warrior's also gives frames.png."""
     sc = SCENARIOS[key]
-    session = start({}, sc["power"])
+    session = start({}, sc["power"], sc.get("dots", False), sc.get("events", ()))
     portrait = portrait_for(art, key)
     pad, gap = round(24 * K), round(30 * K)
     w, h = pad * 2 + gap + round(FRAME_W * K) * 2, pad * 2 + round(FRAME_H * K)
@@ -264,9 +358,10 @@ def scenario(art, key):
         for k in ORDER:
             fills[k] += (goal[k] - fills[k]) * (1 - math.exp(-8 * dt))
         values = {k: round(goal[k] * maxes[k]) for k in ORDER}
+        marker = marker_state(session) if sc.get("dots") else None
         img = back.copy()
         for which, (fx, fy) in spots.items():
-            draw_frame(session, img, art, fx, fy, which, fills, values, sc, portrait)
+            draw_frame(session, img, art, fx, fy, which, fills, values, sc, portrait, marker)
         frames.append(img)
         if key == "hero" and still is None and t >= 3.3:
             still = img

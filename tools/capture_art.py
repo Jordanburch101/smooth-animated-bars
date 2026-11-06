@@ -26,7 +26,7 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 # Must match Capture.lua.
 CELLS = ["player-art", "player-portrait", "player-circle", "player-health-mask",
          "player-power-mask", "target-art", "target-portrait", "target-circle",
-         "target-banner", "target-health-mask", "target-power-mask"]
+         "target-banner", "target-health-mask", "target-power-mask", "target-killicon"]
 CELL_W, CELL_H, STEP_X, STEP_Y = 232, 100, 252, 120
 MARK_CENTRE = (11, 11)  # the first square's centre, grid units right and down from the corner
 MARK_APART = 1000

@@ -26,7 +26,7 @@ local CELLS = {
     { "player-power-mask", "player", "power" }, { "target-art", "target", "art" },
     { "target-portrait", "target", "portrait" }, { "target-circle", "target", "circle" },
     { "target-banner", "target", "banner" }, { "target-health-mask", "target", "health" },
-    { "target-power-mask", "target", "power" },
+    { "target-power-mask", "target", "power" }, { "target-killicon", "target", "killicon" },
 }
 Capture.CELLS = CELLS
 
@@ -42,6 +42,15 @@ local function Piece(cell, which, piece)
         P.Circle(cell, which)
     elseif piece == "banner" then
         P.Banner(cell):SetVertexColor(1, 1, 1) -- untinted; the gallery tints it
+    elseif piece == "killicon" then
+        -- The DoT marker's kill icon, centred on the target's portrait as Marker.lua puts it.
+        local p = P.LAYOUT.target.portrait
+        local icon = cell:CreateTexture(nil, "OVERLAY")
+        if ns.Marker.KillIcon(icon) then
+            icon:SetPoint("CENTER", cell, "TOPRIGHT", p.x - p.size / 2, p.y - p.size / 2)
+        else
+            icon:Hide()
+        end
     else
         -- A bar's mask: a white fill over the whole cell, cut by the mask where the game puts it.
         local spec = P.LAYOUT[which][piece]

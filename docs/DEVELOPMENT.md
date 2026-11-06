@@ -14,7 +14,7 @@ explains the details.
 
 | Folder | What it is |
 |---|---|
-| `SmoothAnimatedBars/` | The addon. `Bars.lua` puts the liquid on the unit frames, `Liquid.lua` draws it, `Themes.lua` holds the themes, `Options.lua` the settings page, `Wizard.lua` the setup and `Preview.lua` its preview frames, `Capture.lua` the gallery's art capture |
+| `SmoothAnimatedBars/` | The addon. `Bars.lua` puts the liquid on the unit frames, `Liquid.lua` draws it, `Themes.lua` holds the themes, `Dots.lua` tracks the player's DoTs (ported from DoesItDie) and `Marker.lua` marks them on the target, `Options.lua` the settings page, `Wizard.lua` the setup and `Preview.lua` its preview frames, `Capture.lua` the gallery's art capture |
 | `tools/make_media.py` | Generates the textures in `SmoothAnimatedBars/Media/` |
 | `tools/harness/` | A mock of the Forever client's API that runs the addon outside the game: tests, previews and the gallery |
 | `tools/capture_art.py` | Cuts Forever's frame art out of the screenshots `/sab capture` takes |
@@ -46,10 +46,15 @@ tools/venv/Scripts/python tools/capture_art.py                                  
 cd tools/harness; ../venv/Scripts/python gallery.py ../../SmoothAnimatedBars    # branding/gallery
 ```
 
-Capture again only if the game's frame art changes. The mage and rogue animations use those characters'
-portraits: capture on each, then `capture_art.py --portrait mage --pair 2` and `--portrait rogue --pair 1`
-(the newest pair is the last capture). `gallery.py` takes scenario names to render only some:
-`hero`, `mage`, `rogue`, `themes`. Animations are animated WebP, in full colour. A full run takes about a
+Capture again only if the game's frame art changes. The mage, rogue and warlock animations use those
+characters' portraits: capture on each, then `capture_art.py --portrait mage --pair 2`, `--portrait rogue
+--pair 1` and `--portrait warlock --pair N` (the newest pair is the last capture; until a warlock portrait is
+captured, the warlock uses the capturing character's). `gallery.py` takes scenario names to render only some:
+`hero`, `mage`, `rogue`, `warlock`, `themes`. The warlock's target carries the DoT marker: its casts and ticks
+go through the addon's own tracking, and the DoT liquid is the addon's own, drawn like the bars' liquid with
+the health liquid's front moved back over it. The kill icon is the game's skull, captured as
+`target-killicon.png`; captures from before 1.1.0 lack it, and the gallery then leaves the icon out. A full
+capture also replaces `player-portrait.png`, which is the hero's, so take it on the warrior. Animations are animated WebP, in full colour. A full run takes about a
 quarter of an hour; the gallery is rebuilt and committed for every release.
 
 ## Adding a theme

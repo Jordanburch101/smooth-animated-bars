@@ -22,7 +22,7 @@ for players; `docs/DEVELOPMENT.md` covers the layout and tools; this file holds 
 - **Visual changes:** render a preview (`tools/harness/preview.py`) and look at it. Rebuild the gallery
   (`tools/harness/gallery.py`) when the liquid's look changes, and look at it before committing.
 - **Gallery:** `branding/gallery/` holds the README's images: animated WebP for each scenario (`hero`,
-  `mage`, `rogue`) and PNG stills (`frames.png`, `themes.png`), at full quality (`K = 3.0`, 20 fps). No GIFs.
+  `mage`, `rogue`, `warlock` with the DoT marker) and PNG stills (`frames.png`, `themes.png`), at full quality (`K = 3.0`, 20 fps). No GIFs.
   A full run takes about a quarter of an hour, so run it in the background.
 - **Frame art:** `branding/art/` is Forever's own unit frame art, captured in game with `/sab capture` and
   cut out by `tools/capture_art.py`. It is only for the gallery and is never packaged. The layout numbers
@@ -71,6 +71,17 @@ Facts found while building this, which the code relies on and which are not obvi
 - **Health-loss animation:** after damage the player frame shows `healthBar.AnimatedLossBar`, a red bar
   behind the game's fill. Once shown, it draws over anything else at that frame level, so its texture is
   kept transparent while the liquid shows (`Bars.lua`, `HideGameFill`).
+- **DoT tracking** (`Dots.lua`, ported from DoesItDie, MIT; keep its licence notice in the file): the combat
+  log is closed to addons (registering `COMBAT_LOG_EVENT_UNFILTERED` shows a "blocked" popup). `UNIT_COMBAT`
+  still fires on the target, focus and nameplates with plain actions (WOUND, PARRY, DODGE...), but its damage
+  amounts are secret: a whole session of a warrior's Rends in DoesItDie's saved log had not one readable hit.
+  So no tick is ever seen, DoTs run on their tooltip numbers, and a missing tick only counts on a mob whose
+  hits have shown readable amounts. The player's `UNIT_SPELLCAST_*` events and spell descriptions are readable. DoesItDie reports (not verified here) that
+  creature GUIDs are secret in instances, so mobs there are keyed by their nameplate. The
+  marker and kill icon (`Marker.lua`) leave every comparison with health to StatusBars, as the liquid does.
+  The marker is a second liquid drawn 8 sublevels under the health liquid (`Liquid:SetSublevelOffset`), and
+  the health liquid's front is moved onto where the health will end (`Bars.Front`). The kill icon is the
+  atlas `UI-HUD-UnitFrame-Target-HighLevelTarget_Icon` (Forever's `TargetFrame.xml`).
 - **Toc changes** (a new file) need a full game restart; `/reload` does not pick them up.
 - **Capture:** `/sab capture` uses `Screenshot()` and the `screenshotFormat` CVar (TGA, put back after).
   The screenshot is the full render resolution (an ultrawide 3440x1440 here), and the red "?" target

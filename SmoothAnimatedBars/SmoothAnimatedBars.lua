@@ -22,6 +22,9 @@ local DEFAULTS = {
     sparkles  = true,
     ambient   = true,
     lightning = true,
+    -- The DoT marker on the target's health bar (Marker.lua), offered by the setup wizard
+    dots        = false,
+    dotKillIcon = true,
 }
 
 local db
@@ -51,10 +54,15 @@ end
 local SETTING_APPLY = {
     healthColor = function() ns.Bars.ApplyColors() end,
     powerColor  = function() ns.Bars.ApplyColors() end,
+    dots        = function() ns.Marker.Apply() end,
+    dotKillIcon = function() ns.Marker.Apply() end,
 }
 for _, key in ipairs(BAR_KEYS) do SETTING_APPLY[key] = function() ApplyBars(true) end end
 for _, key in ipairs({ "waves", "swirl", "bubbles", "sparkles", "ambient", "lightning" }) do
-    SETTING_APPLY[key] = function() ns.Bars.ApplyOptions() end
+    SETTING_APPLY[key] = function()
+        ns.Bars.ApplyOptions()
+        ns.Marker.ApplyOptions()
+    end
 end
 
 function Core.OnSettingChanged(key)
@@ -97,6 +105,7 @@ events:SetScript("OnEvent", function(self, event, arg1, arg2)
         if db.healthColor ~= "game" and not ns.Themes.list[db.healthColor] then db.healthColor = "game" end
         if db.powerColor ~= "game" and not ns.Themes.list[db.powerColor] then db.powerColor = "game" end
         Core.db = db
+        ns.Dots.Load(db)
         ns.Options.Register(db, DEFAULTS)
         self:UnregisterEvent("ADDON_LOADED")
 
@@ -104,6 +113,7 @@ events:SetScript("OnEvent", function(self, event, arg1, arg2)
         local isLogin, isReload = arg1, arg2
         ApplyBars(true)
         ns.Bars.ApplyColors() -- class and faction themes know the player now
+        ns.Marker.Apply()
         -- The setup wizard, once per account, a moment after the first login with the addon.
         if (isLogin or isReload) and not db.setupDone then C_Timer.After(2, ns.Wizard.OpenWhenReady) end
 
@@ -127,6 +137,7 @@ local HELP = {
     "/sab on | off - liquid in all four bars, or none",
     "/sab setup - open the setup wizard",
     "/sab debug - what each bar is doing",
+    "/sab dots - your DoTs on the target, and what the tracking saw lately",
 }
 
 SLASH_SMOOTHANIMATEDBARS1 = "/sab"
@@ -145,6 +156,9 @@ SlashCmdList.SMOOTHANIMATEDBARS = function(input)
         ns.Wizard.Open()
     elseif cmd == "debug" then
         for _, line in ipairs(ns.Bars.Debug()) do Core.Print(line) end
+    elseif cmd == "dots" then
+        for _, line in ipairs(ns.Marker.Debug()) do Core.Print(line) end
+        for _, line in ipairs(ns.Dots.Debug(15)) do Core.Print(line) end
     else
         for _, line in ipairs(HELP) do Core.Print(line) end
     end

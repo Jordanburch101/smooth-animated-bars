@@ -148,10 +148,12 @@ function Liquid.New(parent, width, height, theme, opts)
     self.parent, self.width, self.height, self.opts = parent, width, height, opts
     self.rowH = height / CFG.rows
     self.textures = {} -- every texture made here, for HideAll and masks
+    self.drawLayers = {} -- texture -> { layer, sublevel } as made, for SetSublevelOffset
 
     local function Tex(layer, sublevel, file, blend, wrap)
         local t = parent:CreateTexture(nil, layer, nil, sublevel)
         self.textures[#self.textures + 1] = t
+        self.drawLayers[t] = { layer, sublevel }
         if not file then
             t:SetColorTexture(1, 1, 1, 1) -- solid; tinted with vertex colours and gradients
         elseif wrap then
@@ -368,6 +370,17 @@ function Liquid:SetSize(width, height)
     end
     self:LayoutTips()
     self.glow:SetSize(36, height * 1.7)
+end
+
+-- Moves every texture this many sublevels down (negative) or up within its draw layer, so a second liquid
+-- at the same frame level can lie under or over another. 0 puts them back as made.
+function Liquid:SetSublevelOffset(offset)
+    if offset == (self.offset or 0) then return end
+    self.offset = offset
+    for _, t in ipairs(self.textures) do
+        local d = self.drawLayers[t]
+        t:SetDrawLayer(d[1], max(-8, min(7, d[2] + offset)))
+    end
 end
 
 function Liquid:SetOptions(opts)

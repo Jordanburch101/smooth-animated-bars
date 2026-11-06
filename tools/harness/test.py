@@ -25,11 +25,12 @@ def check(ok, what):
 
 # Helpers in Lua: our frames on a game bar, and what the liquid on it is showing.
 HELPERS = """
+    -- The liquid's frames on a bar. It builds them before the DoT marker builds its own there.
     function __ours(bar)
         local proxy, clip, mover
         for _, f in ipairs(__frames) do
             if f.parent == bar then
-                if f.SetValue then proxy = f else clip = f end
+                if f.SetValue then proxy = proxy or f else clip = clip or f end
             end
         end
         for _, f in ipairs(__frames) do
@@ -187,7 +188,8 @@ rows = lua.eval("__settingsRows()")
 rows = [rows[i] for i in range(1, len(rows) + 1)]
 keys = [r.key for r in rows if r.key]
 check(keys == ["playerHealth", "playerPower", "targetHealth", "targetPower", "healthColor", "powerColor",
-               "waves", "swirl", "bubbles", "sparkles", "ambient", "lightning"], f"settings page rows: {keys}")
+               "waves", "swirl", "bubbles", "sparkles", "ambient", "lightning", "dots", "dotKillIcon"],
+      f"settings page rows: {keys}")
 check(not lua.eval("__sharedListTainted"), "nothing added to the game's shared settings list (Forever: Social blocked)")
 options = [o for o in rows if o.key == "healthColor"][0].options
 labels = [options[i].label for i in range(1, len(options) + 1)]
@@ -269,9 +271,9 @@ wz.execute("""
     function __press(name) local b = __ns.Wizard.State().ui[name]; b.scripts.OnClick(b) end
 """)
 check(wz.eval("__card('bars', 'all').radio.checked") and not wz.eval("__card('bars', 'mine').radio.checked")
-      and wz.eval("__ns.Wizard.State().ui.step.text") == "Step 1 of 3"
+      and wz.eval("__ns.Wizard.State().ui.step.text") == "Step 1 of 4"
       and not wz.eval("__ns.Wizard.State().ui.back:IsEnabled()"),
-      "starts from the current settings: all four bars picked, step 1 of 3, no Back")
+      "starts from the current settings: all four bars picked, step 1 of 4, no Back")
 wz.execute("__pick('bars', 'mine')")
 run(wz, 0.2)
 check(wz.eval("SmoothAnimatedBarsDB.targetHealth") is False
@@ -288,10 +290,19 @@ check(wz.eval("__card('powerColor', 'game').radio.checked") and not wz.eval("__c
       "each row shows its own pick")
 wz.execute("__press('next'); __pick('effects', 'still')")
 check(wz.eval("SmoothAnimatedBarsDB.waves") is False and wz.eval("SmoothAnimatedBarsDB.sparkles") is False
-      and wz.eval("__ns.Wizard.State().ui.next.text") == "Finish", "effects: Still turns them off; last step says Finish")
+      and wz.eval("__ns.Wizard.State().ui.next.text") == "Next", "effects: Still turns them off")
+wz.execute("__press('next')")
+check(wz.eval("__ns.Wizard.State().page") == "dots" and wz.eval("__card('dots', 'off').radio.checked")
+      and wz.eval("__ns.Wizard.State().ui.next.text") == "Finish",
+      "DoTs: the last step, Off picked as the setting starts, says Finish")
+wz.execute("__pick('dots', 'marker')")
+check(wz.eval("SmoothAnimatedBarsDB.dots") is True and wz.eval("SmoothAnimatedBarsDB.dotKillIcon") is False
+      and wz.eval("__ns.Dots.IsEnabled()") and wz.eval("__card('dots', 'marker').radio.checked"),
+      "Just the marker: tracking on at once, no skull")
 wz.execute("__press('skip')")
 check(not wz.eval("SmoothAnimatedBarsSetup.shown") and wz.eval("SmoothAnimatedBarsDB.targetHealth") is True
       and wz.eval("SmoothAnimatedBarsDB.healthColor") == "game" and wz.eval("SmoothAnimatedBarsDB.waves") is True
+      and wz.eval("SmoothAnimatedBarsDB.dots") is False and not wz.eval("__ns.Dots.IsEnabled()")
       and wz.eval("SmoothAnimatedBarsDB.setupDone") is True, "Skip puts every setting back and does not ask again")
 run(wz, 0.2)
 check(wz.eval("(select(2, __liquid(TargetFrame.healthbar)))") > 0, "and the bars follow")
@@ -300,10 +311,11 @@ run(wz, 3)
 check(not wz.eval("SmoothAnimatedBarsSetup.shown"), "not opened again on the next login")
 wz.execute("SlashCmdList.SMOOTHANIMATEDBARS('setup')")
 wz.execute("__pick('bars', 'health'); __press('next'); __pick('powerColor', 'class'); __press('next');"
-           " __pick('effects', 'gentle'); __press('next')")
+           " __pick('effects', 'gentle'); __press('next'); __pick('dots', 'both'); __press('next')")
 check(not wz.eval("SmoothAnimatedBarsSetup.shown") and wz.eval("SmoothAnimatedBarsDB.playerPower") is False
       and wz.eval("SmoothAnimatedBarsDB.powerColor") == "class" and wz.eval("SmoothAnimatedBarsDB.swirl") is True
-      and wz.eval("SmoothAnimatedBarsDB.bubbles") is False and any("All set" in m for m in chat(wz)),
+      and wz.eval("SmoothAnimatedBarsDB.bubbles") is False and wz.eval("SmoothAnimatedBarsDB.dots") is True
+      and wz.eval("SmoothAnimatedBarsDB.dotKillIcon") is True and any("All set" in m for m in chat(wz)),
       "/sab setup, then Finish keeps the choices")
 wz.execute("SlashCmdList.SMOOTHANIMATEDBARS('setup'); __pick('effects', 'full'); SmoothAnimatedBarsSetup:Hide()")
 check(wz.eval("SmoothAnimatedBarsDB.bubbles") is False, "closing the window (Escape) is Skip")
@@ -352,9 +364,26 @@ pv.execute("__pick('bars', 'all'); __ns.Wizard.State().ui.next.scripts.OnClick(_
 run(pv, 0.2)
 r, g, b = pv.eval("__tint(__pv('target', 'health'))")
 check(b > 0.8 and r < 0.8, f"Frost on health shows on the target preview too ({r:.2f}, {g:.2f}, {b:.2f})")
+pv.execute("__settings.dots:SetValue(true); function __pm() return __ns.Wizard.State().ui.preview.marker end")
+for _ in range(600):
+    run(pv, 1 / 60)
+    if pv.eval("__pm().value") == 58:
+        break
+run(pv, 0.2)
+check(pv.eval("__pm().clip.shown") and pv.eval("__pm().value") == 58 and pv.eval("__pm().killBar.max") == 53
+      and pv.eval("__pm().killBar.value") == 58 and pv.eval("__pm().window.shown"),
+      "DoTs on: the target preview plays two DoTs that will kill it, marker and skull showing")
+check(pv.eval("__pm().window.points.CENTER.rel == __ns.Wizard.State().ui.preview.target.portrait"),
+      "the skull sits on the preview's portrait")
+for _ in range(300):
+    run(pv, 1 / 60)
+    if not pv.eval("__pm().clip.shown"):
+        break
+check(not pv.eval("__pm().clip.shown") and not pv.eval("__pm().window.shown"), "and both go when the target dies")
 pv.execute("SmoothAnimatedBarsSetup:Hide()")
 run(pv, 0.5)
-check(not pv.eval("SmoothAnimatedBarsSetup.shown") and pv.eval("SmoothAnimatedBarsDB.healthColor") == "game",
+check(not pv.eval("SmoothAnimatedBarsSetup.shown") and pv.eval("SmoothAnimatedBarsDB.healthColor") == "game"
+      and pv.eval("SmoothAnimatedBarsDB.dots") is False,
       "closing the wizard: previews hidden with it, settings back")
 check(not any("Error in" in m for m in chat(pv)), "no errors")
 
@@ -366,6 +395,169 @@ pm.execute("function __pv(which, kind) return __ns.Wizard.State().ui.preview[whi
 check(pm.eval("SmoothAnimatedBarsSetup.shown") and pm.eval("(select(2, __liquid(__pv('player', 'health'))))") > 0
       and pm.eval("__pv('player', 'health').HealthBarMask") is None and not any("Error in" in m for m in chat(pm)),
       "a missing atlas leaves that piece out: no mask, liquid uncut, no error")
+
+print("== DoT marker")
+dm = session()
+run(dm, 0.5)
+check(dm.eval("SmoothAnimatedBarsDB.dots") is False and not dm.eval("__ns.Dots.IsEnabled()")
+      and dm.eval("(__ns.Marker.State())") is None, "off by default: no tracking, no marker built")
+LISTENING = """(function()
+    for _, f in ipairs(__frames) do
+        for e in pairs(f.events) do
+            if e:find('^UNIT_SPELLCAST') or e == 'UNIT_COMBAT' then return true end
+        end
+    end
+    return false
+end)()"""
+check(not dm.eval(LISTENING), "and no combat or cast events listened to")
+dm.execute("__settings.dots:SetValue(true)")
+check(dm.eval("__ns.Dots.IsEnabled()") and dm.eval("__ns.Marker.State() ~= nil") and dm.eval(LISTENING),
+      "on: tracking, and a marker on the target's health bar")
+dm.execute("""
+    __spells[172] = { 'Corruption', 'Corrupts the target, causing 90 Shadow damage over 18 sec.' }
+    __spells[348] = { 'Immolate', 'Burns the enemy for 11 Fire damage and then an additional 20 Fire damage over 15 sec.' }
+    __spells[1752] = { 'Sinister Strike', 'An instant strike that causes 3 damage in addition to your normal weapon damage. Awards 1 combo point.' }
+    function __m() return (__ns.Marker.State()) end
+    function __total() return (__ns.Dots.Target()) end
+    function __cast(id, guid)
+        __fire('UNIT_SPELLCAST_SENT', 'player', __target and __target.name or '', guid, id)
+        __fire('UNIT_SPELLCAST_SUCCEEDED', 'player', guid, id)
+    end
+    __target = { guid = 'Creature-0-1-2-3-299-0001', name = 'Mottled Boar' }
+    __fire('PLAYER_TARGET_CHANGED')
+""")
+run(dm, 0.3)
+check(not dm.eval("__m().clip.shown") and not dm.eval("__m().window.shown"), "a target without DoTs: nothing shown")
+dm.execute("__cast(1752, 'Cast-0')")
+run(dm, 0.3)
+check(dm.eval("__total()") == 0 and not dm.eval("__m().clip.shown"), "a strike that is not a DoT: nothing shown")
+dm.execute("__cast(172, 'Cast-1')")
+run(dm, 0.15)
+check(dm.eval("__m().liquid.energy") > 0.3, "a DoT landing splashes the DoT liquid")
+run(dm, 1)
+check(dm.eval("__total()") == 90 and dm.eval("__m().clip.shown") and dm.eval("__m().themeKey") == "void",
+      "Corruption: 90 damage to come, shown as a Void liquid (Shadow)")
+check(dm.eval("__m().span.max == TargetFrame.healthbar.max") and dm.eval("__m().span.value") == 90
+      and dm.eval("__m().span.reverse"),
+      "the span takes the health bar's secret range, its value the DoT's damage, filling back from the front")
+check(dm.eval("__m().span.points.TOPRIGHT.rel == __m().proxy.fill")
+      and dm.eval("__m().proxy.value == TargetFrame.healthbar.value")
+      and dm.eval("__m().clip.clipsChildren") and dm.eval("__m().clip.parent == TargetFrame.healthbar"),
+      "on the front of a hidden bar fed the health bar's secret value, clipped from the bar's left edge")
+check(dm.eval("__m().mover.points.TOPRIGHT.rel == __m().proxy.fill") and dm.eval("__m().mover.w") == 124
+      and dm.eval("__m().pool.clipsChildren") and dm.eval("__m().pool.points.TOPLEFT.rel == __m().spanFill")
+      and dm.eval("__m().pool.points.TOPLEFT.x") == -6,
+      "the DoT liquid hangs on the health's edge, cut a little under where the health will end")
+check(dm.eval("""(function()
+    local _, _, green = __ours(TargetFrame.healthbar)
+    local a = green.points.TOPRIGHT
+    return a.rel == __m().spanFill and a.relPoint == 'TOPLEFT'
+end)()"""), "the health liquid's front moves back to where the health will end")
+check(dm.eval("""(function()
+    local m, mask = __m(), TargetFrame.TargetFrameContent.TargetFrameContentMain.HealthBarsContainer.HealthBarMask
+    local masked, free, top = 0, 0, -99
+    for _, t in ipairs(m.liquid.textures) do
+        if t.masks and t.masks[1] == mask then masked = masked + 1 else free = free + 1 end
+        if t.layer == 'ARTWORK' and t.sub > top then top = t.sub end
+    end
+    return masked > 0 and free == 64 and top < 3 and m.clip.useParentLevel and m.pool.useParentLevel and m.mover.useParentLevel
+end)()"""), "cut by the bar's mask, motes free, at the bar's level, under the health liquid (sublevels below 3)")
+check(dm.eval("issecretvalue(__m().killBar.max)") and dm.eval("__m().killBar.value") == 90 and dm.eval("__m().window.shown")
+      and dm.eval("__m().window.points.CENTER.rel == TargetFrame.TargetFrameContainer.Portrait")
+      and dm.eval("__m().window.clipsChildren"),
+      "the kill icon's bar takes the target's secret health against the damage, clipped on the portrait")
+check(dm.eval("__m().icon.atlas") == "UI-HUD-UnitFrame-Target-HighLevelTarget_Icon" and dm.eval("__m().icon.h") == 30,
+      "the kill icon is the game's own skull, by atlas")
+check(dm.eval("__m().window.level") == dm.eval("TargetFrame:GetFrameLevel()") + 20, "the kill icon just above the target frame")
+run(dm, 1.85)  # Corruption's first tick, 3 s after the cast
+before = dm.eval("__m().liquid.energy")
+dm.execute("__fire('UNIT_COMBAT', 'target', 'WOUND', '', 16, 32)")
+run(dm, 0.3)
+check(dm.eval("__total()") == 80 and dm.eval("SmoothAnimatedBarsDB.dotTicks[172]") == 16,
+      f"a tick of 16 is learned: 5 ticks left, 80 to come ({dm.eval('__total()')})")
+check(dm.eval("__m().liquid.energy") > before, "and the tick ripples the DoT liquid")
+dm.execute("__fire('UNIT_COMBAT', 'target', 'WOUND', '', 120, 1)")
+run(dm, 0.3)
+check(dm.eval("__total()") == 80, "a melee hit is not taken for a tick")
+dm.execute("__cast(348, 'Cast-2')")
+run(dm, 1)
+check(dm.eval("__total()") == 100 and dm.eval("__m().span.value") == 100 and dm.eval("__m().themeKey") == "void",
+      "Immolate's 20 more: the liquid grows, still Void while Corruption has the most to deal")
+dm.execute("__settings.targetHealth:SetValue(false)")
+run(dm, 0.3)
+check(dm.eval("__m().liquid.body.sub") == 3 and dm.eval("__m().pool.points.TOPLEFT.x") == 0 and dm.eval("__m().clip.shown"),
+      "health liquid off: the DoT liquid lies over the game's fill instead, cut where the health will end")
+dm.execute("__settings.targetHealth:SetValue(true)")
+run(dm, 0.3)
+check(dm.eval("__m().liquid.body.sub") == -5, "and goes back under the liquid when it is on again")
+dm.execute("__settings.dotKillIcon:SetValue(false)")
+run(dm, 0.3)
+check(not dm.eval("__m().window.shown") and dm.eval("__m().clip.shown"), "Kill Icon off: the marker without the skull")
+dm.execute("__target = nil; __fire('PLAYER_TARGET_CHANGED')")
+run(dm, 0.3)
+check(not dm.eval("__m().clip.shown"), "no target: marker hidden")
+dm.execute("__target = { guid = 'Creature-0-1-2-3-299-0001', name = 'Mottled Boar' }; __fire('PLAYER_TARGET_CHANGED')")
+run(dm, 0.15)
+grow = dm.eval("__m().span.value")
+run(dm, 1)
+check(dm.eval("__m().clip.shown") and grow < dm.eval("__m().span.value") and abs(dm.eval("__m().span.value") - dm.eval("__total()")) < 1,
+      f"back on the boar: its DoTs again, the DoT liquid growing in ({grow:.0f} then {dm.eval('__total()')})")
+dm.execute("__target.dead = true")
+run(dm, 0.3)
+check(not dm.eval("__m().clip.shown"), "a dead target: marker hidden")
+# Rend, as seen in game: Forever keeps hit amounts secret, so no tick is ever seen. White swings land and are
+# parried around it.
+dm.execute("""
+    __spells[6546] = { 'Rend', 'Wounds the target causing them to bleed for 28 damage over 12 sec.' }
+    __target = { guid = 'Creature-0-1-2-3-524-0002', name = 'Rockhide Boar' }
+    __fire('PLAYER_TARGET_CHANGED')
+    __cast(6546, 'Cast-3')
+""")
+run(dm, 0.3)
+dm.execute("__fire('UNIT_COMBAT', 'target', 'PARRY', '', 0, 1)")
+for _ in range(3):
+    run(dm, 2.2)
+    dm.execute("__fire('UNIT_COMBAT', 'target', 'WOUND', '', __secret(), 1)")
+run(dm, 0.5)  # 7.4 s after the cast: two ticks left
+check(dm.eval("__total()") == 14 and dm.eval("__m().clip.shown"),
+      f"Rend with hit amounts secret: no tick is seen, but it is not dropped, and runs down on time ({dm.eval('__total()')})")
+check(any("Hit amounts are secret" in m for m in dm.eval("__ns.Dots.Debug(40)").values()),
+      "and the tracking says why")
+run(dm, 5.5)  # its last tick, due 12 s after the cast, has a moment to land
+check(dm.eval("__total()") == 0 and not dm.eval("__m().clip.shown"), "gone once its 12 seconds are up")
+dm.execute("__cast(6546, 'Cast-4'); __fire('UNIT_COMBAT', 'target', 'DODGE', '', 0, 1)")
+run(dm, 0.3)
+check(dm.eval("__total()") == 0, "a Rend dodged as it is cast is dropped")
+dm.execute("""
+    __target = { guid = 'Creature-0-1-2-3-524-0003', name = 'Rockhide Boar' }
+    __fire('PLAYER_TARGET_CHANGED')
+    __cast(172, 'Cast-5')
+""")
+for _ in range(4):
+    run(dm, 1.6)
+    dm.execute("__fire('UNIT_COMBAT', 'target', 'WOUND', '', 40, 1)")
+run(dm, 0.5)
+check(dm.eval("__total()") == 0,
+      "with hit amounts readable, a DoT whose ticks never come is still dropped (resisted or immune)")
+dm.execute("__target.dead = true")
+run(dm, 0.2)
+dm.execute("SlashCmdList.SMOOTHANIMATEDBARS('dots')")
+check(any(m.startswith("|cff40d060Smooth Animated Bars|r DoT marker: on") for m in chat(dm))
+      and any("CAST Corruption" in m for m in chat(dm)), "/sab dots reports the marker and the tracking")
+check(not any("Error in" in m or "Error " in m for m in chat(dm)), "no errors (the target's health stayed secret)")
+dm.execute("__settings.dots:SetValue(false)")
+run(dm, 0.2)
+check(not dm.eval("__ns.Dots.IsEnabled()") and not dm.eval(LISTENING) and not dm.eval("__m().clip.shown"),
+      "off again: tracking stops and listens to nothing")
+check(dm.eval("(__ns.Dots.parseDot('Transfers 15 health from the target to the caster every 3 sec. Lasts 30 sec.'))") == 150
+      and dm.eval("(__ns.Dots.parseDot('Heals the target of 830 damage over 15 sec.'))") is None
+      and dm.eval("(__ns.Dots.parseDot('Finishing move. 1 point : 24 damage over 12 sec. 5 points: 120 damage over 12 sec.', 5))") == 120,
+      "spell text: drains, heals over time and finishers")
+
+dd = session("{ setupDone = true, dots = true }", "__addons.DoesItDie = true")
+run(dd, 0.3)
+check(not dd.eval("__ns.Dots.IsEnabled()") and any("DoesItDie is loaded" in m for m in chat(dd)),
+      "with DoesItDie loaded the marker stays off and says why")
 
 print("== /sab capture (gallery art)")
 cap = session()
@@ -395,7 +587,7 @@ cap.execute(f"""
 """)
 check(cap.eval(f"{grid}.shown") and cap.eval("__gridBg()") == 0 and cap.eval("__cvars.screenshotFormat") == "tga",
       "the grid shows on black, screenshots switched to TGA")
-check(cap.eval("__cells()") == 11 and cap.eval("__marks()") == 2, "eleven pieces in cells, two red markers")
+check(cap.eval("__cells()") == 12 and cap.eval("__marks()") == 2, "twelve pieces in cells, two red markers")
 check(cap.eval(f"""(function()
     local scale = {grid}.scale
     return scale > 0 and 1030 * scale <= UIParent.w and 420 * scale <= UIParent.h

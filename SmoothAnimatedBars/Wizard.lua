@@ -1,4 +1,5 @@
--- First-time setup in three short steps: which bars, their colours and how lively they are. Each pick
+-- First-time setup in four short steps: which bars, their colours, how lively they are and whether to mark
+-- the player's DoTs on the target (Marker.lua). Each pick
 -- is applied at once, on the real frames and on the preview player and target frames at the top of
 -- the window (Preview.lua); Skip (or closing the window) puts the settings back as they were, Finish
 -- keeps them. Opens once, on the first login with the addon,
@@ -15,9 +16,6 @@ ns.Wizard = Wizard
 local W, H = 620, 430
 local GOLD = { 1, 0.82, 0 }
 local EDGE = { 0.32, 0.30, 0.36 }
-
-local BAR_KEYS = { "playerHealth", "playerPower", "targetHealth", "targetPower" }
-local EFFECT_KEYS = { "waves", "swirl", "bubbles", "sparkles", "ambient", "lightning" }
 
 local BARS = {
     { key = "all", label = "Player and target", desc = "Health and power on your frame and your target's.",
@@ -37,7 +35,15 @@ local EFFECTS = {
     { key = "still", label = "Still", desc = "A plain liquid colour that eases to the bar's value.",
       set = { waves = false, swirl = false, bubbles = false, sparkles = false, ambient = false, lightning = false } },
 }
-local PAGES = { "bars", "colors", "effects" }
+local DOTS = {
+    { key = "both", label = "Marker and skull", desc = "What your DoTs will still deal, on the target's health, and a skull when they will kill it.",
+      set = { dots = true, dotKillIcon = true } },
+    { key = "marker", label = "Just the marker", desc = "What your DoTs will still deal, on the target's health. No skull.",
+      set = { dots = true, dotKillIcon = false } },
+    { key = "off", label = "Off", desc = "For classes without damage over time.",
+      set = { dots = false } },
+}
+local PAGES = { "bars", "colors", "effects", "dots" }
 
 local frame, ui, page, saved, closing
 
@@ -45,12 +51,12 @@ local function ColorName(key)
     return key == "game" and "Game Colour" or ns.Themes.list[key].name
 end
 
--- Which of a list's sets the settings match now, if any.
-local function Matching(list, keys)
+-- Which of a list's sets the settings match now, if any. A set only names the settings it decides.
+local function Matching(list)
     for _, item in ipairs(list) do
         local match = true
-        for _, k in ipairs(keys) do
-            if item.set[k] ~= ns.Core.Get(k) then match = false end
+        for k, v in pairs(item.set) do
+            if v ~= ns.Core.Get(k) then match = false end
         end
         if match then return item.key end
     end
@@ -179,6 +185,11 @@ function BUILD.effects(p)
     ui.cards.effects = Cards(p, EFFECTS, -46)
 end
 
+function BUILD.dots(p)
+    Heading(p, "Show your DoTs?", "Marks the health your damage over time will still burn away. Watch the target above.")
+    ui.cards.dots = Cards(p, DOTS, -46)
+end
+
 --------------------------------------------------------------------------------
 -- The window
 --------------------------------------------------------------------------------
@@ -191,7 +202,7 @@ end
 
 function Refresh()
     local picked = {
-        bars = Matching(BARS, BAR_KEYS), effects = Matching(EFFECTS, EFFECT_KEYS),
+        bars = Matching(BARS), effects = Matching(EFFECTS), dots = Matching(DOTS),
         healthColor = ns.Core.Get("healthColor"), powerColor = ns.Core.Get("powerColor"),
     }
     for field, cards in pairs(ui.cards) do

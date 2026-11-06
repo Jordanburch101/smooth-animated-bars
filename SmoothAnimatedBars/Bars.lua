@@ -393,6 +393,52 @@ function Bars.Stir(b)
     if b.live then Stir(b) end
 end
 
+-- The state of the liquid on a bar, the game's or a preview's, if it has one.
+local function StateFor(bar)
+    for _, b in pairs(bars) do
+        if b.bar == bar then return b end
+    end
+    for _, b in ipairs(previews) do
+        if b.bar == bar then return b end
+    end
+end
+
+-- Whether a bar is showing the liquid (and not the game's own fill).
+function Bars.IsLive(bar)
+    local b = StateFor(bar)
+    return b and b.live and not b.err or false
+end
+
+-- Where a bar's liquid ends: on the left edge of region (the DoT marker's span, Marker.lua), or with nil
+-- back on the bar's own fill edge.
+function Bars.Front(bar, region)
+    local b = StateFor(bar)
+    if not b or b.front == region then return end
+    b.front = region
+    local mover = b.mover
+    mover:ClearAllPoints()
+    if region then
+        mover:SetPoint("TOPRIGHT", region, "TOPLEFT")
+        mover:SetPoint("BOTTOMRIGHT", region, "BOTTOMLEFT")
+    else
+        local fill = b.proxy:GetStatusBarTexture()
+        mover:SetPoint("TOPRIGHT", fill, "TOPRIGHT")
+        mover:SetPoint("BOTTOMRIGHT", fill, "BOTTOMRIGHT")
+    end
+    mover:SetWidth(b.width)
+end
+
+-- Stir a bar's liquid, as a change to its value does.
+function Bars.StirBar(bar)
+    local b = StateFor(bar)
+    if b and b.live then Stir(b) end
+end
+
+-- A theme by key, with its movement scaled down for the unit frames' small bars.
+function Bars.Theme(key)
+    return ThemeFor(nil, key)
+end
+
 -- After a colour choice changes, or once the player is known (class and faction themes).
 function Bars.ApplyColors()
     Each(function(b) ApplyColor(b, true) end)

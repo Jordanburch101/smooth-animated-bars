@@ -57,6 +57,18 @@ local SCRIPT = {
     { 7.2, 1.00, 0.10, 1.00, 0.90 },
 }
 local LOOP = 8.4
+-- The target's DoTs at each row of SCRIPT, in points of its 210 health: { name, damage still to deal }. By the
+-- fifth row they will finish it, and the skull shows.
+local DOTS = {
+    {},
+    { { "Corruption", 54 } },
+    { { "Corruption", 48 }, { "Immolate", 40 } },
+    { { "Corruption", 42 }, { "Immolate", 34 } },
+    { { "Corruption", 30 }, { "Immolate", 28 } },
+    { { "Corruption", 30 }, { "Immolate", 28 } },
+    {},
+    {},
+}
 
 local function Atlas(tex, name, useSize)
     return tex.SetAtlas and tex:SetAtlas(name, useSize) and true or false
@@ -184,7 +196,7 @@ local function Frame(parent, which)
     top:SetAllPoints()
     top:SetFrameLevel(f:GetFrameLevel() + 10)
 
-    Preview.Portrait(f, which)
+    f.portrait = Preview.Portrait(f, which)
     Preview.Art(f, which)
     if which == "target" then Preview.Banner(f) end
 
@@ -228,6 +240,22 @@ function Preview.Create(parent)
     local player, target = Frame(holder, "player"), Frame(holder, "target")
     player:SetPoint("LEFT")
     target:SetPoint("RIGHT")
+
+    -- The DoT marker on the target, shown while the dots setting is on.
+    local dots = {}
+    local marker = ns.Marker.Preview({
+        bar = target.health, mask = target.health.HealthBarMask, iconHost = target, portrait = target.portrait,
+        visible = function() return true end,
+        source = function()
+            local list, total = {}, 0
+            for i, dot in ipairs(dots) do
+                list[i] = { name = dot[1], damage = dot[2] }
+                total = total + dot[2]
+            end
+            return target.health.max, target.health.shownValue, total, list
+        end,
+    })
+
     local t, step = 0, 0
     local function Play(i)
         local row = SCRIPT[i]
@@ -235,6 +263,9 @@ function Preview.Create(parent)
         SetFraction(player.power, row[3])
         SetFraction(target.health, row[4])
         SetFraction(target.power, row[5])
+        local landed = #DOTS[i] > #dots
+        dots = DOTS[i]
+        if landed then ns.Marker.Landed(marker) end
     end
     Play(1)
     holder:SetScript("OnUpdate", function(_, elapsed)
@@ -245,6 +276,6 @@ function Preview.Create(parent)
             Play(step)
         end
     end)
-    holder.player, holder.target = player, target
+    holder.player, holder.target, holder.marker = player, target, marker
     return holder
 end
