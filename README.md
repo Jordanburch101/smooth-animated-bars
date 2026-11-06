@@ -16,6 +16,10 @@ bubbles, sparkles, lightning and themes.
 - Each bar and each effect can be switched off on its own.
 - A three-step setup on the first login shows each choice on your own frame as you pick it.
 
+![A mage's mana going in big bites with each Fireball, the kobold's health with it](branding/gallery/mage.gif)
+
+![A rogue's energy ticking back and spent on Sinister Strike and Eviscerate](branding/gallery/rogue.gif)
+
 ![The player frame's health in eight colours: Game Colour, Class Color, Fire, Frost, Arcane, Fel, Cosmic and Void](branding/gallery/themes.png)
 
 ## Commands
@@ -72,7 +76,10 @@ tools/venv/Scripts/python tools/capture_art.py                                  
 cd tools/harness; ../venv/Scripts/python gallery.py ../../SmoothAnimatedBars    # branding/gallery
 ```
 
-Capture again only if the game's frame art changes.
+Capture again only if the game's frame art changes. The mage and rogue GIFs use those characters'
+portraits: capture on each, then `capture_art.py --portrait mage --pair 2` and `--portrait rogue --pair 1`
+(the newest pair is the last capture). `gallery.py` takes scenario names to render only some:
+`hero`, `mage`, `rogue`, `themes`.
 
 ### Adding a theme
 

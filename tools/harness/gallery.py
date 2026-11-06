@@ -1,13 +1,15 @@
 """Gallery images: the liquid in Forever's player and target frames, drawn on the game's own frame art.
 
-Usage: python gallery.py <addon dir> [out dir]
-Default out dir: branding/gallery. Writes hero.gif (both frames through hits, heals and power changes),
-frames.png (a still of it) and themes.png (the player frame in a few themes).
+Usage: python gallery.py <addon dir> [out dir] [scenario ...]
+Default out dir: branding/gallery. Writes a GIF per scenario (hero.gif is the warrior; mage.gif and
+rogue.gif), frames.png (a still of the warrior) and themes.png (the player frame in a few themes).
 
 The frame art comes from branding/art, which tools/capture_art.py cuts out of the screenshots /sab
-capture takes in game (Capture.lua). The liquid is the addon itself running against the mock: as in
-the client, its frame ends at the bar's fill edge (simulated here, easing as the client's smoothing
-does), the captured bar masks cut it to shape, and motes fly free within the clip frame's reach.
+capture takes in game (Capture.lua); a scenario's portrait is portrait-<scenario>.png there, captured on
+that character with --portrait, else the capturing character's. The liquid is the addon itself running
+against the mock: as in the client, its frame ends at the bar's fill edge (simulated here, easing as
+the client's smoothing does), the captured bar masks cut it to shape, and motes fly free within the
+clip frame's reach.
 """
 import json
 import math
@@ -22,6 +24,7 @@ import render
 ADDON = sys.argv[1]
 ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 OUT = sys.argv[2] if len(sys.argv) > 2 else os.path.join(ROOT, "branding", "gallery")
+ONLY = sys.argv[3:]
 ART = os.path.join(ROOT, "branding", "art")
 K = 2.0       # px per frame unit
 FPS = 15
@@ -33,19 +36,40 @@ BARS = {
     ("player", "health"): (87, 43, 124, 20), ("player", "power"): (87, 61, 124, 10),
     ("target", "health"): (21, 41, 126, 20), ("target", "power"): (17, 60, 134, 10),
 }
-NAMES = {"player": ((149, 37), "Hollywood Hootsman"), "target": ((82.5, 36), "Defias Pillager")}
+NAME_AT = {"player": (149, 37), "target": (82.5, 36)}
 BANNER = (0.8, 0.1, 0.1)  # the target's name banner, hostile
-LEVEL = "12"
-MAXES = {("player", "health"): 349, ("player", "power"): 100, ("target", "health"): 210, ("target", "power"): 350}
-
-# The wizard preview's loop (Preview.lua SCRIPT): seconds, player health and power, target health and power.
-SCRIPT = [
-    (0.0, 1.00, 0.10, 1.00, 0.90), (1.2, 0.72, 0.30, 0.80, 0.90), (2.2, 0.72, 0.30, 0.55, 0.75),
-    (3.0, 0.48, 0.55, 0.55, 0.75), (4.0, 0.48, 0.25, 0.25, 0.60), (5.0, 0.85, 0.25, 0.25, 0.60),
-    (6.0, 0.85, 0.50, 0.00, 0.60), (7.2, 1.00, 0.10, 1.00, 0.90),
-]
-LOOP = 8.4
 ORDER = [("player", "health"), ("player", "power"), ("target", "health"), ("target", "power")]
+POWER = {"MANA": 0, "RAGE": 1, "FOCUS": 2, "ENERGY": 3}
+
+# Each scenario: the player (name, level, power type), the target, bar maxima (player health and
+# power, target health and power), and a loop of { seconds, the four bars as fractions }. A new
+# target comes in at full health.
+SCENARIOS = {
+    # Rage builds as blows land and is spent on strikes.
+    "hero": dict(
+        player="Hollywood Hootsman", level="12", power="RAGE", target="Defias Pillager", target_level="12",
+        maxes=(349, 100, 210, 350), loop=8.4,
+        script=[(0.0, 1.00, 0.10, 1.00, 0.90), (1.2, 0.72, 0.30, 0.80, 0.90), (2.2, 0.72, 0.30, 0.55, 0.75),
+                (3.0, 0.48, 0.55, 0.55, 0.75), (4.0, 0.48, 0.25, 0.25, 0.60), (5.0, 0.85, 0.25, 0.25, 0.60),
+                (6.0, 0.85, 0.50, 0.00, 0.60), (7.2, 1.00, 0.10, 1.00, 0.90)]),
+    # Each Fireball takes a big bite of mana and of the target; the kobold gets one swing in.
+    "mage": dict(
+        player="Mailbox Hootsman", level="12", power="MANA", target="Kobold Geomancer", target_level="11",
+        maxes=(232, 420, 198, 320), loop=8.0,
+        script=[(0.0, 1.00, 1.00, 1.00, 1.00), (1.5, 1.00, 0.86, 0.68, 1.00), (2.4, 1.00, 0.86, 0.68, 0.88),
+                (3.0, 1.00, 0.72, 0.36, 0.88), (3.6, 0.84, 0.72, 0.36, 0.88), (4.5, 0.84, 0.58, 0.06, 0.88),
+                (5.2, 0.84, 0.52, 0.00, 0.88), (6.4, 0.84, 0.52, 1.00, 1.00), (7.0, 0.90, 0.60, 1.00, 1.00)]),
+    # Energy ticks back 20 every two seconds; Sinister Strike spends 40, Eviscerate 35.
+    "rogue": dict(
+        player="Hotdog Rouge", level="12", power="ENERGY", target="Defias Footpad", target_level="12",
+        maxes=(258, 100, 214, 280), loop=8.4,
+        script=[(0.0, 1.00, 1.00, 1.00, 0.70), (0.4, 1.00, 0.60, 0.86, 0.70), (1.2, 1.00, 0.20, 0.72, 0.70),
+                (1.6, 0.91, 0.20, 0.72, 0.70), (2.0, 0.91, 0.40, 0.72, 0.70), (2.6, 0.83, 0.40, 0.72, 0.70),
+                (4.0, 0.83, 0.60, 0.72, 0.70), (4.2, 0.83, 0.25, 0.42, 0.70), (5.0, 0.76, 0.25, 0.42, 0.70),
+                (6.0, 0.76, 0.45, 0.42, 0.70), (6.4, 0.76, 0.05, 0.00, 0.70), (7.4, 0.76, 0.05, 1.00, 0.70),
+                (8.0, 0.76, 0.25, 1.00, 0.70)]),
+}
+GIF_NAMES = {"hero": "hero.gif", "mage": "mage.gif", "rogue": "rogue.gif"}
 
 
 # ---------------------------------------------------------------------------- art
@@ -64,9 +88,9 @@ def load_art():
     if not os.path.exists(os.path.join(ART, "art.json")):
         sys.exit(f"No frame art in {ART}: run /sab capture in game, then tools/capture_art.py.")
     size = (round(FRAME_W * K), round(FRAME_H * K))
-    art = {}
-    for name in json.load(open(os.path.join(ART, "art.json"), encoding="utf-8"))["cells"]:
-        art[name] = resize_rgba(Image.open(os.path.join(ART, name + ".png")).convert("RGBA"), size)
+    names = json.load(open(os.path.join(ART, "art.json"), encoding="utf-8"))["cells"]
+    names += [f[:-4] for f in os.listdir(ART) if f.startswith("portrait-") and f.endswith(".png")]
+    art = {name: resize_rgba(Image.open(os.path.join(ART, name + ".png")).convert("RGBA"), size) for name in names}
     # Tint the banner as the game does for a hostile target.
     b = np.asarray(art["target-banner"]).astype(np.float32)
     b[..., :3] *= np.array(BANNER, np.float32)
@@ -83,14 +107,17 @@ def circle_centre(art, which):
 
 # ---------------------------------------------------------------------------- the addon
 
-def start(settings):
-    """The addon in the mock with its four bars sized as Forever's, the player on rage and the target
-    on mana; returns the session and each bar's liquid frame's global name."""
-    before = """
+def start(settings, power="RAGE"):
+    """The addon in the mock with its four bars sized as Forever's, the player on the given power type
+    and the target on mana; returns the session. Each bar's liquid frame becomes __mover_<unit>_<kind>."""
+    before = f"""
         SmoothAnimatedBarsDB.setupDone = true
         TargetFrame.healthbar.w, TargetFrame.manabar.w = 126, 134
-        UnitPowerType = function(unit) if unit == 'target' then return 0, 'MANA' end return 1, 'RAGE' end
-        for _, b in ipairs({ PlayerFrame.healthbar, PlayerFrame.manabar, TargetFrame.healthbar, TargetFrame.manabar }) do
+        UnitPowerType = function(unit)
+            if unit == 'target' then return 0, 'MANA' end
+            return {POWER[power]}, '{power}'
+        end
+        for _, b in ipairs({{ PlayerFrame.healthbar, PlayerFrame.manabar, TargetFrame.healthbar, TargetFrame.manabar }}) do
             b:SetMinMaxValues(0, __secret()); b:SetValue(__secret())
         end
     """
@@ -112,8 +139,7 @@ def start(settings):
         -- The bar masks have no art in the mock; the captured ones are applied here instead.
         for _, r in ipairs(__regions) do r.masks = nil end
     """
-    session = render.Session(ADDON, settings=settings, before_login=before, after_login=after)
-    return session
+    return render.Session(ADDON, settings=settings, before_login=before, after_login=after)
 
 
 def is_mote(r):
@@ -155,11 +181,14 @@ def text(draw, x, y, s, size, color, outline):
         draw.text((x, y), s, font=f, fill=color, anchor="mm")
 
 
-def draw_frame(session, img, art, fx, fy, which, fills, values):
+def draw_frame(session, img, art, fx, fy, which, fills, values, sc, portrait):
     """A whole frame onto img (RGB): art, liquid, then the level circle and text above them."""
     canvas = img.convert("RGBA")
-    for piece in ("portrait", "art") + (("banner",) if which == "target" else ()):
-        canvas.alpha_composite(art[f"{which}-{piece}"], (int(fx), int(fy)))
+    pieces = [portrait if which == "player" else "target-portrait", f"{which}-art"]
+    if which == "target":
+        pieces.append("target-banner")
+    for piece in pieces:
+        canvas.alpha_composite(art[piece], (int(fx), int(fy)))
     img.paste(canvas.convert("RGB"))
     for kind in ("health", "power"):
         draw_bar(session, img, art, fx, fy, which, kind, fills[(which, kind)])
@@ -167,15 +196,16 @@ def draw_frame(session, img, art, fx, fy, which, fills, values):
     canvas.alpha_composite(art[f"{which}-circle"], (int(fx), int(fy)))
     img.paste(canvas.convert("RGB"))
     draw = ImageDraw.Draw(img)
-    (nx, ny), name = NAMES[which]
-    text(draw, fx + nx * K, fy + ny * K, name, 10, (255, 209, 0), False)
+    nx, ny = NAME_AT[which]
+    text(draw, fx + nx * K, fy + ny * K, sc["player"] if which == "player" else sc["target"], 10, (255, 209, 0), False)
     cx, cy = circle_centre(art, which)
-    text(draw, fx + cx * K, fy + (cy + 0.5) * K, LEVEL, 13, (255, 255, 255), True)
+    level = sc["level"] if which == "player" else sc["target_level"]
+    text(draw, fx + cx * K, fy + (cy + 0.5) * K, level, 13, (255, 255, 255), True)
+    maxes = dict(zip(ORDER, sc["maxes"]))
     for kind in ("health", "power"):
         x, y, w, h = BARS[(which, kind)]
-        v = values[(which, kind)]
-        text(draw, fx + (x + w / 2) * K, fy + (y + h / 2) * K, f"{v} / {MAXES[(which, kind)]}", 10,
-             (255, 255, 255), True)
+        text(draw, fx + (x + w / 2) * K, fy + (y + h / 2) * K, f"{values[(which, kind)]} / {maxes[(which, kind)]}",
+             10, (255, 255, 255), True)
 
 
 # ---------------------------------------------------------------------------- scenes
@@ -191,81 +221,99 @@ def backdrop(w, h):
     return Image.fromarray(img.astype(np.uint8))
 
 
-def loop_values(t):
-    row = [r for r in SCRIPT if r[0] <= t][-1]
-    return dict(zip(ORDER, row[1:]))
+def portrait_for(art, key):
+    """The warrior is the character the frame art was captured on, so its portrait is player-portrait."""
+    name = f"portrait-{key}"
+    if name in art:
+        return name
+    if key == "hero":
+        return "player-portrait"
+    print(f"  no {name}.png yet: using the capturing character's portrait")
+    return "player-portrait"
 
 
-def hero(art):
-    """Both frames through the loop: hero.gif and a still, frames.png."""
-    session = start({})
+def scenario(art, key):
+    """Both frames through a scenario's loop, as a GIF; the warrior's also gives frames.png."""
+    sc = SCENARIOS[key]
+    session = start({}, sc["power"])
+    portrait = portrait_for(art, key)
     pad, gap = round(24 * K), round(30 * K)
     w, h = pad * 2 + gap + round(FRAME_W * K) * 2, pad * 2 + round(FRAME_H * K)
     back = backdrop(w, h)
     spots = {"player": (pad, pad), "target": (pad + gap + round(FRAME_W * K), pad)}
-    fills = dict(loop_values(0))
+    maxes = dict(zip(ORDER, sc["maxes"]))
+
+    def at(t):
+        row = [r for r in sc["script"] if r[0] <= t][-1]
+        return dict(zip(ORDER, row[1:]))
+
+    fills, shown = dict(at(0)), at(0)
     frames, still = [], None
-    shown = loop_values(0)
     t, dt = 0.0, 1 / FPS
-    while t < LOOP - 1e-9:
-        goal = loop_values(t)
-        for key in ORDER:
-            if goal[key] != shown[key]:
-                which, kind = key
+    while t < sc["loop"] - 1e-9:
+        goal = at(t)
+        for k in ORDER:
+            if goal[k] != shown[k]:
+                which, kind = k
                 event = "UNIT_HEALTH" if kind == "health" else "UNIT_POWER_UPDATE"
                 session.lua.execute(f"__fire('{event}', '{which}')")
-                if which == "target" and goal[key] > shown[key] + 0.5:  # a new target: no easing
-                    fills[key] = goal[key]
+                if which == "target" and kind == "health" and goal[k] > shown[k] + 0.5:
+                    fills[k] = goal[k]  # a new target: its bar does not ease up
         shown = goal
         session.run_until(t)
-        for key in ORDER:
-            fills[key] += (goal[key] - fills[key]) * (1 - math.exp(-8 * dt))
-        values = {key: round(goal[key] * MAXES[key]) for key in ORDER}
+        for k in ORDER:
+            fills[k] += (goal[k] - fills[k]) * (1 - math.exp(-8 * dt))
+        values = {k: round(goal[k] * maxes[k]) for k in ORDER}
         img = back.copy()
         for which, (fx, fy) in spots.items():
-            draw_frame(session, img, art, fx, fy, which, fills, values)
+            draw_frame(session, img, art, fx, fy, which, fills, values, sc, portrait)
         frames.append(img)
-        if still is None and t >= 3.3:
+        if key == "hero" and still is None and t >= 3.3:
             still = img
         t += dt
     os.makedirs(OUT, exist_ok=True)
     pal = [f.quantize(colors=255, method=Image.Quantize.MEDIANCUT, dither=Image.Dither.NONE) for f in frames]
-    pal[0].save(os.path.join(OUT, "hero.gif"), save_all=True, append_images=pal[1:], duration=round(1000 / FPS),
-                loop=0, optimize=True)
-    still.save(os.path.join(OUT, "frames.png"))
-    print("wrote hero.gif and frames.png")
+    pal[0].save(os.path.join(OUT, GIF_NAMES[key]), save_all=True, append_images=pal[1:],
+                duration=round(1000 / FPS), loop=0, optimize=True)
+    print("wrote", GIF_NAMES[key])
+    if still is not None:
+        still.save(os.path.join(OUT, "frames.png"))
+        print("wrote frames.png")
 
 
 THEMES = ["game", "class", "fire", "frost", "arcane", "fel", "cosmic", "void"]
+THEME_NAMES = {"game": "Game Colour", "class": "Class Color"}
 
 
 def themes(art):
-    """The player frame in a few health colours, mid-fight: themes.png."""
+    """The warrior's frame in a few health colours, mid-fight: themes.png."""
+    sc = SCENARIOS["hero"]
     cols, cell_w, cell_h = 2, round((FRAME_W + 20) * K), round((FRAME_H + 22) * K)
     rows = math.ceil(len(THEMES) / cols)
     pad = round(12 * K)
     sheet = backdrop(pad * 2 + cols * cell_w, pad * 2 + rows * cell_h)
     draw = ImageDraw.Draw(sheet)
+    maxes = dict(zip(ORDER, sc["maxes"]))
     for i, key in enumerate(THEMES):
-        session = start({"healthColor": key})
+        session = start({"healthColor": key}, sc["power"])
         fills = {("player", "health"): 0.68, ("player", "power"): 0.45,
                  ("target", "health"): 1, ("target", "power"): 1}
         session.run_until(2.5)
         session.lua.execute("__fire('UNIT_HEALTH', 'player'); __fire('UNIT_POWER_UPDATE', 'player')")
         session.run_until(2.8)
-        values = {k: round(v * MAXES[k]) for k, v in fills.items()}
+        values = {k: round(v * maxes[k]) for k, v in fills.items()}
         fx = pad + (i % cols) * cell_w
         fy = pad + (i // cols) * cell_h
-        draw_frame(session, sheet, art, fx, fy + 12 * K, "player", fills, values)
+        draw_frame(session, sheet, art, fx, fy + 12 * K, "player", fills, values, sc, portrait_for(art, "hero"))
         text(draw, fx + 116 * K, fy + 8 * K, THEME_NAMES.get(key, key.title()), 10, (230, 230, 240), False)
     sheet.save(os.path.join(OUT, "themes.png"))
     print("wrote themes.png")
 
 
-THEME_NAMES = {"game": "Game Colour", "class": "Class Color"}
-
-
 if __name__ == "__main__":
     art = load_art()
-    hero(art)
-    themes(art)
+    for key in SCENARIOS:
+        if not ONLY or key in ONLY:
+            scenario(art, key)
+    if not ONLY or "themes" in ONLY:
+        themes(art)
