@@ -36,18 +36,27 @@ for players; `docs/DEVELOPMENT.md` covers the layout and tools; this file holds 
 
 Every release, before tagging:
 
-1. Check that the `CHANGELOG.md` section for the version is complete and written for players.
+1. Check that the `CHANGELOG.md` section for the version is complete and written for players:
+   `## X.Y.Z` with `### New` and `### Fixed`. `bash scripts/changelog.sh X.Y.Z` prints what the release
+   will use.
 2. Rebuild the whole gallery: `cd tools/harness; ../venv/Scripts/python gallery.py ../../SmoothAnimatedBars`.
    Look at every image it wrote (a still from each WebP as well), then commit `branding/gallery/` by name
    with the release, so the README and the store pages show the version being released. Recapture the
    frame art first (`/sab capture`, then `tools/capture_art.py`) if the game's frame art has changed.
 3. Run the tests, commit and push `main`, and check that CI passes.
 4. Tag and push the tag: `git tag -a vX.Y.Z -m "Smooth Animated Bars X.Y.Z"`, then `git push origin vX.Y.Z`.
-   The version comes from the tag (the toc says `@project-version@`; `scripts/package.ps1` fills it in).
+   The version comes from the tag (the toc says `@project-version@`; `scripts/package.ps1` fills it in);
+   tags containing `beta` or `alpha` become pre-releases.
+5. The Release workflow (`.github/workflows/release.yml`, ported from Smooth Experience Bar) fails at once if
+   the changelog section is missing, then tests, builds, makes the GitHub release with the zip and notes,
+   and uploads to CurseForge (project 1786695, the `CF_PROJECT_ID` repo variable; the `CF_API_TOKEN`
+   secret holds the token, and without it the upload is skipped). Watch it to the end
+   (`gh run watch <id> --exit-status`): the GitHub release can succeed while the upload fails.
+6. If only the CurseForge upload failed, fix the cause on `main`, then run
+   `gh workflow run curseforge-check.yml -f tag=vX.Y.Z` to upload that release again. Run it without a tag
+   to test the token and game versions without uploading.
 
-There is no release workflow and no CurseForge project yet (1.0.0 was tagged without publishing). When
-there is, port Smooth Experience Bar's `release.yml`, `curseforge-check.yml` and `scripts/changelog.sh`
-/ `curseforge.sh`, and fill in the project ID. The addon's icon is the game's INV_Enchant_EssenceNetherLarge
+1.0.0 was tagged before there was a release workflow or a CurseForge project. The addon's icon is the game's INV_Enchant_EssenceNetherLarge
 (Greater Nether Essence, file ID 132870, found in ItemTree_Data's item records), and it is the icon for the
 CurseForge project too, borderless (`branding/README.md`). `public/favicon.ico` is the borderless icon at 16
 to 64 px, as in Smooth Experience Bar.

@@ -12,9 +12,11 @@ Sections are `### New` and `### Fixed`; skip one that would be empty.
   colour (Void for Shadow, Fire, Plague for Nature, Blood for bleeds...),
   eating into the health liquid. If no health liquid is left, your DoTs will
   kill the target, and the game's skull shows on its portrait. It goes by
-  your spells' tooltips and runs each DoT for its whole duration. Off unless you turn it on: the
-  setup has a new last step for it, and it is under Damage Over Time in the
-  settings. `/sab dots` shows what it is tracking.
+  your spells' tooltips and runs each DoT for its whole duration. Off
+  unless you turn it on: the setup has a new last step for it, and it is
+  under Damage Over Time in the settings. `/sab dots` shows what it is
+  tracking.
+- A new icon in the AddOns list: the Greater Nether Essence.
 
 ## 1.0.0
 
