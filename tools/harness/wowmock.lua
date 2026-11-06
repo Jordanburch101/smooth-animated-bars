@@ -297,7 +297,7 @@ function C_Timer.After(d, fn)
     __timers[#__timers + 1] = { at = __now + d, fn = fn }
 end
 function __markCFunctions()
-    for _, name in ipairs({ "UnitHealth", "UnitHealthMax", "UnitPower", "UnitPowerMax" }) do
+    for _, name in ipairs({ "UnitHealth", "UnitHealthMax", "UnitPower", "UnitPowerMax", "Screenshot" }) do
         C_FUNCTIONS[_G[name]] = true
     end
 end
@@ -365,6 +365,12 @@ function SetPortraitTexture(tex, unit)
     tex.portrait = unit
 end
 function UnitLevel() return 10 end
+-- Screenshots: each call is counted; the test fires SCREENSHOT_SUCCEEDED itself.
+__screenshots = 0
+function Screenshot() __screenshots = __screenshots + 1 end
+__cvars = { screenshotFormat = "jpg" }
+function GetCVar(name) return __cvars[name] end
+function SetCVar(name, value) __cvars[name] = tostring(value) end
 -- The player frame's name text, first name and surname on Forever.
 PlayerName = NewRegion("FontString", UIParent)
 PlayerName.text = "Hotdog Hootsman"

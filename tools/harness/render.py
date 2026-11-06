@@ -19,7 +19,8 @@ FPS = 60
 
 # The game font isn't shipped with the repo; DialogueUI carries a copy. Falls back to Arial.
 FONT_CANDIDATES = [
-    os.environ.get("SEB_FONT", ""),
+    os.environ.get("SAB_FONT", ""),
+    r"C:\Program Files (x86)\World of Warcraft\_forever_\Interface\AddOns\DialogueUI\Fonts\frizqt__.ttf",
     r"C:\Program Files (x86)\World of Warcraft\_anniversary_\Interface\AddOns\DialogueUI\Fonts\frizqt__.ttf",
     r"C:\Program Files (x86)\World of Warcraft\_classic_beta_\Interface\AddOns\DialogueUI\Fonts\frizqt__.ttf",
     r"C:\Windows\Fonts\arialbd.ttf",
@@ -118,9 +119,11 @@ class Session:
             self._media[name] = np.asarray(im).astype(np.float32) / 255
         return self._media[name]
 
-    def regions(self):
+    def regions(self, only=None):
         v = self._visible(self.frame)
         regions = [v[i + 1] for i in range(len(v))]
+        if only:
+            regions = [r for r in regions if only(r)]
         regions.sort(key=lambda r: (LAYERS.get(r.layer, 2), r.sub, r.order))
         return regions
 
@@ -215,14 +218,14 @@ class Session:
                       stroke_width=stroke, stroke_fill=(0, 0, 0, 255))
             x += f.getlength(s)
 
-    def render(self, background, ox, oy, k, ss=2, under_text=None):
+    def render(self, background, ox, oy, k, ss=2, under_text=None, only=None):
         """Draw the bar onto a copy of background (PIL RGB) with its top-left at (ox, oy), k px per unit.
         under_text, if given, takes the image with the bar's textures drawn and returns it with whatever
         goes between them and the text (the game's own art over the bar, say)."""
         big = background.convert("RGB").resize((background.width * ss, background.height * ss), Image.BICUBIC)
         canvas = np.asarray(big).astype(np.float32) / 255
         texts = []
-        for r in self.regions():
+        for r in self.regions(only):
             if r.kind == "Texture":
                 self._draw_texture(canvas, r, ox * ss, oy * ss, k * ss)
             elif r.kind == "FontString" and r.text:

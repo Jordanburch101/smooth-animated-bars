@@ -139,6 +139,8 @@ SlashCmdList.SMOOTHANIMATEDBARS = function(input)
     elseif cmd == "on" or cmd == "off" then
         for _, key in ipairs(BAR_KEYS) do Core.SetSetting(key, cmd == "on") end
         Core.Print(cmd == "on" and "Liquid in the player and target frames' bars." or "The game's own bars again.")
+    elseif cmd == "capture" then -- photographs the frame art for the gallery; see Capture.lua
+        ns.Capture.Start()
     elseif cmd == "setup" then
         ns.Wizard.Open()
     elseif cmd == "debug" then

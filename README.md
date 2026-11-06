@@ -1,3 +1,5 @@
+<p align="center"><img src="https://raw.githubusercontent.com/Jordanburch101/smooth-animated-bars/refs/heads/main/branding/gallery/hero.gif" alt="Smooth Animated Bars: liquid health and power bars on the player and target frames, draining and refilling through a fight"></p>
+
 # Smooth Animated Bars
 
 Liquid health and power bars for the player and target frames in **WoW Forever**, with the liquid from
@@ -13,6 +15,8 @@ bubbles, sparkles, lightning and themes.
   Arcane, Void and more), with their own particles.
 - Each bar and each effect can be switched off on its own.
 - A three-step setup on the first login shows each choice on your own frame as you pick it.
+
+![The player frame's health in eight colours: Game Colour, Class Color, Fire, Frost, Arcane, Fel, Cosmic and Void](branding/gallery/themes.png)
 
 ## Commands
 
@@ -38,7 +42,9 @@ explains the details.
 |---|---|
 | `SmoothAnimatedBars/` | The addon. `Bars.lua` puts the liquid on the unit frames, `Liquid.lua` draws it, `Themes.lua` holds the themes, `Options.lua` the settings page, `Wizard.lua` the setup |
 | `tools/make_media.py` | Generates the textures in `SmoothAnimatedBars/Media/` |
-| `tools/harness/` | A mock of the Forever client's API that runs the addon outside the game: tests and previews |
+| `tools/harness/` | A mock of the Forever client's API that runs the addon outside the game: tests, previews and the gallery |
+| `tools/capture_art.py` | Cuts Forever's frame art out of the screenshots `/sab capture` takes |
+| `branding/` | `art/`: the captured frame art. `gallery/`: the images in this README |
 | `scripts/package.ps1` | Builds the release zip |
 
 To try the source in game, link or copy `SmoothAnimatedBars/` into
@@ -55,6 +61,18 @@ tools/venv/Scripts/python tools/harness/preview.py SmoothAnimatedBars preview he
 ```
 
 `preview.py` takes any setting as `key=value`, and `power=` for the power type (0 mana, 1 rage, 3 energy).
+
+### Gallery
+
+The gallery draws the liquid on Forever's own frame art, which lives in the game's data files. To capture
+it, run `/sab capture` in game (out of combat): it screenshots the art on black and on white as TGA. Then:
+
+```powershell
+tools/venv/Scripts/python tools/capture_art.py                                  # branding/art/*.png
+cd tools/harness; ../venv/Scripts/python gallery.py ../../SmoothAnimatedBars    # branding/gallery
+```
+
+Capture again only if the game's frame art changes.
 
 ### Adding a theme
 

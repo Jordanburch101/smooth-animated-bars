@@ -19,7 +19,11 @@ covers the layout and tools; this file holds the rules.
 - **Tests:** run `tools/venv/Scripts/python tools/harness/test.py SmoothAnimatedBars` before every commit; it
   exits 1 on any failed check. The mock (`tools/harness/wowmock.lua`) should be as strict as the client:
   when the client rejects something the mock accepted, make the mock reject it too.
-- **Visual changes:** render a preview (`tools/harness/preview.py`) and look at it.
+- **Visual changes:** render a preview (`tools/harness/preview.py`) and look at it. Rebuild the gallery
+  (`tools/harness/gallery.py`) when the liquid's look changes, and look at it before committing.
+- **Frame art:** `branding/art/` is Forever's own unit frame art, captured in game with `/sab capture` and
+  cut out by `tools/capture_art.py`. It is only for the gallery and is never packaged. The layout numbers
+  live in `Preview.lua` (`LAYOUT`) and are repeated in `gallery.py`; change both together.
 - **Commits:** stage the files you changed by name, never `git add -A`. Commit messages are plain and
   professional.
 - **Changelog:** add player-facing notes to `CHANGELOG.md` under the next version as features land

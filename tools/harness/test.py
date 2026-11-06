@@ -367,6 +367,62 @@ check(pm.eval("SmoothAnimatedBarsSetup.shown") and pm.eval("(select(2, __liquid(
       and pm.eval("__pv('player', 'health').HealthBarMask") is None and not any("Error in" in m for m in chat(pm)),
       "a missing atlas leaves that piece out: no mask, liquid uncut, no error")
 
+print("== /sab capture (gallery art)")
+cap = session()
+run(cap, 0.5)
+cap.execute("__combat = true; SlashCmdList.SMOOTHANIMATEDBARS('capture')")
+check(not cap.eval("SmoothAnimatedBarsCapture") and any("out of combat" in m for m in chat(cap)), "not in combat")
+cap.execute("__combat = false; SlashCmdList.SMOOTHANIMATEDBARS('capture')")
+grid = "SmoothAnimatedBarsCapture"
+cap.execute(f"""
+    function __gridBg()
+        for _, r in ipairs(__regions) do
+            if r.parent == {grid} and r.layer == "BACKGROUND" then return r.color[1] end
+        end
+    end
+    function __cells()
+        local n = 0
+        for _, f in ipairs(__frames) do if f.parent == {grid} then n = n + 1 end end
+        return n
+    end
+    function __marks()
+        local n = 0
+        for _, r in ipairs(__regions) do
+            if r.parent == {grid} and r.color and r.color[1] == 1 and r.color[2] == 0 and r.w == 6 then n = n + 1 end
+        end
+        return n
+    end
+""")
+check(cap.eval(f"{grid}.shown") and cap.eval("__gridBg()") == 0 and cap.eval("__cvars.screenshotFormat") == "tga",
+      "the grid shows on black, screenshots switched to TGA")
+check(cap.eval("__cells()") == 11 and cap.eval("__marks()") == 2, "eleven pieces in cells, two red markers")
+check(cap.eval(f"""(function()
+    local scale = {grid}.scale
+    return scale > 0 and 1030 * scale <= UIParent.w and 420 * scale <= UIParent.h
+end)()"""), "the grid is scaled to fit the screen")
+check(cap.eval(f"""(function()
+    local masked = 0
+    for _, f in ipairs(__frames) do
+        if f.parent == {grid} then
+            for _, r in ipairs(__regions) do
+                if r.parent == f and r.color and r.masks and #r.masks > 0 then masked = masked + 1 end
+            end
+        end
+    end
+    return masked
+end)()""") == 4, "four bar masks, each a white fill cut by its mask")
+run(cap, 0.6)
+check(cap.eval("__screenshots") == 1, "first screenshot, on black")
+cap.execute("__fire('SCREENSHOT_SUCCEEDED')")
+check(cap.eval("__gridBg()") == 1, "then the background turns white")
+run(cap, 4.1)
+check(cap.eval("__screenshots") == 2, "second screenshot once the game's notice has faded")
+cap.execute("__fire('SCREENSHOT_SUCCEEDED')")
+check(not cap.eval(f"{grid}.shown") and cap.eval("__cvars.screenshotFormat") == "jpg"
+      and any("capture_art.py" in m for m in chat(cap)), "then it hides, puts the screenshot format back and says what next")
+cap.execute("__fire('SCREENSHOT_SUCCEEDED')")
+check(cap.eval("__screenshots") == 2, "a later screenshot of the player's own is left alone")
+
 if failures:
     print(f"\n{len(failures)} check(s) failed:")
     for f in failures:

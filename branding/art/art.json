@@ -1,0 +1,20 @@
+{
+  "ppu": 3.273,
+  "cell": [
+    232,
+    100
+  ],
+  "cells": [
+    "player-art",
+    "player-portrait",
+    "player-circle",
+    "player-health-mask",
+    "player-power-mask",
+    "target-art",
+    "target-portrait",
+    "target-circle",
+    "target-banner",
+    "target-health-mask",
+    "target-power-mask"
+  ]
+}
