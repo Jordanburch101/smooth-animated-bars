@@ -28,6 +28,10 @@ CELLS = ["player-art", "player-portrait", "player-circle", "player-health-mask",
          "player-power-mask", "target-art", "target-portrait", "target-circle",
          "target-banner", "target-health-mask", "target-power-mask", "target-killicon"]
 CELL_W, CELL_H, STEP_X, STEP_Y = 232, 100, 252, 120
+# Cells that only need part of their area, as (left, top, right, bottom) grid units within the cell; the rest
+# is cleared. The kill icon sits on the target's portrait (centre 177, 48) in the grid's bottom-right cell,
+# where the game's tooltip shows if the mouse rests on something during the capture.
+KEEP = {"target-killicon": (177 - 30, 48 - 30, 177 + 30, 48 + 30)}
 MARK_CENTRE = (11, 11)  # the first square's centre, grid units right and down from the corner
 MARK_APART = 1000
 
@@ -88,7 +92,13 @@ def main():
         gx, gy = 20 + i % 4 * STEP_X, 40 + i // 4 * STEP_Y
         left = round(x1 + (gx - MARK_CENTRE[0]) * ppu)
         top = round(y1 + (gy - MARK_CENTRE[1]) * ppu)
-        cell = Image.fromarray((rgba[top:top + h, left:left + w] * 255 + 0.5).astype(np.uint8), "RGBA")
+        piece = rgba[top:top + h, left:left + w].copy()
+        if name in KEEP:
+            x0, y0, x1, y1 = (round(v * ppu) for v in KEEP[name])
+            keep = np.zeros(piece.shape[:2], bool)
+            keep[y0:y1, x0:x1] = True
+            piece[~keep] = 0
+        cell = Image.fromarray((piece * 255 + 0.5).astype(np.uint8), "RGBA")
         file = f"portrait-{args.portrait}.png" if args.portrait else name + ".png"
         cell.save(os.path.join(args.out, file))
         print("wrote", file)

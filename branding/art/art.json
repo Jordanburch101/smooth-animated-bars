@@ -15,6 +15,7 @@
     "target-circle",
     "target-banner",
     "target-health-mask",
-    "target-power-mask"
+    "target-power-mask",
+    "target-killicon"
   ]
 }
