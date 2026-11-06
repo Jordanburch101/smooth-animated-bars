@@ -11,3 +11,4 @@ Liquid.lua
 Bars.lua
 SmoothAnimatedBars.lua
 Options.lua
+Wizard.lua

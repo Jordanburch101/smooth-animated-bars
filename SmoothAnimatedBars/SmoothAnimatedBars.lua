@@ -86,7 +86,7 @@ function Core.OpenSettings()
     return ns.Options.Open()
 end
 
-events:SetScript("OnEvent", function(self, event, arg1)
+events:SetScript("OnEvent", function(self, event, arg1, arg2)
     if event == "ADDON_LOADED" then
         if arg1 ~= ADDON_NAME then return end
         SmoothAnimatedBarsDB = SmoothAnimatedBarsDB or {}
@@ -101,8 +101,11 @@ events:SetScript("OnEvent", function(self, event, arg1)
         self:UnregisterEvent("ADDON_LOADED")
 
     elseif event == "PLAYER_ENTERING_WORLD" then
+        local isLogin, isReload = arg1, arg2
         ApplyBars(true)
         ns.Bars.ApplyColors() -- class and faction themes know the player now
+        -- The setup wizard, once per account, a moment after the first login with the addon.
+        if (isLogin or isReload) and not db.setupDone then C_Timer.After(2, ns.Wizard.OpenWhenReady) end
 
     elseif event == "PLAYER_REGEN_ENABLED" then
         self:UnregisterEvent("PLAYER_REGEN_ENABLED")
@@ -122,6 +125,7 @@ events:RegisterEvent("PLAYER_ENTERING_WORLD")
 local HELP = {
     "/sab - open settings",
     "/sab on | off - liquid in all four bars, or none",
+    "/sab setup - open the setup wizard",
     "/sab debug - what each bar is doing",
 }
 
@@ -135,6 +139,8 @@ SlashCmdList.SMOOTHANIMATEDBARS = function(input)
     elseif cmd == "on" or cmd == "off" then
         for _, key in ipairs(BAR_KEYS) do Core.SetSetting(key, cmd == "on") end
         Core.Print(cmd == "on" and "Liquid in the player and target frames' bars." or "The game's own bars again.")
+    elseif cmd == "setup" then
+        ns.Wizard.Open()
     elseif cmd == "debug" then
         for _, line in ipairs(ns.Bars.Debug()) do Core.Print(line) end
     else

@@ -68,7 +68,7 @@ HELPERS = """
 """
 
 
-def session(saved="nil", setup=""):
+def session(saved="{ setupDone = true }", setup=""):
     lua = LuaRuntime(unpack_returned_tuples=True)
     lua.execute(open(os.path.join(HERE, "wowmock.lua"), encoding="utf-8").read())
     lua.execute(HELPERS)
@@ -78,7 +78,7 @@ def session(saved="nil", setup=""):
         __player.power = 1
         SmoothAnimatedBarsDB = """ + saved)
     lua.execute(setup)
-    lua.globals().__loadAddon(ADDON, "SmoothAnimatedBars")
+    lua.globals().__ns = lua.globals().__loadAddon(ADDON, "SmoothAnimatedBars")
     lua.execute("__fire('ADDON_LOADED', 'SmoothAnimatedBars'); __fire('PLAYER_ENTERING_WORLD', true, false)")
     return lua
 
@@ -239,14 +239,74 @@ for key in keys:
 check(not broken and not any("Error in" in m for m in chat(lua2)), f"all {len(keys)} colour choices draw ({broken})")
 
 print("== saved settings")
-lua3 = session("{ playerPower = false, healthColor = 'gone', waves = false }")
+lua3 = session("{ setupDone = true, playerPower = false, healthColor = 'gone', waves = false }")
 run(lua3, 0.5)
 check(lua3.eval("(select(2, __liquid(PlayerFrame.manabar)))") == 0 and lua3.eval("PlayerFrame.manabar.fill.alpha") == 1,
       "a bar switched off stays off after a reload")
 check(lua3.eval("SmoothAnimatedBarsDB.healthColor") == "game" and lua3.eval("SmoothAnimatedBarsDB.waves") is False
       and lua3.eval("SmoothAnimatedBarsDB.sparkles") is True, "an unknown theme falls back to the game colour; defaults fill gaps")
-lua4 = session("nil", "PlayerFrame = nil; TargetFrame = nil")
+lua4 = session(setup="PlayerFrame = nil; TargetFrame = nil")
 check(any("Could not find 4" in m for m in chat(lua4)), "missing unit frames are reported, not an error")
+
+print("== setup wizard")
+wz = session("nil", "__combat = true")
+run(wz, 3)
+check(not wz.eval("SmoothAnimatedBarsSetup and SmoothAnimatedBarsSetup.shown"), "first login: not opened in combat")
+wz.execute("__combat = false")
+run(wz, 6)
+check(wz.eval("SmoothAnimatedBarsSetup.shown") and wz.eval("__ns.Wizard.State().page") == "bars",
+      "first login: opens once out of combat, on the bars step")
+wz.execute("""
+    function __card(field, key) return __ns.Wizard.State().ui.cards[field][key] end
+    function __pick(field, key) local c = __card(field, key); c.scripts.OnClick(c) end
+    function __press(name) local b = __ns.Wizard.State().ui[name]; b.scripts.OnClick(b) end
+""")
+check(wz.eval("__card('bars', 'all').radio.checked") and not wz.eval("__card('bars', 'mine').radio.checked")
+      and wz.eval("__ns.Wizard.State().ui.step.text") == "Step 1 of 3"
+      and not wz.eval("__ns.Wizard.State().ui.back:IsEnabled()"),
+      "starts from the current settings: all four bars picked, step 1 of 3, no Back")
+wz.execute("__pick('bars', 'mine')")
+run(wz, 0.2)
+check(wz.eval("SmoothAnimatedBarsDB.targetHealth") is False
+      and wz.eval("(select(2, __liquid(TargetFrame.healthbar)))") == 0
+      and wz.eval("(select(2, __liquid(PlayerFrame.healthbar)))") > 0 and wz.eval("__card('bars', 'mine').radio.checked"),
+      "Just mine: applied at once, target bars back to the game's")
+check(wz.eval("__settings.targetHealth:GetValue()") is False, "picks go through the settings controls")
+wz.execute("__press('next'); __pick('healthColor', 'fire')")
+run(wz, 0.2)
+r, g, b = wz.eval("__tint(PlayerFrame.healthbar)")
+check(wz.eval("__ns.Wizard.State().page") == "colors" and wz.eval("SmoothAnimatedBarsDB.healthColor") == "fire"
+      and r > 0.8 and b < 0.3, f"colours: Fire on health shows at once ({r:.2f}, {g:.2f}, {b:.2f})")
+check(wz.eval("__card('powerColor', 'game').radio.checked") and not wz.eval("__card('healthColor', 'game').radio.checked"),
+      "each row shows its own pick")
+wz.execute("__press('next'); __pick('effects', 'still')")
+check(wz.eval("SmoothAnimatedBarsDB.waves") is False and wz.eval("SmoothAnimatedBarsDB.sparkles") is False
+      and wz.eval("__ns.Wizard.State().ui.next.text") == "Finish", "effects: Still turns them off; last step says Finish")
+wz.execute("__press('skip')")
+check(not wz.eval("SmoothAnimatedBarsSetup.shown") and wz.eval("SmoothAnimatedBarsDB.targetHealth") is True
+      and wz.eval("SmoothAnimatedBarsDB.healthColor") == "game" and wz.eval("SmoothAnimatedBarsDB.waves") is True
+      and wz.eval("SmoothAnimatedBarsDB.setupDone") is True, "Skip puts every setting back and does not ask again")
+run(wz, 0.2)
+check(wz.eval("(select(2, __liquid(TargetFrame.healthbar)))") > 0, "and the bars follow")
+wz.execute("__fire('PLAYER_ENTERING_WORLD', false, true)")
+run(wz, 3)
+check(not wz.eval("SmoothAnimatedBarsSetup.shown"), "not opened again on the next login")
+wz.execute("SlashCmdList.SMOOTHANIMATEDBARS('setup')")
+wz.execute("__pick('bars', 'health'); __press('next'); __pick('powerColor', 'class'); __press('next');"
+           " __pick('effects', 'gentle'); __press('next')")
+check(not wz.eval("SmoothAnimatedBarsSetup.shown") and wz.eval("SmoothAnimatedBarsDB.playerPower") is False
+      and wz.eval("SmoothAnimatedBarsDB.powerColor") == "class" and wz.eval("SmoothAnimatedBarsDB.swirl") is True
+      and wz.eval("SmoothAnimatedBarsDB.bubbles") is False and any("All set" in m for m in chat(wz)),
+      "/sab setup, then Finish keeps the choices")
+wz.execute("SlashCmdList.SMOOTHANIMATEDBARS('setup'); __pick('effects', 'full'); SmoothAnimatedBarsSetup:Hide()")
+check(wz.eval("SmoothAnimatedBarsDB.bubbles") is False, "closing the window (Escape) is Skip")
+rows_wz = wz.eval("__settingsRows()")
+button = [rows_wz[i] for i in range(1, len(rows_wz) + 1) if rows_wz[i].name == "Setup Wizard"]
+check(bool(button), "Setup Wizard button on the settings page")
+if button:
+    button[0].onClick()
+check(wz.eval("SmoothAnimatedBarsSetup.shown"), "which opens it")
+check(not any("Error in" in m for m in chat(wz)), "no errors")
 
 if failures:
     print(f"\n{len(failures)} check(s) failed:")

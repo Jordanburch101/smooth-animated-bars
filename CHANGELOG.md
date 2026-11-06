@@ -17,3 +17,6 @@ Sections are `### New` and `### Fixed`; skip one that would be empty.
 - Turn each bar and each effect on or off in Options > AddOns > Smooth
   Animated Bars, or with `/sab`. `/sab on` and `/sab off` switch all four
   bars at once.
+- A short setup on your first login: which bars, their colours and how
+  lively they are, each shown on your own frame as you pick it. Skip puts
+  everything back. Open it again with `/sab setup` or from the settings.

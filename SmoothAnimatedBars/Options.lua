@@ -55,6 +55,12 @@ local function Dropdown(key, name, tooltip, getOptions)
     Row(Settings.CreateDropdownInitializer(Register(key, name), getOptions, tooltip))
 end
 
+-- The fifth argument is whether the row adds search tags; the game asserts it is given, and a
+-- canvas has nothing for the search to find.
+local function Button(name, text, onClick, tooltip)
+    Row(CreateSettingsButtonInitializer(name, text, onClick, tooltip, false))
+end
+
 -- The bar's own colour first, then every theme.
 local function ColorOptions()
     local container = Settings.CreateControlTextContainer()
@@ -128,7 +134,7 @@ end
 
 function Options.Register(savedDB, defaultValues)
     if not (Settings and Settings.RegisterCanvasLayoutCategory and Settings.CreateCheckboxInitializer
-        and CreateSettingsListSectionHeaderInitializer) then
+        and CreateSettingsButtonInitializer and CreateSettingsListSectionHeaderInitializer) then
         return
     end
     db, defaults = savedDB, defaultValues
@@ -157,6 +163,10 @@ function Options.Register(savedDB, defaultValues)
     Checkbox("sparkles", "Sparkles", "Motes thrown off the front when the bar changes.")
     Checkbox("ambient", "Theme Particles", "Embers, snow, spores, stars and the like from themes that have them.")
     Checkbox("lightning", "Lightning", "Faint flashes in the liquid that build into a storm when the bar changes a lot.")
+
+    Header("Setup")
+    Button("Setup Wizard", "Open", function() ns.Wizard.Open() end,
+        "Pick the bars, their colours and how lively they are again, seeing each choice on your frame.")
 
     LayoutRows()
     Settings.RegisterAddOnCategory(category)

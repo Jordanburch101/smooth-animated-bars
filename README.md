@@ -12,6 +12,7 @@ bubbles, sparkles, lightning and themes.
 - Health and power each take the game's colour, or one of 24 themes (Class Color, Faction, Fire, Frost,
   Arcane, Void and more), with their own particles.
 - Each bar and each effect can be switched off on its own.
+- A three-step setup on the first login shows each choice on your own frame as you pick it.
 
 ## Commands
 
@@ -19,6 +20,7 @@ bubbles, sparkles, lightning and themes.
 |---|---|
 | `/sab` | Open settings (also Options > AddOns > Smooth Animated Bars) |
 | `/sab on` / `/sab off` | Liquid in all four bars, or none |
+| `/sab setup` | Open the setup wizard |
 | `/sab debug` | What each bar is doing |
 
 ## How it works
@@ -34,7 +36,7 @@ explains the details.
 
 | Folder | What it is |
 |---|---|
-| `SmoothAnimatedBars/` | The addon. `Bars.lua` puts the liquid on the unit frames, `Liquid.lua` draws it, `Themes.lua` holds the themes, `Options.lua` the settings page |
+| `SmoothAnimatedBars/` | The addon. `Bars.lua` puts the liquid on the unit frames, `Liquid.lua` draws it, `Themes.lua` holds the themes, `Options.lua` the settings page, `Wizard.lua` the setup |
 | `tools/make_media.py` | Generates the textures in `SmoothAnimatedBars/Media/` |
 | `tools/harness/` | A mock of the Forever client's API that runs the addon outside the game: tests and previews |
 | `scripts/package.ps1` | Builds the release zip |

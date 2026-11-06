@@ -350,6 +350,8 @@ function Region:GetDrawLayer() return self.layer, self.sub end
 function Region:GetDebugName() return self.debugName or "?" end
 
 function Region:SetUsingParentLevel(v) self.useParentLevel = v end
+function Region:SetEnabled(v) self.enabled = not not v end
+function Region:IsEnabled() return self.enabled ~= false end
 function Region:SetClipsChildren(v) self.clipsChildren = v end
 
 -- A StatusBar: a value in a range and a fill texture. Values can be secrets, which the bar takes
