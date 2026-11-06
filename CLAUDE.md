@@ -39,9 +39,12 @@ Every release, before tagging:
 1. Check that the `CHANGELOG.md` section for the version is complete and written for players:
    `## X.Y.Z` with `### New` and `### Fixed`. `bash scripts/changelog.sh X.Y.Z` prints what the release
    will use.
-2. Rebuild the whole gallery: `cd tools/harness; ../venv/Scripts/python gallery.py ../../SmoothAnimatedBars`.
-   Look at every image it wrote (a still from each WebP as well), then commit `branding/gallery/` by name
-   with the release, so the README and the store pages show the version being released. Recapture the
+2. Only if something visible changed since the gallery was last rebuilt (the liquid, a theme, the DoT marker,
+   the frame art): rebuild the images it shows, all of them with
+   `cd tools/harness; ../venv/Scripts/python gallery.py ../../SmoothAnimatedBars`, or just the scenarios that
+   changed by name. Look at every image it wrote (a still from each WebP as well), then commit them by name
+   with the release, so the README and the store pages show the version being released. The liquid moves at
+   random, so a rebuild rewrites every file even when nothing changed: don't commit those. Recapture the
    frame art first (`/sab capture`, then `tools/capture_art.py`) if the game's frame art has changed.
 3. Run the tests, commit and push `main`, and check that CI passes.
 4. Tag and push the tag: `git tag -a vX.Y.Z -m "Smooth Animated Bars X.Y.Z"`, then `git push origin vX.Y.Z`.

@@ -56,7 +56,7 @@ addon's own tracking, and the DoT liquid is the addon's own, drawn like the bars
 the health liquid's front moved back over it. The kill icon is the game's skull, captured as
 `target-killicon.png`; captures from before 1.1.0 lack it, and the gallery then leaves the icon out. A full
 capture also replaces `player-portrait.png`, which is the hero's, so take it on the warrior. Animations are animated WebP, in full colour. A full run takes about a
-quarter of an hour; the gallery is rebuilt and committed for every release.
+quarter of an hour; the gallery is rebuilt for a release when something visible has changed.
 
 ## Adding a theme
 
