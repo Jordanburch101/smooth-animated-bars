@@ -1,8 +1,8 @@
 # Smooth Animated Bars
 
 World of Warcraft addon for **WoW Forever only** (`## Interface: 16001`): the liquid from Smooth Experience
-Bar (`../smooth-experience-bar`) in the game's player and target frame health and power bars. The README
-covers the layout and tools; this file holds the rules.
+Bar (`../smooth-experience-bar`) in the game's player and target frame health and power bars. The README is
+for players; `docs/DEVELOPMENT.md` covers the layout and tools; this file holds the rules.
 
 ## Rules
 
