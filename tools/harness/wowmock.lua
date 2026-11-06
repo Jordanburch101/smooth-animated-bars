@@ -412,6 +412,15 @@ local function UnitFrame(name, contentKey, mainKey)
     return f
 end
 PlayerFrame = UnitFrame("PlayerFrame", "PlayerFrameContent", "PlayerFrameContentMain")
+-- The player's health-loss animation: a red bar beside the health bar, shown for a moment after damage
+-- (AnimatedHealthLossMixin, which stores itself on the health bar).
+do
+    local container = PlayerFrame.healthbar.parent
+    local loss = NewStatusBar("PlayerFrame.HealthBarAnimatedLoss", container, 124, 20)
+    container.PlayerFrameHealthBarAnimatedLoss = loss
+    PlayerFrame.healthbar.AnimatedLossBar = loss
+    loss:Hide()
+end
 TargetFrame = UnitFrame("TargetFrame", "TargetFrameContent", "TargetFrameContentMain")
 __player.power = 0 -- UnitPowerType index: 0 mana, 1 rage, 3 energy
 local POWER_TOKENS = { [0] = "MANA", [1] = "RAGE", [2] = "FOCUS", [3] = "ENERGY" }

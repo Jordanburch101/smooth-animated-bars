@@ -166,13 +166,23 @@ local function Feed(b, smooth)
     end
 end
 
+-- What the game draws in the bar that the liquid replaces: the fill, and on the player's health bar
+-- the red bar of the health-loss animation. That one sits behind the game's fill, but once shown it
+-- draws over the liquid at the same frame level, so it hides with the fill.
+local function HideGameFill(bar, alpha)
+    local fill = bar:GetStatusBarTexture()
+    if fill and fill:GetAlpha() ~= alpha then fill:SetAlpha(alpha) end
+    local loss = bar.AnimatedLossBar
+    local lossFill = type(loss) == "table" and loss.GetStatusBarTexture and loss:GetStatusBarTexture()
+    if lossFill and lossFill:GetAlpha() ~= alpha then lossFill:SetAlpha(alpha) end
+end
+
 -- The game's fill shows while the liquid does not, and the other way round.
 local function SetLive(b, live)
     if live == b.live then return end
     b.live = live
     b.clip:SetShown(live)
-    local fill = b.bar:GetStatusBarTexture()
-    if fill then fill:SetAlpha(live and 0 or 1) end
+    HideGameFill(b.bar, live and 0 or 1)
     if live then
         Feed(b, false)
         b.liquid:Snap(b.width) -- the liquid is always full on its frame
@@ -248,9 +258,8 @@ end
 local function UpdateBar(b, dt)
     local bar = b.bar
     if not bar:IsVisible() then return end
-    -- The game can swap or reset its fill texture; keep it hidden under the liquid.
-    local fill = bar:GetStatusBarTexture()
-    if fill and fill:GetAlpha() > 0 then fill:SetAlpha(0) end
+    -- The game can swap or reset its fill textures; keep them hidden under the liquid.
+    HideGameFill(bar, 0)
 
     b.feed = b.feed + dt
     if b.feed >= FEED_EVERY then

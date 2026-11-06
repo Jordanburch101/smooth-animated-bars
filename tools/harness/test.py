@@ -124,6 +124,12 @@ check(lua.eval("""(function()
     local tl, br = clip.points.TOPLEFT, clip.points.BOTTOMRIGHT
     return clip.clipsChildren and tl.rel == PlayerFrame.healthbar and tl.x == 0 and tl.y > 0 and br.x > 0 and br.y < 0
 end)()"""), "clip frame starts at the bar's left edge, with room above, below and past the end")
+loss = "PlayerFrame.healthbar.AnimatedLossBar"
+check(lua.eval(f"{loss}.fill.alpha") == 0, "the game's red health-loss bar is hidden with the fill")
+lua.execute(f"{loss}:Show(); {loss}:SetValue(__secret()); {loss}.fill:SetAlpha(1)")
+run(lua, 0.05)
+check(lua.eval(f"{loss}.fill.alpha") == 0, "and stays hidden when the game shows it after damage (it would cover the liquid)")
+lua.execute(f"{loss}:Hide()")
 lua.execute("PlayerFrame.healthbar:SetValue(__secret())")
 run(lua, 0.2)
 check(lua.eval("""(function()
@@ -190,8 +196,9 @@ check(labels[0] == "Game Colour" and "Class Color" in labels and "Item Quality" 
 lua.execute("__settings.playerHealth:SetValue(false)")
 run(lua, 0.2)
 check(lua.eval("(select(2, __liquid(PlayerFrame.healthbar)))") == 0 and lua.eval("PlayerFrame.healthbar.fill.alpha") == 1
+      and lua.eval("PlayerFrame.healthbar.AnimatedLossBar.fill.alpha") == 1
       and lua.eval("(select(2, __liquid(PlayerFrame.manabar)))") > 0,
-      "turning one bar off gives it back its own fill and leaves the others")
+      "turning one bar off gives it back its own fill and loss animation, and leaves the others")
 lua.execute("__settings.playerHealth:SetValue(true)")
 run(lua, 0.2)
 check(lua.eval("(select(2, __liquid(PlayerFrame.healthbar)))") > 0, "and on again")
