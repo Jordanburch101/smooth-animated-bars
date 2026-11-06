@@ -1,4 +1,4 @@
-<p align="center"><img src="https://raw.githubusercontent.com/Jordanburch101/smooth-animated-bars/refs/heads/main/branding/gallery/hero.gif" alt="Smooth Animated Bars: liquid health and power bars on the player and target frames, draining and refilling through a fight"></p>
+<p align="center"><img src="https://raw.githubusercontent.com/Jordanburch101/smooth-animated-bars/refs/heads/main/branding/gallery/hero.webp" alt="Smooth Animated Bars: liquid health and power bars on the player and target frames, draining and refilling through a fight"></p>
 
 # Smooth Animated Bars
 
@@ -16,9 +16,9 @@ bubbles, sparkles, lightning and themes.
 - Each bar and each effect can be switched off on its own.
 - A three-step setup on the first login shows each choice on your own frame as you pick it.
 
-![A mage's mana going in big bites with each Fireball, the kobold's health with it](branding/gallery/mage.gif)
+![A mage's mana going in big bites with each Fireball, the kobold's health with it](branding/gallery/mage.webp)
 
-![A rogue's energy ticking back and spent on Sinister Strike and Eviscerate](branding/gallery/rogue.gif)
+![A rogue's energy ticking back and spent on Sinister Strike and Eviscerate](branding/gallery/rogue.webp)
 
 ![The player frame's health in eight colours: Game Colour, Class Color, Fire, Frost, Arcane, Fel, Cosmic and Void](branding/gallery/themes.png)
 
@@ -79,7 +79,8 @@ cd tools/harness; ../venv/Scripts/python gallery.py ../../SmoothAnimatedBars    
 Capture again only if the game's frame art changes. The mage and rogue GIFs use those characters'
 portraits: capture on each, then `capture_art.py --portrait mage --pair 2` and `--portrait rogue --pair 1`
 (the newest pair is the last capture). `gallery.py` takes scenario names to render only some:
-`hero`, `mage`, `rogue`, `themes`.
+`hero`, `mage`, `rogue`, `themes`. Animations are animated WebP, in full colour. A full run takes about a
+quarter of an hour; the gallery is rebuilt and committed for every release.
 
 ### Adding a theme
 

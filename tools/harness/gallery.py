@@ -1,8 +1,9 @@
 """Gallery images: the liquid in Forever's player and target frames, drawn on the game's own frame art.
 
 Usage: python gallery.py <addon dir> [out dir] [scenario ...]
-Default out dir: branding/gallery. Writes a GIF per scenario (hero.gif is the warrior; mage.gif and
-rogue.gif), frames.png (a still of the warrior) and themes.png (the player frame in a few themes).
+Default out dir: branding/gallery. Writes each scenario as an animated WebP (hero is the warrior, then
+mage and rogue), frames.png (a still of the warrior) and themes.png (the player frame in a few themes).
+A full run takes about a quarter of an hour.
 
 The frame art comes from branding/art, which tools/capture_art.py cuts out of the screenshots /sab
 capture takes in game (Capture.lua); a scenario's portrait is portrait-<scenario>.png there, captured on
@@ -26,8 +27,8 @@ ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)
 OUT = sys.argv[2] if len(sys.argv) > 2 else os.path.join(ROOT, "branding", "gallery")
 ONLY = sys.argv[3:]
 ART = os.path.join(ROOT, "branding", "art")
-K = 2.0       # px per frame unit
-FPS = 15
+K = 3.0       # px per frame unit; the captured art has about 3.27
+FPS = 20
 SPILL = 16    # Bars.lua: how far motes fly past a bar
 FRAME_W, FRAME_H = 232, 100
 
@@ -69,7 +70,6 @@ SCENARIOS = {
                 (6.0, 0.76, 0.45, 0.42, 0.70), (6.4, 0.76, 0.05, 0.00, 0.70), (7.4, 0.76, 0.05, 1.00, 0.70),
                 (8.0, 0.76, 0.25, 1.00, 0.70)]),
 }
-GIF_NAMES = {"hero": "hero.gif", "mage": "mage.gif", "rogue": "rogue.gif"}
 
 
 # ---------------------------------------------------------------------------- art
@@ -272,10 +272,11 @@ def scenario(art, key):
             still = img
         t += dt
     os.makedirs(OUT, exist_ok=True)
-    pal = [f.quantize(colors=255, method=Image.Quantize.MEDIANCUT, dither=Image.Dither.NONE) for f in frames]
-    pal[0].save(os.path.join(OUT, GIF_NAMES[key]), save_all=True, append_images=pal[1:],
-                duration=round(1000 / FPS), loop=0, optimize=True)
-    print("wrote", GIF_NAMES[key])
+    # An animated WebP: full colour, so no banding in the liquid as in a GIF's 256.
+    webp = os.path.join(OUT, key + ".webp")
+    frames[0].save(webp, save_all=True, append_images=frames[1:], duration=round(1000 / FPS), loop=0,
+                   quality=92, method=6)
+    print(f"wrote {key}.webp ({os.path.getsize(webp) // 1024} KB)")
     if still is not None:
         still.save(os.path.join(OUT, "frames.png"))
         print("wrote frames.png")

@@ -21,6 +21,9 @@ covers the layout and tools; this file holds the rules.
   when the client rejects something the mock accepted, make the mock reject it too.
 - **Visual changes:** render a preview (`tools/harness/preview.py`) and look at it. Rebuild the gallery
   (`tools/harness/gallery.py`) when the liquid's look changes, and look at it before committing.
+- **Gallery:** `branding/gallery/` holds the README's images: animated WebP for each scenario (`hero`,
+  `mage`, `rogue`) and PNG stills (`frames.png`, `themes.png`), at full quality (`K = 3.0`, 20 fps). No GIFs.
+  A full run takes about a quarter of an hour, so run it in the background.
 - **Frame art:** `branding/art/` is Forever's own unit frame art, captured in game with `/sab capture` and
   cut out by `tools/capture_art.py`. It is only for the gallery and is never packaged. The layout numbers
   live in `Preview.lua` (`LAYOUT`) and are repeated in `gallery.py`; change both together.
@@ -28,3 +31,14 @@ covers the layout and tools; this file holds the rules.
   professional.
 - **Changelog:** add player-facing notes to `CHANGELOG.md` under the next version as features land
   (`### New`, `### Fixed`, no internal changes).
+
+## Release
+
+Every release, before tagging:
+
+1. Check that the `CHANGELOG.md` section for the version is complete and written for players.
+2. Rebuild the whole gallery: `cd tools/harness; ../venv/Scripts/python gallery.py ../../SmoothAnimatedBars`.
+   Look at every image it wrote (a still from each WebP as well), then commit `branding/gallery/` by name
+   with the release, so the README and the store pages show the version being released. Recapture the
+   frame art first (`/sab capture`, then `tools/capture_art.py`) if the game's frame art has changed.
+3. Run the tests, commit and push `main`, and check that CI passes.
