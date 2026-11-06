@@ -19,8 +19,8 @@ short setup on the first login lets you choose the look, or skip it.
   particles of their own. Health and power each get their own choice.
 - **Your call on every effect:** waves, swirl, bubbles, sparkles, theme particles and lightning can each be
   switched off, and so can each bar.
-- **Your DoTs on the target (optional):** a second liquid, in your DoTs' own colour, eats into your target's
-  health as far as they will still burn it, and the game's skull shows on its portrait when they will finish it.
+- **Your DoTs on the target (optional):** liquid in your DoTs' own colours eats into your target's health as
+  far as they will still burn it, and the game's skull shows on its portrait when they will finish it.
 - **A quick setup** the first time you log in, with preview frames that show each choice as you pick it.
 
 <p align="center"><img src="https://raw.githubusercontent.com/Jordanburch101/smooth-animated-bars/refs/heads/main/branding/gallery/mage.webp" alt="A mage's mana dropping in big bites with each Fireball, and the kobold's health with it"></p>
@@ -29,17 +29,21 @@ short setup on the first login lets you choose the look, or skip it.
 <p align="center"><img src="https://raw.githubusercontent.com/Jordanburch101/smooth-animated-bars/refs/heads/main/branding/gallery/rogue.webp" alt="A rogue's energy ticking back and being spent on Sinister Strike and Eviscerate"></p>
 <p align="center"><em>Rogue: energy ticks back and pours out again on every strike.</em></p>
 
-<p align="center"><img src="https://raw.githubusercontent.com/Jordanburch101/smooth-animated-bars/refs/heads/main/branding/gallery/warlock.webp" alt="A purple Void liquid from a warlock's Corruption and Immolate eating into the target's green health liquid until no green is left"></p>
-<p align="center"><em>Warlock: Corruption and Immolate eat into the target's health. When no green is left, they will finish it.</em></p>
+<p align="center"><img src="https://raw.githubusercontent.com/Jordanburch101/smooth-animated-bars/refs/heads/main/branding/gallery/warlock.webp" alt="A warlock's Corruption eating into the target's green health as a purple Void liquid, then Immolate joining behind it as an orange Fire liquid, until no green is left and a skull shows on the target's portrait"></p>
+<p align="center"><em>Warlock: Corruption eats in as Void, then Immolate joins behind it as Fire. When no green is left, they will finish it.</em></p>
+
+<p align="center"><img src="https://raw.githubusercontent.com/Jordanburch101/smooth-animated-bars/refs/heads/main/branding/gallery/rend.webp" alt="A warrior's Rend eating into the target's green health as a red Blood liquid while swings and Heroic Strikes land, until a skull shows on the target's portrait"></p>
+<p align="center"><em>Warrior: Rend bleeds as Blood. When no green is left, it will finish the pillager.</em></p>
 
 ## Your DoTs on the target
 
 Turn it on in the setup or under Damage Over Time in the settings. The health your damage-over-time spells
-will still burn away turns into a second liquid, eating into your target's health liquid:
+will still burn away turns into liquid, eating into your target's health liquid:
 
-- **Its colour is your DoTs' school:** Void for Shadow, Fire, Frost, Arcane, Holy, Plague for Nature and Blood
-  for bleeds, after whichever DoT has the most left to deal. It ripples with every tick and splashes when a
-  DoT lands.
+- **Each school is a liquid of its own:** Void for Shadow, Fire, Frost, Arcane, Holy, Plague for Nature and
+  Blood for bleeds. The school you put up first sits at the front of the health, the next behind it. Two
+  schools show at once; a third joins the second. Each ripples with every tick and splashes when a DoT
+  lands.
 - **The health liquid's front** sits where the target's health will end once your DoTs are done.
 - **If no health liquid is left**, your DoTs will kill it, and the game's own skull (the one it shows for a
   target far above your level) comes up on its portrait.

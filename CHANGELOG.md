@@ -4,6 +4,14 @@ Player-facing notes for each release. Write for players: what they can now
 do or see, and what was broken and now works. Leave out internal changes.
 Sections are `### New` and `### Fixed`; skip one that would be empty.
 
+## 1.2.0
+
+### New
+- DoT marker: each school of damage over time is now a liquid of its own,
+  so a warlock's Corruption and Immolate show as Void and Fire side by side.
+  The school you put up first sits at the front of the health, the next
+  behind it. Two schools show at once; a third joins the second.
+
 ## 1.1.0
 
 ### New

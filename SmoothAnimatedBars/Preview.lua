@@ -57,15 +57,15 @@ local SCRIPT = {
     { 7.2, 1.00, 0.10, 1.00, 0.90 },
 }
 local LOOP = 8.4
--- The target's DoTs at each row of SCRIPT, in points of its 210 health: { name, damage still to deal }. By the
--- fifth row they will finish it, and the skull shows.
+-- The target's DoTs at each row of SCRIPT, in points of its 210 health: { name, damage still to deal, school }
+-- (Shadow 32, Fire 4). By the fifth row they will finish it, and the skull shows.
 local DOTS = {
     {},
-    { { "Corruption", 54 } },
-    { { "Corruption", 48 }, { "Immolate", 40 } },
-    { { "Corruption", 42 }, { "Immolate", 34 } },
-    { { "Corruption", 30 }, { "Immolate", 28 } },
-    { { "Corruption", 30 }, { "Immolate", 28 } },
+    { { "Corruption", 54, 32 } },
+    { { "Corruption", 48, 32 }, { "Immolate", 40, 4 } },
+    { { "Corruption", 42, 32 }, { "Immolate", 34, 4 } },
+    { { "Corruption", 30, 32 }, { "Immolate", 28, 4 } },
+    { { "Corruption", 30, 32 }, { "Immolate", 28, 4 } },
     {},
     {},
 }
@@ -249,7 +249,7 @@ function Preview.Create(parent)
         source = function()
             local list, total = {}, 0
             for i, dot in ipairs(dots) do
-                list[i] = { name = dot[1], damage = dot[2] }
+                list[i] = { name = dot[1], damage = dot[2], school = dot[3] }
                 total = total + dot[2]
             end
             return target.health.max, target.health.shownValue, total, list

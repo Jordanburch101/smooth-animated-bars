@@ -373,6 +373,8 @@ run(pv, 0.2)
 check(pv.eval("__pm().clip.shown") and pv.eval("__pm().value") == 58 and pv.eval("__pm().killBar.max") == 53
       and pv.eval("__pm().killBar.value") == 58 and pv.eval("__pm().window.shown"),
       "DoTs on: the target preview plays two DoTs that will kill it, marker and skull showing")
+check(pv.eval("__pm().liquids[1].themeKey") == "void" and pv.eval("__pm().liquids[2].themeKey") == "fire"
+      and pv.eval("__pm().liquids[2].pool.shown"), "the preview shows Corruption as Void and Immolate as Fire")
 check(pv.eval("__pm().window.points.CENTER.rel == __ns.Wizard.State().ui.preview.target.portrait"),
       "the skull sits on the preview's portrait")
 for _ in range(300):
@@ -431,37 +433,44 @@ check(not dm.eval("__m().clip.shown") and not dm.eval("__m().window.shown"), "a 
 dm.execute("__cast(1752, 'Cast-0')")
 run(dm, 0.3)
 check(dm.eval("__total()") == 0 and not dm.eval("__m().clip.shown"), "a strike that is not a DoT: nothing shown")
+dm.execute("function __d(i) return __m().liquids[i] end")
 dm.execute("__cast(172, 'Cast-1')")
 run(dm, 0.15)
-check(dm.eval("__m().liquid.energy") > 0.3, "a DoT landing splashes the DoT liquid")
+check(dm.eval("__d(1).liquid.energy") > 0.3, "a DoT landing splashes the DoT liquid")
 run(dm, 1)
-check(dm.eval("__total()") == 90 and dm.eval("__m().clip.shown") and dm.eval("__m().themeKey") == "void",
-      "Corruption: 90 damage to come, shown as a Void liquid (Shadow)")
-check(dm.eval("__m().span.max == TargetFrame.healthbar.max") and dm.eval("__m().span.value") == 90
-      and dm.eval("__m().span.reverse"),
-      "the span takes the health bar's secret range, its value the DoT's damage, filling back from the front")
-check(dm.eval("__m().span.points.TOPRIGHT.rel == __m().proxy.fill")
+check(dm.eval("__total()") == 90 and dm.eval("__m().clip.shown") and dm.eval("__d(1).themeKey") == "void"
+      and dm.eval("__d(1).pool.shown") and not dm.eval("__d(2).pool.shown"),
+      "Corruption: 90 damage to come, shown as one Void liquid (Shadow)")
+check(dm.eval("__d(1).run.max == TargetFrame.healthbar.max") and dm.eval("__d(1).run.value") == 90
+      and dm.eval("__d(2).run.value") == 90 and dm.eval("__d(1).run.reverse"),
+      "its running total takes the health bar's secret range, its value the DoT's damage, filling back from the front")
+check(dm.eval("__d(1).run.points.TOPRIGHT.rel == __m().proxy.fill")
       and dm.eval("__m().proxy.value == TargetFrame.healthbar.value")
       and dm.eval("__m().clip.clipsChildren") and dm.eval("__m().clip.parent == TargetFrame.healthbar"),
       "on the front of a hidden bar fed the health bar's secret value, clipped from the bar's left edge")
-check(dm.eval("__m().mover.points.TOPRIGHT.rel == __m().proxy.fill") and dm.eval("__m().mover.w") == 124
-      and dm.eval("__m().pool.clipsChildren") and dm.eval("__m().pool.points.TOPLEFT.rel == __m().spanFill")
-      and dm.eval("__m().pool.points.TOPLEFT.x") == -6,
-      "the DoT liquid hangs on the health's edge, cut a little under where the health will end")
+check(dm.eval("__d(1).mover.points.TOPRIGHT.rel == __m().proxy.fill") and dm.eval("__d(1).mover.w") == 124
+      and dm.eval("__d(1).pool.clipsChildren") and dm.eval("__d(1).pool.points.TOPLEFT.rel == __d(1).fill")
+      and dm.eval("__d(1).pool.points.TOPLEFT.x") == -6,
+      "the DoT liquid hangs on the health's edge, cut a little under where it ends")
 check(dm.eval("""(function()
     local _, _, green = __ours(TargetFrame.healthbar)
     local a = green.points.TOPRIGHT
-    return a.rel == __m().spanFill and a.relPoint == 'TOPLEFT'
+    return a.rel == __m().endFill and a.relPoint == 'TOPLEFT'
 end)()"""), "the health liquid's front moves back to where the health will end")
-check(dm.eval("""(function()
+LAYERS = """(function(i)
     local m, mask = __m(), TargetFrame.TargetFrameContent.TargetFrameContentMain.HealthBarsContainer.HealthBarMask
     local masked, free, top = 0, 0, -99
-    for _, t in ipairs(m.liquid.textures) do
+    for _, t in ipairs(m.liquids[i].liquid.textures) do
         if t.masks and t.masks[1] == mask then masked = masked + 1 else free = free + 1 end
         if t.layer == 'ARTWORK' and t.sub > top then top = t.sub end
     end
-    return masked > 0 and free == 64 and top < 3 and m.clip.useParentLevel and m.pool.useParentLevel and m.mover.useParentLevel
-end)()"""), "cut by the bar's mask, motes free, at the bar's level, under the health liquid (sublevels below 3)")
+    local d = m.liquids[i]
+    return masked > 0 and free == 64 and m.clip.useParentLevel and d.pool.useParentLevel and d.mover.useParentLevel
+        and top
+end)"""
+check(dm.eval(LAYERS + "(1)") == -3 and dm.eval(LAYERS + "(2)") == 2,
+      "cut by the bar's mask, motes free, at the bar's level; under the health liquid (sublevels 3 to 7), "
+      "the second DoT liquid over the first")
 check(dm.eval("issecretvalue(__m().killBar.max)") and dm.eval("__m().killBar.value") == 90 and dm.eval("__m().window.shown")
       and dm.eval("__m().window.points.CENTER.rel == TargetFrame.TargetFrameContainer.Portrait")
       and dm.eval("__m().window.clipsChildren"),
@@ -470,26 +479,34 @@ check(dm.eval("__m().icon.atlas") == "UI-HUD-UnitFrame-Target-HighLevelTarget_Ic
       "the kill icon is the game's own skull, by atlas")
 check(dm.eval("__m().window.level") == dm.eval("TargetFrame:GetFrameLevel()") + 20, "the kill icon just above the target frame")
 run(dm, 1.85)  # Corruption's first tick, 3 s after the cast
-before = dm.eval("__m().liquid.energy")
+before = dm.eval("__d(1).liquid.energy")
 dm.execute("__fire('UNIT_COMBAT', 'target', 'WOUND', '', 16, 32)")
 run(dm, 0.3)
 check(dm.eval("__total()") == 80 and dm.eval("SmoothAnimatedBarsDB.dotTicks[172]") == 16,
       f"a tick of 16 is learned: 5 ticks left, 80 to come ({dm.eval('__total()')})")
-check(dm.eval("__m().liquid.energy") > before, "and the tick ripples the DoT liquid")
+check(dm.eval("__d(1).liquid.energy") > before, "and the tick ripples the DoT liquid")
 dm.execute("__fire('UNIT_COMBAT', 'target', 'WOUND', '', 120, 1)")
 run(dm, 0.3)
 check(dm.eval("__total()") == 80, "a melee hit is not taken for a tick")
 dm.execute("__cast(348, 'Cast-2')")
 run(dm, 1)
-check(dm.eval("__total()") == 100 and dm.eval("__m().span.value") == 100 and dm.eval("__m().themeKey") == "void",
-      "Immolate's 20 more: the liquid grows, still Void while Corruption has the most to deal")
+check(dm.eval("__total()") == 100 and dm.eval("__d(1).run.value") == 80 and dm.eval("__d(2).run.value") == 100
+      and dm.eval("__d(1).themeKey") == "void" and dm.eval("__d(2).themeKey") == "fire" and dm.eval("__d(2).pool.shown"),
+      "Immolate's 20 more: Corruption stays Void at the front, Immolate a Fire liquid of its own behind it")
+check(dm.eval("__d(2).mover.points.TOPRIGHT.rel == __d(1).fill") and dm.eval("__d(2).mover.points.TOPRIGHT.relPoint") == "TOPLEFT"
+      and dm.eval("__d(2).pool.points.TOPLEFT.rel == __d(2).fill") and dm.eval("__d(2).pool.points.TOPLEFT.x") == -6
+      and dm.eval("__d(2).pool.points.BOTTOMRIGHT.rel == __d(1).fill") and dm.eval("__d(2).pool.points.BOTTOMRIGHT.x") == 10,
+      "the Fire liquid hangs on the end of the Void one, its waves reaching over it")
 dm.execute("__settings.targetHealth:SetValue(false)")
 run(dm, 0.3)
-check(dm.eval("__m().liquid.body.sub") == 3 and dm.eval("__m().pool.points.TOPLEFT.x") == 0 and dm.eval("__m().clip.shown"),
-      "health liquid off: the DoT liquid lies over the game's fill instead, cut where the health will end")
+check(dm.eval("__d(1).liquid.body.sub") == 3 and dm.eval("__d(2).liquid.body.sub") == 3
+      and dm.eval("__d(1).pool.points.TOPLEFT.x") == 0 and dm.eval("__d(2).pool.points.BOTTOMRIGHT.x") == 0
+      and dm.eval("__m().clip.shown"),
+      "health liquid off: the DoT liquids lie over the game's fill instead, side by side, cut at their ends")
 dm.execute("__settings.targetHealth:SetValue(true)")
 run(dm, 0.3)
-check(dm.eval("__m().liquid.body.sub") == -5, "and goes back under the liquid when it is on again")
+check(dm.eval("__d(1).liquid.body.sub") == -7 and dm.eval("__d(2).liquid.body.sub") == -2,
+      "and go back under the liquid when it is on again")
 dm.execute("__settings.dotKillIcon:SetValue(false)")
 run(dm, 0.3)
 check(not dm.eval("__m().window.shown") and dm.eval("__m().clip.shown"), "Kill Icon off: the marker without the skull")
@@ -498,9 +515,9 @@ run(dm, 0.3)
 check(not dm.eval("__m().clip.shown"), "no target: marker hidden")
 dm.execute("__target = { guid = 'Creature-0-1-2-3-299-0001', name = 'Mottled Boar' }; __fire('PLAYER_TARGET_CHANGED')")
 run(dm, 0.15)
-grow = dm.eval("__m().span.value")
+grow = dm.eval("__d(2).run.value")
 run(dm, 1)
-check(dm.eval("__m().clip.shown") and grow < dm.eval("__m().span.value") and abs(dm.eval("__m().span.value") - dm.eval("__total()")) < 1,
+check(dm.eval("__m().clip.shown") and grow < dm.eval("__d(2).run.value") and abs(dm.eval("__d(2).run.value") - dm.eval("__total()")) < 1,
       f"back on the boar: its DoTs again, the DoT liquid growing in ({grow:.0f} then {dm.eval('__total()')})")
 dm.execute("__target.dead = true")
 run(dm, 0.3)

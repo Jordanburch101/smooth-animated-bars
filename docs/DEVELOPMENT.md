@@ -49,9 +49,10 @@ cd tools/harness; ../venv/Scripts/python gallery.py ../../SmoothAnimatedBars    
 Capture again only if the game's frame art changes. The mage, rogue and warlock animations use those
 characters' portraits: capture on each, then `capture_art.py --portrait mage --pair 2`, `--portrait rogue
 --pair 1` and `--portrait warlock --pair N` (the newest pair is the last capture; until a warlock portrait is
-captured, the warlock uses the capturing character's). `gallery.py` takes scenario names to render only some:
-`hero`, `mage`, `rogue`, `warlock`, `themes`. The warlock's target carries the DoT marker: its casts and ticks
-go through the addon's own tracking, and the DoT liquid is the addon's own, drawn like the bars' liquid with
+captured, the warlock uses the capturing character's; `rend` is the warrior again). `gallery.py` takes scenario
+names to render only some: `hero`, `mage`, `rogue`, `warlock`, `rend`, `themes`. The warlock's and the rend
+scenario's targets carry the DoT marker (Shadow then Fire, and a bleed): their casts and ticks go through the
+addon's own tracking, and the DoT liquid is the addon's own, drawn like the bars' liquid with
 the health liquid's front moved back over it. The kill icon is the game's skull, captured as
 `target-killicon.png`; captures from before 1.1.0 lack it, and the gallery then leaves the icon out. A full
 capture also replaces `player-portrait.png`, which is the hero's, so take it on the warrior. Animations are animated WebP, in full colour. A full run takes about a
