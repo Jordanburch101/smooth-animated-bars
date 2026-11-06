@@ -1,0 +1,13 @@
+## Interface: 16001
+## Title: Smooth Animated Bars
+## Notes: Liquid health and power bars on the player and target frames, with waves, swirls, bubbles and themes.
+## Author: Jordan
+## IconTexture: 136240
+## Version: @project-version@
+## SavedVariables: SmoothAnimatedBarsDB
+
+Themes.lua
+Liquid.lua
+Bars.lua
+SmoothAnimatedBars.lua
+Options.lua

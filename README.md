@@ -1,0 +1,70 @@
+# Smooth Animated Bars
+
+Liquid health and power bars for the player and target frames in **WoW Forever**, with the liquid from
+[Smooth Experience Bar](https://www.curseforge.com/wow/addons/smooth-experience-bar): waves, a magic swirl,
+bubbles, sparkles, lightning and themes.
+
+## What it does
+
+- Draws the liquid in the game's own player and target frame bars: health, and mana, rage, energy or focus.
+  The frames stay the game's; only the fill changes.
+- The liquid eases to wherever the game's bar is, and stirs whenever the bar changes.
+- Health and power each take the game's colour, or one of 24 themes (Class Color, Faction, Fire, Frost,
+  Arcane, Void and more), with their own particles.
+- Each bar and each effect can be switched off on its own.
+
+## Commands
+
+| Command | |
+|---|---|
+| `/sab` | Open settings (also Options > AddOns > Smooth Animated Bars) |
+| `/sab on` / `/sab off` | Liquid in all four bars, or none |
+| `/sab debug` | What each bar is doing |
+
+## How it works
+
+WoW Forever keeps health and power secret from addons, so the addon never reads how full a bar is. A hidden
+bar of its own takes the game's (secret) value with the game's smoothing, and the liquid hangs on the edge of
+that hidden fill, so the game places it. The game's own bar masks cut it to shape. `SmoothAnimatedBars/Bars.lua`
+explains the details.
+
+---
+
+## Development
+
+| Folder | What it is |
+|---|---|
+| `SmoothAnimatedBars/` | The addon. `Bars.lua` puts the liquid on the unit frames, `Liquid.lua` draws it, `Themes.lua` holds the themes, `Options.lua` the settings page |
+| `tools/make_media.py` | Generates the textures in `SmoothAnimatedBars/Media/` |
+| `tools/harness/` | A mock of the Forever client's API that runs the addon outside the game: tests and previews |
+| `scripts/package.ps1` | Builds the release zip |
+
+To try the source in game, link or copy `SmoothAnimatedBars/` into
+`World of Warcraft/_forever_/Interface/AddOns/`.
+
+```powershell
+python -m venv tools/venv
+tools/venv/Scripts/python -m pip install lupa numpy pillow
+
+python tools/make_media.py SmoothAnimatedBars/Media                                                  # textures
+tools/venv/Scripts/python tools/harness/test.py SmoothAnimatedBars                                   # tests
+tools/venv/Scripts/python tools/harness/preview.py SmoothAnimatedBars preview healthColor=fire power=0  # preview.gif + sheet.png
+./scripts/package.ps1                                                                                 # dist/SmoothAnimatedBars-<version>.zip
+```
+
+`preview.py` takes any setting as `key=value`, and `power=` for the power type (0 mana, 1 rage, 3 energy).
+
+### Adding a theme
+
+Register it in `Themes.lua`. Only the fields that differ from the default theme are needed; the comment at
+the top of `Themes.lua` lists everything a theme can set. Its movement is scaled down for the unit frames'
+small bars.
+
+CI (`.github/workflows/ci.yml`) runs the tests and a release build on every push to `main` and on pull
+requests; the build is attached to the run as a download.
+
+## Credits
+
+The liquid comes from Smooth Experience Bar, whose look is based on the
+[Luxthos Experience Bar](https://wago.io/LuxthosExperienceBar) WeakAura by Luxthos & Daemoos. Smooth Animated
+Bars is not affiliated with or endorsed by Blizzard Entertainment.

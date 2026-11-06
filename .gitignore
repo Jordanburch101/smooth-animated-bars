@@ -1,0 +1,6 @@
+tools/venv/
+preview/
+__pycache__/
+build/
+dist/
+*.zip
