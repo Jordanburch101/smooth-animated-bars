@@ -2,7 +2,7 @@
 ## Title: Smooth Animated Bars
 ## Notes: Liquid health and power bars on the player and target frames, with waves, swirls, bubbles and themes.
 ## Author: Jordan
-## IconTexture: 136240
+## IconTexture: 132870
 ## Version: @project-version@
 ## SavedVariables: SmoothAnimatedBarsDB
 

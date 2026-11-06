@@ -47,8 +47,9 @@ Every release, before tagging:
 
 There is no release workflow and no CurseForge project yet (1.0.0 was tagged without publishing). When
 there is, port Smooth Experience Bar's `release.yml`, `curseforge-check.yml` and `scripts/changelog.sh`
-/ `curseforge.sh`, and fill in the project ID. The addon's icon is the game's Trade_Alchemy (file ID
-136240), and it is the icon for the CurseForge project too.
+/ `curseforge.sh`, and fill in the project ID. The addon's icon is the game's INV_Enchant_EssenceNetherLarge
+(Greater Nether Essence, file ID 132870, found in ItemTree_Data's item records), and it is the icon for the
+CurseForge project too. `public/favicon.ico` is the same icon at 16 to 64 px, as in Smooth Experience Bar.
 
 ## What we learned about Forever
 
