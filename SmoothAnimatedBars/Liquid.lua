@@ -297,6 +297,8 @@ function Liquid:SetTheme(theme)
         b.tex:Hide()
         b.glow:Hide()
     end
+    -- Whatever is pouring in keeps tinting the front.
+    if self.inflowTheme then self:SetInflow(self.inflowTheme, self.inflowMix) end
 end
 
 function Liquid:LayerTexture(layer, name)
@@ -464,6 +466,45 @@ function Liquid:Splash(intensity, fromX, toX)
     end
     for _ = 1, floor(intensity * 8) do
         self:EmitBubble(Rand(max(4, fromX - 40), max(4, fromX - 2)))
+    end
+end
+
+local function Mix(a, b, t)
+    return { Lerp(a[1], b[1], t), Lerp(a[2], b[2], t), Lerp(a[3], b[3], t) }
+end
+
+-- Something pours into this liquid (Bars.Inflow): its front tip, glow and the front of its body take on that
+-- theme's colours by mix (0..1). nil stops it.
+function Liquid:SetInflow(theme, mix)
+    self.inflowTheme, self.inflowMix = theme, mix or 0
+    local own = self.theme
+    local tip = theme and Mix(own.tip, theme.tip, self.inflowMix) or own.tip
+    local glow = theme and Mix(own.glow, theme.glow, self.inflowMix) or own.glow
+    for _, t in ipairs(self.tips) do t:SetVertexColor(tip[1], tip[2], tip[3]) end
+    self.glow:SetVertexColor(glow[1], glow[2], glow[3])
+end
+
+-- Keep the liquid at least this lively (its energy: brighter veins and glow, livelier waves) for now.
+function Liquid:Warm(level)
+    if level > self.energy then self.energy = level end
+end
+
+-- How far slice i of the front (1 = top) stands past the liquid's edge right now, px.
+function Liquid:FrontOffset(i)
+    local wobble = self.opts.waves and self.phys.ambient * (0.6 + self.energy) or 0
+    local t = self.t
+    return self.pos[i] + wobble * (sin(t * 2.3 + i * 0.6) + 0.5 * sin(t * 3.7 - i * 1.1))
+end
+
+-- A ripple along the front only: no motes, no bubbles, no lightning charge. intensity 0..1.
+function Liquid:Ripple(intensity)
+    if not self.opts.waves then return end
+    local n = CFG.rows
+    local centre = random(1, n)
+    local kick = 40 + 160 * intensity
+    for i = 1, n do
+        local d = (i - centre) / n
+        self.vel[i] = self.vel[i] + kick * exp(-d * d * 8)
     end
 end
 
@@ -853,6 +894,7 @@ function Liquid:Draw(dt)
     local base = max(0, edge - amp * 1.2 - wobble * 1.5 - 0.5)
 
     local fa, fb = theme.fillA, theme.fillB
+    if self.inflowTheme then fb = Mix(fb, self.inflowTheme.fillB, self.inflowMix) end
     if theme.Colors then
         -- Animated themes pick their colours each frame from time and progress.
         local accent
@@ -883,7 +925,7 @@ function Liquid:Draw(dt)
     local rowH, back, ends = self.rowH, edge, self.ends
     for i = 1, CFG.rows do
         local row, tip = self.rows[i], self.tips[i]
-        local off = self.pos[i] + wobble * (sin(t * 2.3 + i * 0.6) + 0.5 * sin(t * 3.7 - i * 1.1))
+        local off = self:FrontOffset(i)
         local right = min(w, edge + off)
         local rw = right - base
         -- Where the liquid visibly ends in this slice: a slice dented past the body shows the body's end.

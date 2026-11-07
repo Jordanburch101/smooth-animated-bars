@@ -445,6 +445,12 @@ do
     container.PlayerFrameHealthBarAnimatedLoss = loss
     PlayerFrame.healthbar.AnimatedLossBar = loss
     loss:Hide()
+    -- The client's prediction of the player's own heals and others' (PlayerFrame.xml): bar segments with a Fill.
+    for _, key in ipairs({ "MyHealPredictionBar", "OtherHealPredictionBar" }) do
+        local segment = CreateFrame("Frame", nil, PlayerFrame.healthbar)
+        segment.Fill = segment:CreateTexture(nil, "BORDER")
+        PlayerFrame.healthbar[key] = segment
+    end
 end
 TargetFrame = UnitFrame("TargetFrame", "TargetFrameContent", "TargetFrameContentMain")
 -- The target's portrait, on the frame's container (TargetFrame.xml).
@@ -462,7 +468,22 @@ function UnitGUID(unit)
     if unit == "target" and __target then return __target.guid end
 end
 function UnitIsDead(unit) return unit == "target" and __target ~= nil and __target.dead or false end
-function UnitCanAttack(_, unit) return unit == "target" and __target ~= nil end
+function UnitIsDeadOrGhost(unit)
+    if unit == "player" then return __player.dead or false end
+    return UnitIsDead(unit)
+end
+-- The target: friendly when __target.friendly is set; "player" when it is you.
+function UnitIsUnit(a, b)
+    if a == b then return true end
+    local function me(u) return u == "player" or (u == "target" and __target ~= nil and __target.isPlayer) end
+    return me(a) and me(b)
+end
+function UnitCanAssist(_, unit)
+    if unit == "player" then return true end
+    return unit == "target" and __target ~= nil and (__target.friendly or __target.isPlayer) or false
+end
+function UnitCanAttack(_, unit) return unit == "target" and __target ~= nil and not __target.friendly
+    and not __target.isPlayer end
 function GetComboPoints() return 0 end
 
 -- Spells by ID: __spells[id] = { name, description }.
@@ -470,6 +491,16 @@ __spells = {}
 C_Spell = {
     GetSpellName = function(id) return __spells[id] and __spells[id][1] end,
     GetSpellDescription = function(id) return __spells[id] and __spells[id][2] end,
+}
+-- The player's auras by spell ID: __playerAuras[id] = { expirationTime = ... }. Forever may keep auras secret
+-- (SecretWhenUnitAuraRestricted), so they are secret unless __aurasReadable is set.
+__playerAuras, __aurasReadable = {}, false
+C_UnitAuras = {
+    GetPlayerAuraBySpellID = function(id)
+        assert(type(id) == "number", "GetPlayerAuraBySpellID needs a spell ID")
+        if not __aurasReadable then return __secret() end
+        return __playerAuras[id]
+    end,
 }
 -- Other addons loaded: __addons[name] = true.
 __addons = {}
@@ -489,6 +520,7 @@ GameFontNormal = { GetFont = function() return "Fonts\\FRIZQT__.TTF", 12, "" end
 
 __combat = false
 function InCombatLockdown() return __combat end
+function UnitAffectingCombat(unit) return unit == "player" and __combat or false end
 
 GameTooltip = NewRegion("Frame", UIParent)
 GameTooltip.shown = false

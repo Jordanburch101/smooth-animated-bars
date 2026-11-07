@@ -11,6 +11,8 @@ Liquid.lua
 Bars.lua
 Dots.lua
 Marker.lua
+Heals.lua
+HealMarker.lua
 SmoothAnimatedBars.lua
 Options.lua
 Preview.lua

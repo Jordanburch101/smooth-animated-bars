@@ -36,7 +36,7 @@ session = render.Session(ADDON, settings=SETTINGS, scenario=[(t, CHANGED) for t,
     end
     local function mover(bar)
         for _, clip in ipairs(__frames) do
-            if clip.parent == bar and not clip.SetValue then
+            if clip.parent == bar and not clip.SetValue and clip.clipsChildren then
                 for _, f in ipairs(__frames) do
                     if f.parent == clip then return f end
                 end

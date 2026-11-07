@@ -171,6 +171,12 @@ function Options.Register(savedDB, defaultValues)
     Checkbox("dotKillIcon", "Kill Icon",
         "The game's skull on your target's portrait when your DoTs will finish it off.")
 
+    Header("Healing")
+    Checkbox("heals", "Heal Marker",
+        "The health your own heals over time, bandages and heals you are casting on yourself will still bring back "
+        .. "shows ahead of your health as a liquid of its own: Holy gold for priest and paladin heals, spring green "
+        .. "for druid and shaman heals and for bandages. Food and drink show too, ahead of your health and your mana.")
+
     Header("Setup")
     Button("Setup Wizard", "Open", function() ns.Wizard.Open() end,
         "Pick the bars, their colours, how lively they are and the DoT marker again, seeing each choice on your frame.")

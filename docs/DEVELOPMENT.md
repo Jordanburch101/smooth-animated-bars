@@ -14,7 +14,7 @@ explains the details.
 
 | Folder | What it is |
 |---|---|
-| `SmoothAnimatedBars/` | The addon. `Bars.lua` puts the liquid on the unit frames, `Liquid.lua` draws it, `Themes.lua` holds the themes, `Dots.lua` tracks the player's DoTs (ported from DoesItDie) and `Marker.lua` marks them on the target, `Options.lua` the settings page, `Wizard.lua` the setup and `Preview.lua` its preview frames, `Capture.lua` the gallery's art capture |
+| `SmoothAnimatedBars/` | The addon. `Bars.lua` puts the liquid on the unit frames, `Liquid.lua` draws it, `Themes.lua` holds the themes, `Dots.lua` tracks the player's DoTs (ported from DoesItDie) and `Marker.lua` marks them on the target, `Heals.lua` tracks the player's heals on themselves and `HealMarker.lua` marks them on the player's health, `Options.lua` the settings page, `Wizard.lua` the setup and `Preview.lua` its preview frames, `Capture.lua` the gallery's art capture |
 | `tools/make_media.py` | Generates the textures in `SmoothAnimatedBars/Media/` |
 | `tools/harness/` | A mock of the Forever client's API that runs the addon outside the game: tests, previews and the gallery |
 | `tools/capture_art.py` | Cuts Forever's frame art out of the screenshots `/sab capture` takes |
@@ -50,7 +50,11 @@ Capture again only if the game's frame art changes. The mage, rogue and warlock 
 characters' portraits: capture on each, then `capture_art.py --portrait mage --pair 2`, `--portrait rogue
 --pair 1` and `--portrait warlock --pair N` (the newest pair is the last capture; until a warlock portrait is
 captured, the warlock uses the capturing character's; `rend` is the warrior again). `gallery.py` takes scenario
-names to render only some: `hero`, `mage`, `rogue`, `warlock`, `rend`, `themes`. The warlock's and the rend
+names to render only some: `hero`, `mage`, `rogue`, `warlock`, `rend`, `priest`, `druid`, `themes`. The druid
+carries both markers (Moonfire on the target, Rejuvenation and Healing Touch on itself) and has its own
+portrait (`--portrait druid`). The priest's
+health carries the heal marker (Holy, then a bandage's Nature), its casts going through the addon's own heal
+tracking; until a priest portrait is captured (`--portrait priest`), it uses the capturing character's. The warlock's and the rend
 scenario's targets carry the DoT marker (Shadow then Fire, and a bleed): their casts and ticks go through the
 addon's own tracking, and the DoT liquid is the addon's own, drawn like the bars' liquid with
 the health liquid's front moved back over it. The kill icon is the game's skull, captured as

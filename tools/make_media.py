@@ -441,6 +441,24 @@ def make_crystal(path, size=32):
     write_tga(path, size, size, radial(size, fn))
 
 
+def make_plus(path, size=32):
+    """A healing plus, like the game's over a healed character: a solid cross, bright inside and darker at its
+    rim so it reads once tinted, with a soft glow around it."""
+
+    def fn(dx, dy, d):
+        arm, length = 0.24, 0.82
+        # Distance inside the cross (positive inside), from the nearer of its two bars.
+        inside = max(min(arm - abs(dx), length - abs(dy)), min(arm - abs(dy), length - abs(dx)))
+        glow = 0.35 * math.exp(-(max(0.0, -inside) / 0.08) ** 2)
+        if inside <= 0:
+            return 1, 1, 1, glow
+        a = min(1.0, inside / 0.05)
+        shade = 0.55 + 0.45 * min(1.0, inside / 0.14)
+        return shade, shade, shade, max(a, glow)
+
+    write_tga(path, size, size, radial(size, fn))
+
+
 def main():
     out = sys.argv[1]
     os.makedirs(out, exist_ok=True)
@@ -463,6 +481,7 @@ def main():
     make_leaf(os.path.join(out, "Leaf.tga"))
     make_star(os.path.join(out, "Star.tga"))
     make_crystal(os.path.join(out, "Crystal.tga"))
+    make_plus(os.path.join(out, "Plus.tga"))
     print("wrote", sorted(os.listdir(out)))
 
 

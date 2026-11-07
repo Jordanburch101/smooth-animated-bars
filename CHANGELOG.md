@@ -4,6 +4,33 @@ Player-facing notes for each release. Write for players: what they can now
 do or see, and what was broken and now works. Leave out internal changes.
 Sections are `### New` and `### Fixed`; skip one that would be empty.
 
+## 1.3.0
+
+### New
+- Heal marker: the health your own heals will still bring back shows ahead
+  of your health as a liquid of its own, so you can see how far Renew, a
+  bandage or the heal you are casting on yourself will take you. Holy gold
+  for priest and paladin heals, spring green for druid and shaman heals
+  and for bandages; both at once show side by side. Each ripples with
+  every tick, a heal you cast bursts into your health as it lands (leaves
+  for Nature, holy sparks for Holy), bandages throw up green pluses as
+  they tick, as the game does over a healed character, a broken bandage
+  drops out at once, and healing past full health is cut off at the bar's
+  end. While it shows, it takes the place of the game's flat teal bar for
+  your own heals. Your own heals on yourself only. On by default, under
+  Healing in the settings; `/sab heals` shows what it is tracking.
+- Eating and drinking show too: what your food will still bring back is a
+  Honey liquid ahead of your health, and what your drink will is a Nagrand
+  liquid ahead of your mana. They end when you stand up: moving or casting
+  anything else ends them.
+- Food with a buff builds up in your health liquid while you eat, even at
+  full health, then lets go in a burst of stars when you have eaten long
+  enough to become well fed. Slow stars keep rising after that, so you
+  know you can get up.
+- Whatever is on the way pours into your bar: its particles drift back
+  into your health or mana liquid, whose front ripples and takes on some
+  of the incoming colour.
+
 ## 1.2.0
 
 ### New

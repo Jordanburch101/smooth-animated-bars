@@ -25,6 +25,8 @@ local DEFAULTS = {
     -- The DoT marker on the target's health bar (Marker.lua), offered by the setup wizard
     dots        = false,
     dotKillIcon = true,
+    -- The heal marker on the player's health bar (HealMarker.lua)
+    heals       = true,
 }
 
 local db
@@ -56,12 +58,14 @@ local SETTING_APPLY = {
     powerColor  = function() ns.Bars.ApplyColors() end,
     dots        = function() ns.Marker.Apply() end,
     dotKillIcon = function() ns.Marker.Apply() end,
+    heals       = function() ns.HealMarker.Apply() end,
 }
 for _, key in ipairs(BAR_KEYS) do SETTING_APPLY[key] = function() ApplyBars(true) end end
 for _, key in ipairs({ "waves", "swirl", "bubbles", "sparkles", "ambient", "lightning" }) do
     SETTING_APPLY[key] = function()
         ns.Bars.ApplyOptions()
         ns.Marker.ApplyOptions()
+        ns.HealMarker.ApplyOptions()
     end
 end
 
@@ -114,6 +118,7 @@ events:SetScript("OnEvent", function(self, event, arg1, arg2)
         ApplyBars(true)
         ns.Bars.ApplyColors() -- class and faction themes know the player now
         ns.Marker.Apply()
+        ns.HealMarker.Apply()
         -- The setup wizard, once per account, a moment after the first login with the addon.
         if (isLogin or isReload) and not db.setupDone then C_Timer.After(2, ns.Wizard.OpenWhenReady) end
 
@@ -138,6 +143,7 @@ local HELP = {
     "/sab setup - open the setup wizard",
     "/sab debug - what each bar is doing",
     "/sab dots - your DoTs on the target, and what the tracking saw lately",
+    "/sab heals - your heals on the way to you, and what the tracking saw lately",
 }
 
 SLASH_SMOOTHANIMATEDBARS1 = "/sab"
@@ -159,6 +165,9 @@ SlashCmdList.SMOOTHANIMATEDBARS = function(input)
     elseif cmd == "dots" then
         for _, line in ipairs(ns.Marker.Debug()) do Core.Print(line) end
         for _, line in ipairs(ns.Dots.Debug(15)) do Core.Print(line) end
+    elseif cmd == "heals" then
+        for _, line in ipairs(ns.HealMarker.Debug()) do Core.Print(line) end
+        for _, line in ipairs(ns.Heals.Debug(15)) do Core.Print(line) end
     else
         for _, line in ipairs(HELP) do Core.Print(line) end
     end

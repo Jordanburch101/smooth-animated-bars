@@ -22,7 +22,7 @@ for players; `docs/DEVELOPMENT.md` covers the layout and tools; this file holds 
 - **Visual changes:** render a preview (`tools/harness/preview.py`) and look at it. Rebuild the gallery
   (`tools/harness/gallery.py`) when the liquid's look changes, and look at it before committing.
 - **Gallery:** `branding/gallery/` holds the README's images: animated WebP for each scenario (`hero`,
-  `mage`, `rogue`, and `warlock` and `rend` with the DoT marker) and PNG stills (`frames.png`, `themes.png`), at full quality (`K = 3.0`, 20 fps). No GIFs.
+  `mage`, `rogue`, `warlock` and `rend` with the DoT marker, `priest` with the heal marker, and `druid` with both) and PNG stills (`frames.png`, `themes.png`), at full quality (`K = 3.0`, 20 fps). No GIFs.
   A full run takes about a quarter of an hour, so run it in the background.
 - **Frame art:** `branding/art/` is Forever's own unit frame art, captured in game with `/sab capture` and
   cut out by `tools/capture_art.py`. It is only for the gallery and is never packaged. The layout numbers
@@ -97,6 +97,20 @@ Facts found while building this, which the code relies on and which are not obvi
   the health liquid (`Liquid:SetSublevelOffset`; Liquid.lua uses sublevels 3 to 7 of -8..7, so there is no
   room for a third), and the health liquid's front is moved onto where the health will end (`Bars.Front`). The kill icon is the
   atlas `UI-HUD-UnitFrame-Target-HighLevelTarget_Icon` (Forever's `TargetFrame.xml`).
+- **Heal prediction:** Forever's player frame has the game's own heal prediction (`healthBar.MyHealPredictionBar`
+  and `OtherHealPredictionBar`, Mainline `PlayerFrame.xml`), a flat teal bar seen in game on a priest's Lesser
+  Heal. At the bar's level it draws over the liquid, so `HealMarker.lua` keeps `MyHealPredictionBar.Fill`
+  transparent while the heal marker shows; the other one (heals from others) is left alone.
+- **Auras in combat:** `C_UnitAuras.GetPlayerAuraBySpellID` is `RequiresNonSecretAura`, and in game it answered
+  "none" in combat for a Rejuvenation that was on the player. So a missing aura only ends a heal that was seen
+  before, out of combat (`Heals.lua`, `checkAuras`). Sitting to eat or drink has no API; `PLAYER_STARTED_MOVING`
+  (in Forever's `UnitDocumentation.lua`) and any other cast end it.
+- **Heal liquid over the bar's:** in game the heal marker's liquid hid the bar liquid's front and showed its own
+  straight cut, though its sublevels are lower, so sublevels do not seem to order liquids in separate clip frames
+  (the mock does not model draw order). `HealMarker.lua` lays a seam of the bar's colour over the edge, which
+  looked right in game. `Marker.lua` uses the same sublevels and has no seam.
+- **Regeneration:** on Forever energy and mana refill continuously rather than in 2-second ticks, so the gallery's
+  scenarios draw them that way (`gallery.py`, `regen`).
 - **Toc changes** (a new file) need a full game restart; `/reload` does not pick them up.
 - **Capture:** `/sab capture` uses `Screenshot()` and the `screenshotFormat` CVar (TGA, put back after).
   The screenshot is the full render resolution (an ultrawide 3440x1440 here), and the red "?" target

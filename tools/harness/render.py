@@ -89,14 +89,28 @@ class Session:
         self._media = {}
         # The frame's regions, and its text on a child frame (the bar over the game's has its text on
         # one, raised above the game's art).
-        self._visible = self.lua.eval("""function(name)
-            local out, f = {}, _G[name]
-            for _, r in ipairs(__regions) do
-                local mine = r.parent == f or (r.kind == "FontString" and r.parent and r.parent.parent == f)
-                if mine and r.shown and r.alpha > 0.001 then out[#out + 1] = r end
+        # Each frame's regions are found once: scanning them all for each draw is what a long run spends its time on.
+        self._visible = self.lua.eval("""(function()
+            local mine = {}
+            return function(name)
+                local f = _G[name]
+                local list = mine[f]
+                if not list then
+                    list = {}
+                    for _, r in ipairs(__regions) do
+                        if r.parent == f or (r.kind == "FontString" and r.parent and r.parent.parent == f) then
+                            list[#list + 1] = r
+                        end
+                    end
+                    mine[f] = list
+                end
+                local out = {}
+                for _, r in ipairs(list) do
+                    if r.shown and r.alpha > 0.001 then out[#out + 1] = r end
+                end
+                return out
             end
-            return out
-        end""")
+        end)()""")
 
     @property
     def bar_size(self):

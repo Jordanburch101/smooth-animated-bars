@@ -2,7 +2,7 @@
 
 Usage: python gallery.py <addon dir> [out dir] [scenario ...]
 Default out dir: branding/gallery. Writes each scenario as an animated WebP (hero is the warrior, then
-mage, rogue, then warlock and rend, whose targets carry the DoT marker), frames.png (a still of the warrior) and themes.png (the player frame in a few themes).
+mage, rogue, then warlock and rend, whose targets carry the DoT marker, priest, with the heal marker, and druid, with both), frames.png (a still of the warrior) and themes.png (the player frame in a few themes).
 A full run takes about a quarter of an hour.
 
 The frame art comes from branding/art, which tools/capture_art.py cuts out of the screenshots /sab
@@ -44,7 +44,9 @@ POWER = {"MANA": 0, "RAGE": 1, "FOCUS": 2, "ENERGY": 3}
 
 # Each scenario: the player (name, level, power type), the target, bar maxima (player health and
 # power, target health and power), and a loop of { seconds, the four bars as fractions }. A new
-# target comes in at full health.
+# target comes in at full health. With regen (a fraction of the bar per second), the player's power refills
+# continuously, as energy and mana do on Forever, rather than in steps: each drop in its column is a spend, and
+# its rises are ignored. spends: (seconds, fraction) in place of the column, with power_start where it begins.
 SCENARIOS = {
     # Rage builds as blows land and is spent on strikes.
     "hero": dict(
@@ -56,26 +58,27 @@ SCENARIOS = {
     # Each Fireball takes a big bite of mana and of the target; the kobold gets one swing in.
     "mage": dict(
         player="Mailbox Hootsman", level="12", power="MANA", target="Kobold Geomancer", target_level="11",
-        maxes=(232, 420, 198, 320), loop=8.0,
+        maxes=(232, 420, 198, 320), loop=8.0, regen=0.011,
         script=[(0.0, 1.00, 1.00, 1.00, 1.00), (1.5, 1.00, 0.86, 0.68, 1.00), (2.4, 1.00, 0.86, 0.68, 0.88),
                 (3.0, 1.00, 0.72, 0.36, 0.88), (3.6, 0.84, 0.72, 0.36, 0.88), (4.5, 0.84, 0.58, 0.06, 0.88),
                 (5.2, 0.84, 0.52, 0.00, 0.88), (6.4, 0.84, 0.52, 1.00, 1.00), (7.0, 0.90, 0.60, 1.00, 1.00)]),
-    # Energy ticks back 20 every two seconds; Sinister Strike spends 40, Eviscerate 35.
+    # Energy refills continuously at 10 a second; Sinister Strike spends 40, Eviscerate 35. Over the loop the regen
+    # pays for exactly what is spent, so it joins up seamlessly.
     "rogue": dict(
         player="Hotdog Rouge", level="12", power="ENERGY", target="Defias Footpad", target_level="12",
-        maxes=(258, 100, 214, 280), loop=8.4,
-        script=[(0.0, 1.00, 1.00, 1.00, 0.70), (0.4, 1.00, 0.60, 0.86, 0.70), (1.2, 1.00, 0.20, 0.72, 0.70),
-                (1.6, 0.91, 0.20, 0.72, 0.70), (2.0, 0.91, 0.40, 0.72, 0.70), (2.6, 0.83, 0.40, 0.72, 0.70),
-                (4.0, 0.83, 0.60, 0.72, 0.70), (4.2, 0.83, 0.25, 0.42, 0.70), (5.0, 0.76, 0.25, 0.42, 0.70),
-                (6.0, 0.76, 0.45, 0.42, 0.70), (6.4, 0.76, 0.05, 0.00, 0.70), (7.4, 0.76, 0.05, 1.00, 0.70),
-                (8.0, 0.76, 0.25, 1.00, 0.70)]),
+        maxes=(258, 100, 214, 280), loop=11.5, regen=0.10, power_start=0.70,
+        spends=[(0.4, 0.40), (4.4, 0.40), (8.0, 0.35)],
+        script=[(0.0, 1.00, 0, 1.00, 0.70), (0.4, 1.00, 0, 0.84, 0.70), (1.6, 0.91, 0, 0.84, 0.70),
+                (2.2, 0.91, 0, 0.76, 0.70), (2.8, 0.83, 0, 0.76, 0.70), (4.4, 0.83, 0, 0.60, 0.70),
+                (5.0, 0.76, 0, 0.60, 0.70), (6.0, 0.76, 0, 0.50, 0.70), (7.0, 0.76, 0, 0.38, 0.70),
+                (8.0, 0.76, 0, 0.00, 0.70), (9.4, 0.76, 0, 1.00, 0.70), (10.6, 0.88, 0, 1.00, 0.70)]),
     # The DoT marker, Shadow then Fire: Corruption goes up first as a Void liquid at the health's edge, and
     # Immolate follows as a Fire liquid behind it. Shadow Bolts land between the ticks until the
     # DoTs will finish the conjurer and the skull comes up. Casts and ticks go through the addon's own
     # tracking (events).
     "warlock": dict(
         player="Hexbag Hootsman", level="12", power="MANA", target="Defias Conjurer", target_level="11",
-        maxes=(220, 380, 300, 300), loop=9.2,
+        maxes=(220, 380, 300, 300), loop=9.2, regen=0.006,
         spells={172: ("Corruption", "Corrupts the target, causing 72 Shadow damage over 18 sec."),
                 348: ("Immolate", "Burns the enemy for 30 Fire damage and then an additional 90 Fire damage "
                                   "over 15 sec.")},
@@ -101,7 +104,80 @@ SCENARIOS = {
         events=[(0.4, "__dotsCast(6546, 'Cast-1')"), (1.0, "__hit(30, 1)"), (2.2, "__hit(45, 1)"),
                 (3.4, "__hit(7, 1)"), (3.6, "__hit(30, 1)"), (5.0, "__hit(40, 1)"), (6.0, "__hit(40, 1)"),
                 (6.4, "__hit(7, 1)"), (7.6, "__hit(11, 1); __target.dead = true"), (8.4, "__newTarget()")]),
+    # The heal marker, Holy then Nature: Renew goes up as a Holy liquid ahead of the priest's health and Flash
+    # Heal, while it is cast, joins it; then a bandage goes up as a Nature liquid past it. The health rises into
+    # them tick by tick, and past full the bandage's last ticks are cut off at the bar's end.
+    "priest": dict(
+        player="Halo Hootsman", level="12", power="MANA", target="Kobold Tunneler", target_level="11",
+        maxes=(300, 400, 200, 300), loop=10.4, cls="PRIEST", regen=0.006,
+        heals={139: ("Renew", "Heals the target of 45 damage over 9 sec."),
+               2061: ("Flash Heal", "Heals a friendly target for 40 to 48."),
+               746: ("First Aid", "Heals 48 damage over 6 sec.")},
+        script=[(0.0, 1.00, 1.00, 1.00, 1.0), (0.4, 0.75, 1.00, 1.00, 1.0), (1.0, 0.75, 0.93, 1.00, 1.0),
+                (1.6, 0.55, 0.93, 0.88, 1.0), (3.7, 0.697, 0.81, 0.88, 1.0), (4.0, 0.747, 0.81, 0.88, 1.0),
+                (5.2, 0.773, 0.81, 0.88, 1.0), (6.2, 0.80, 0.81, 0.88, 1.0), (7.0, 0.85, 0.81, 0.88, 1.0),
+                (7.2, 0.877, 0.81, 0.88, 1.0), (8.2, 0.903, 0.81, 0.88, 1.0), (9.2, 0.93, 0.83, 0.94, 1.0),
+                (10.0, 0.98, 0.83, 0.94, 1.0), (10.2, 1.00, 0.85, 1.00, 1.0)],
+        events=[(1.0, "__healCast(139, 'Cast-1')"), (2.2, "__healStart(2061, 'Cast-2')"),
+                (3.7, "__healDone(2061, 'Cast-2')"), (4.2, "__channel(746, 'Cast-3')"),
+                (10.2, "__channelStop(746, 'Cast-3')")]),
+    # Both markers: a druid at half health keeps Moonfire (Arcane) on the mystic, puts Rejuvenation up, takes a few
+    # hits, then casts Healing Touch, which joins Rejuvenation's spring green while cast and bursts into the
+    # health in leaves as it lands. Moonfire is cast again just before it runs out.
+    "druid": dict(
+        player="Hotdog Tree", level="6", power="MANA", target="Gnarlpine Mystic", target_level="6",
+        maxes=(150, 210, 120, 160), loop=13.6, cls="DRUID", regen=0.004,
+        spells={8921: ("Moonfire", "Burns the enemy for 9 to 12 Arcane damage and then an additional 12 Arcane "
+                                   "damage over 9 sec.")},
+        heals={774: ("Rejuvenation", "Heals the target for 44 over 12 sec."),
+               5185: ("Healing Touch", "Heals a friendly target for 49 to 60.")},
+        script=[(0.0, 0.500, 1.00, 1.000, 1.00), (0.4, 0.500, 0.92, 0.917, 1.00), (0.6, 0.440, 0.92, 0.917, 0.92),
+                (1.2, 0.440, 0.83, 0.917, 0.92), (2.2, 0.370, 0.83, 0.917, 0.92), (3.4, 0.370, 0.83, 0.883, 0.92),
+                (3.6, 0.320, 0.83, 0.883, 0.84), (4.2, 0.393, 0.83, 0.883, 0.84), (6.4, 0.393, 0.83, 0.850, 0.84),
+                (7.2, 0.467, 0.83, 0.850, 0.84), (7.3, 0.827, 0.69, 0.850, 0.84), (8.4, 0.777, 0.69, 0.850, 0.76),
+                (9.4, 0.777, 0.69, 0.817, 0.76), (9.6, 0.777, 0.61, 0.725, 0.76), (10.2, 0.850, 0.61, 0.725, 0.76),
+                (12.6, 0.850, 0.64, 0.692, 0.76), (13.2, 0.923, 0.64, 0.692, 0.76)],
+        events=[(0.4, "__dotsCast(8921, 'Cast-1'); __hit(10, 64)"), (1.2, "__healCast(774, 'Cast-2')"),
+                (3.4, "__hit(4, 64)"), (4.8, "__healStart(5185, 'Cast-3')"), (6.4, "__hit(4, 64)"),
+                (7.3, "__healDone(5185, 'Cast-3')"), (9.4, "__hit(4, 64)"),
+                (9.6, "__dotsCast(8921, 'Cast-4'); __hit(11, 64)"), (12.6, "__hit(4, 64)")]),
 }
+
+
+def power_at(sc, t):
+    """The player's power at t for a scenario with regen: it refills continuously, up to full, between spends."""
+    script = sc["script"]
+    spends = sc.get("spends")
+    if spends is None:
+        spends = [(b[0], a[2] - b[2]) for a, b in zip(script, script[1:]) if b[2] < a[2]]
+    power, last = sc.get("power_start", script[0][2]), 0.0
+    for when, spend in spends:
+        if when > t:
+            break
+        power = max(0.0, min(1.0, power + sc["regen"] * (when - last)) - spend)
+        last = when
+    return min(1.0, power + sc["regen"] * (t - last))
+
+
+def heals_setup(cls, spells):
+    """Lua for a scenario with the heal marker: the player's class, the spells as the client describes them, and
+    helpers for the events, all on the player: an instant heal, a cast's start and end, a bandage's channel."""
+    lines = [f"__spells[{sid}] = {{ {name!r}, {desc!r} }}" for sid, (name, desc) in spells.items()]
+    return "\n".join(lines) + f"""
+    __player.class = {cls!r}
+    SmoothAnimatedBarsDB.heals = true
+    local function sent(id, guid) __fire('UNIT_SPELLCAST_SENT', 'player', __player.name, guid, id) end
+    function __healCast(id, guid) sent(id, guid); __fire('UNIT_SPELLCAST_SUCCEEDED', 'player', guid, id) end
+    function __healStart(id, guid) sent(id, guid); __fire('UNIT_SPELLCAST_START', 'player', guid, id) end
+    function __healDone(id, guid)
+        __fire('UNIT_SPELLCAST_STOP', 'player', guid, id); __fire('UNIT_SPELLCAST_SUCCEEDED', 'player', guid, id)
+    end
+    function __channel(id, guid)
+        sent(id, guid); __fire('UNIT_SPELLCAST_CHANNEL_START', 'player', guid, id)
+        __fire('UNIT_SPELLCAST_SUCCEEDED', 'player', guid, id)
+    end
+    function __channelStop(id, guid) __fire('UNIT_SPELLCAST_CHANNEL_STOP', 'player', guid, id) end
+"""
 
 
 def dots_setup(target, spells):
@@ -180,10 +256,11 @@ def start(settings, power="RAGE", dots="", events=()):
     after = """
         local bars = { player_health = PlayerFrame.healthbar, player_power = PlayerFrame.manabar,
                        target_health = TargetFrame.healthbar, target_power = TargetFrame.manabar }
-        -- The liquid's clip frame is the bar's first frame that is not a StatusBar (the DoT marker's comes after).
+        -- The liquid's clip frame is the bar's first clipping frame that is not a StatusBar (the markers' come
+        -- after; the game's heal prediction segments do not clip).
         for key, bar in pairs(bars) do
             for _, clip in ipairs(__frames) do
-                if clip.parent == bar and not clip.SetValue then
+                if clip.parent == bar and not clip.SetValue and clip.clipsChildren then
                     for _, f in ipairs(__frames) do
                         if f.parent == clip then
                             _G['__mover_' .. key] = f
@@ -200,6 +277,18 @@ def start(settings, power="RAGE", dots="", events=()):
             for i, d in ipairs(marker.liquids) do
                 _G['__dotMover' .. i] = d.mover
                 d.mover.w, d.mover.h = TargetFrame.healthbar.w, TargetFrame.healthbar.h
+            end
+        end
+        -- The heal liquids' frames likewise, on the health bar and (drink) the mana bar.
+        local heal, mana = __ns.HealMarker.State()
+        for prefix, m in pairs({ __healMover = heal or false, __manaMover = mana or false }) do
+            if m then
+                for i, d in ipairs(m.liquids) do
+                    _G[prefix .. i] = d.mover
+                    d.mover.w, d.mover.h = m.bar.w, m.bar.h
+                    _G[prefix .. 'Seam' .. i] = d.seam.mover
+                    d.seam.mover.w, d.seam.mover.h = m.bar.w, m.bar.h
+                end
             end
         end
         -- The bar masks have no art in the mock; the captured ones are applied here instead.
@@ -242,6 +331,17 @@ def draw_bar(session, img, art, fx, fy, which, kind, frac, frame=None, cut=0.0, 
     a, b = np.asarray(sub).astype(np.float32), np.asarray(motes).astype(np.float32)
     sub = Image.fromarray((a + (b - a) * clip[..., None]).astype(np.uint8))
     img.paste(sub, (sx, sy))
+
+
+def heal_state(session):
+    """What the player's heal markers are showing, by bar kind ("health", and "power" for drink): each heal
+    liquid's running total as it glides (None for one not showing). A hidden marker is left out."""
+    out = {}
+    for kind, i in (("health", 1), ("power", 2)):
+        m = session.lua.eval(f"(select({i}, __ns.HealMarker.State()))")
+        if m is not None and m.clip.shown:
+            out[kind] = [d.shown if d.pool.shown else None for d in (m.liquids[j] for j in range(1, len(m.liquids) + 1))]
+    return out
 
 
 def marker_state(session):
@@ -294,9 +394,9 @@ def text(draw, x, y, s, size, color, outline):
         draw.text((x, y), s, font=f, fill=color, anchor="mm")
 
 
-def draw_frame(session, img, art, fx, fy, which, fills, values, sc, portrait, marker=None):
-    """A whole frame onto img (RGB): art, liquid, the DoT marker (its state from marker_state), then the
-    level circle and text above them."""
+def draw_frame(session, img, art, fx, fy, which, fills, values, sc, portrait, marker=None, heals=None):
+    """A whole frame onto img (RGB): art, liquid, the DoT marker (its state from marker_state) and the heal
+    marker (heal_state), then the level circle and text above them."""
     canvas = img.convert("RGBA")
     pieces = [portrait if which == "player" else "target-portrait", f"{which}-art"]
     if which == "target":
@@ -322,7 +422,30 @@ def draw_frame(session, img, art, fx, fy, which, fills, values, sc, portrait, ma
                          cut=end * w - OVERLAP, cut_right=None if i == 0 else front * w + ROOM)
                 front = end
             frac = front
+        if which == "player" and heals and heals.get(kind):
+            # Each heal liquid from the edge before it (cut a little under it) to the bar's end, ending where its
+            # running total does: the one past the other first, as the nearer one lies over it.
+            w = BARS[(which, kind)][2]
+            maximum = dict(zip(ORDER, sc["maxes"]))[(which, kind)]
+            runs = heals[kind]
+            prefix = "__healMover" if kind == "health" else "__manaMover"
+            starts, before = [], frac
+            for run in runs:
+                starts.append(before)
+                if run is not None:
+                    before = frac + run / maximum
+            for i in reversed(range(len(runs))):
+                if runs[i] is None:
+                    continue
+                draw_bar(session, img, art, fx, fy, which, kind, frac + runs[i] / maximum,
+                         frame=f"{prefix}{i + 1}", cut=starts[i] * w - OVERLAP, cut_right=w)
         draw_bar(session, img, art, fx, fy, which, kind, frac)
+        if which == "player" and heals and heals.get(kind):
+            # The seams, above everything: each on the edge its liquid starts from.
+            for i in reversed(range(len(starts))):
+                if heals[kind][i] is not None:
+                    draw_bar(session, img, art, fx, fy, which, kind, starts[i], frame=f"{prefix}Seam{i + 1}",
+                             cut_right=w)
     canvas = img.convert("RGBA")
     canvas.alpha_composite(art[f"{which}-circle"], (int(fx), int(fy)))
     img.paste(canvas.convert("RGB"))
@@ -369,6 +492,8 @@ def scenario(art, key):
     """Both frames through a scenario's loop, as a GIF; the warrior's also gives frames.png."""
     sc = SCENARIOS[key]
     dots = dots_setup(sc["target"], sc["spells"]) if "spells" in sc else ""
+    if "heals" in sc:
+        dots += heals_setup(sc["cls"], sc["heals"])
     session = start({}, sc["power"], dots, sc.get("events", ()))
     portrait = portrait_for(art, key)
     pad, gap = round(24 * K), round(30 * K)
@@ -379,7 +504,10 @@ def scenario(art, key):
 
     def at(t):
         row = [r for r in sc["script"] if r[0] <= t][-1]
-        return dict(zip(ORDER, row[1:]))
+        values = dict(zip(ORDER, row[1:]))
+        if "regen" in sc:
+            values[("player", "power")] = power_at(sc, t)
+        return values
 
     fills, shown = dict(at(0)), at(0)
     frames, still = [], None
@@ -387,7 +515,8 @@ def scenario(art, key):
     while t < sc["loop"] - 1e-9:
         goal = at(t)
         for k in ORDER:
-            if goal[k] != shown[k]:
+            # A change the bar shows: the game's events come with the whole number changing.
+            if round(goal[k] * maxes[k]) != round(shown[k] * maxes[k]):
                 which, kind = k
                 event = "UNIT_HEALTH" if kind == "health" else "UNIT_POWER_UPDATE"
                 session.lua.execute(f"__fire('{event}', '{which}')")
@@ -399,9 +528,10 @@ def scenario(art, key):
             fills[k] += (goal[k] - fills[k]) * (1 - math.exp(-8 * dt))
         values = {k: round(goal[k] * maxes[k]) for k in ORDER}
         marker = marker_state(session) if "spells" in sc else None
+        heals = heal_state(session) if "heals" in sc else None
         img = back.copy()
         for which, (fx, fy) in spots.items():
-            draw_frame(session, img, art, fx, fy, which, fills, values, sc, portrait, marker)
+            draw_frame(session, img, art, fx, fy, which, fills, values, sc, portrait, marker, heals)
         frames.append(img)
         if key == "hero" and still is None and t >= 3.3:
             still = img

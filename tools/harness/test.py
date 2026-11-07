@@ -25,12 +25,13 @@ def check(ok, what):
 
 # Helpers in Lua: our frames on a game bar, and what the liquid on it is showing.
 HELPERS = """
-    -- The liquid's frames on a bar. It builds them before the DoT marker builds its own there.
+    -- The liquid's frames on a bar: the first StatusBar and clipping frame of ours on it (the game's own heal
+    -- prediction segments there do not clip). It builds them before the markers build their own there.
     function __ours(bar)
         local proxy, clip, mover
         for _, f in ipairs(__frames) do
             if f.parent == bar then
-                if f.SetValue then proxy = proxy or f else clip = clip or f end
+                if f.SetValue then proxy = proxy or f elseif f.clipsChildren then clip = clip or f end
             end
         end
         for _, f in ipairs(__frames) do
@@ -39,12 +40,12 @@ HELPERS = """
         return proxy, clip, mover
     end
     function __liquid(bar)
-        local _, _, mover = __ours(bar)
+        local _, clip, mover = __ours(bar)
         local n, shown, masked, free = 0, 0, 0, 0
         for _, r in ipairs(__regions) do
             if mover and r.parent == mover and r.kind == "Texture" then
                 n = n + 1
-                if r.shown then shown = shown + 1 end
+                if r.shown and clip.shown then shown = shown + 1 end
                 if r.masks and #r.masks > 0 then masked = masked + 1 else free = free + 1 end
             end
         end
@@ -188,7 +189,7 @@ rows = lua.eval("__settingsRows()")
 rows = [rows[i] for i in range(1, len(rows) + 1)]
 keys = [r.key for r in rows if r.key]
 check(keys == ["playerHealth", "playerPower", "targetHealth", "targetPower", "healthColor", "powerColor",
-               "waves", "swirl", "bubbles", "sparkles", "ambient", "lightning", "dots", "dotKillIcon"],
+               "waves", "swirl", "bubbles", "sparkles", "ambient", "lightning", "dots", "dotKillIcon", "heals"],
       f"settings page rows: {keys}")
 check(not lua.eval("__sharedListTainted"), "nothing added to the game's shared settings list (Forever: Social blocked)")
 options = [o for o in rows if o.key == "healthColor"][0].options
@@ -399,7 +400,7 @@ check(pm.eval("SmoothAnimatedBarsSetup.shown") and pm.eval("(select(2, __liquid(
       "a missing atlas leaves that piece out: no mask, liquid uncut, no error")
 
 print("== DoT marker")
-dm = session()
+dm = session("{ setupDone = true, heals = false }")
 run(dm, 0.5)
 check(dm.eval("SmoothAnimatedBarsDB.dots") is False and not dm.eval("__ns.Dots.IsEnabled()")
       and dm.eval("(__ns.Marker.State())") is None, "off by default: no tracking, no marker built")
@@ -575,6 +576,347 @@ dd = session("{ setupDone = true, dots = true }", "__addons.DoesItDie = true")
 run(dd, 0.3)
 check(not dd.eval("__ns.Dots.IsEnabled()") and any("DoesItDie is loaded" in m for m in chat(dd)),
       "with DoesItDie loaded the marker stays off and says why")
+
+print("== heal marker")
+hm = session("{ setupDone = true }", "__player.class = 'PRIEST'")
+run(hm, 0.5)
+HEAL_EVENTS = """(function()
+    for _, f in ipairs(__frames) do
+        if f.events.UNIT_SPELLCAST_CHANNEL_START then return true end
+    end
+    return false
+end)()"""
+check(hm.eval("SmoothAnimatedBarsDB.heals") is True and hm.eval("__ns.Heals.IsEnabled()") and hm.eval(HEAL_EVENTS)
+      and hm.eval("__ns.HealMarker.State() ~= nil") and not hm.eval("__ns.HealMarker.State().clip.shown"),
+      "on by default: tracking, a marker on the player's health bar, nothing shown without heals")
+hm.execute("""
+    __spells[139] = { 'Renew', 'Heals the target of 830 damage over 15 sec.' }
+    __spells[746] = { 'First Aid', 'Heals 66 damage over 6 sec.' }
+    __spells[2061] = { 'Flash Heal', 'Heals a friendly target for 193 to 237.' }
+    __spells[585] = { 'Smite', 'Smite an enemy for 15 to 20 Holy damage.' }
+    function __h() return __ns.HealMarker.State() end
+    function __hd(i) return __h().liquids[i] end
+    function __heal() return (__ns.Heals.Player()) end
+    function __send(id, guid, name) __fire('UNIT_SPELLCAST_SENT', 'player', name or 'Testchar', guid, id) end
+    function __instant(id, guid, name)
+        __send(id, guid, name)
+        __fire('UNIT_SPELLCAST_SUCCEEDED', 'player', guid, id)
+    end
+""")
+hm.execute("__instant(585, 'Cast-0', 'Mottled Boar'); __send(585, 'Cast-00', 'Mottled Boar')"
+           "; __fire('UNIT_SPELLCAST_START', 'player', 'Cast-00', 585); __fire('UNIT_SPELLCAST_STOP', 'player', 'Cast-00', 585)")
+run(hm, 0.3)
+check(hm.eval("__heal()") == 0 and not hm.eval("__h().clip.shown") and not any("Error in" in m for m in chat(hm)),
+      "a spell that is not a heal, instant or cast: nothing shown, no error")
+hm.execute("__spells[9999] = { 'Odd Heal', 'Restores a little health to a friendly target.' }; __instant(9999, 'Cast-01')")
+check(any("UNREAD Odd Heal" in m for m in hm.eval("__ns.Heals.Debug(20)").values()),
+      "a heal whose text cannot be read: its text goes to /sab heals")
+hm.execute("__instant(139, 'Cast-1'); __renewAt = __now")
+
+
+def renew():
+    """What Renew (830 over 15 s, a tick every 3) still has to heal."""
+    done = int((hm.eval("__now - __renewAt")) / 3 + 0.05)
+    return max(0, 166 * (5 - done))
+
+
+run(hm, 0.15)
+check(hm.eval("__hd(1).liquid.energy") > 0.3, "a heal starting splashes the heal liquid")
+run(hm, 1)
+check(hm.eval("__heal()") == 830 and hm.eval("__h().clip.shown") and hm.eval("__hd(1).themeKey") == "holy"
+      and hm.eval("__hd(1).pool.shown") and not hm.eval("__hd(2).pool.shown"),
+      "Renew on yourself: 830 to come, one Holy liquid (a priest's heal)")
+check(hm.eval("__hd(1).run.max == PlayerFrame.healthbar.max") and hm.eval("issecretvalue(__hd(1).run.max)")
+      and hm.eval("__hd(1).run.value") == 830 and not hm.eval("__hd(1).run.reverse")
+      and hm.eval("__hd(1).run.points.TOPLEFT.rel == __h().proxy.fill")
+      and hm.eval("__hd(1).run.points.TOPLEFT.relPoint") == "TOPRIGHT"
+      and hm.eval("__h().proxy.value == PlayerFrame.healthbar.value"),
+      "its running total takes the health bar's secret range, filling on from the health's edge")
+check(hm.eval("__hd(1).mover.points.TOPRIGHT.rel == __hd(1).fill") and hm.eval("__hd(1).mover.w") == 124
+      and hm.eval("__hd(1).pool.points.TOPLEFT.rel == __h().proxy.fill") and hm.eval("__hd(1).pool.points.TOPLEFT.x") == -6
+      and hm.eval("__hd(1).pool.points.BOTTOMRIGHT.rel == __h().clip")
+      and hm.eval("__h().clip.points.BOTTOMRIGHT.rel == PlayerFrame.healthbar")
+      and hm.eval("__h().clip.points.BOTTOMRIGHT.x") == 0 and hm.eval("__h().clip.clipsChildren"),
+      "the heal liquid ends where the health will be, starts a little under the health's edge, cut at the bar's end")
+HEAL_LAYERS = """(function(i)
+    local m = __h()
+    local mask = PlayerFrame.PlayerFrameContent.PlayerFrameContentMain.HealthBarsContainer.HealthBarMask
+    local masked, free, top = 0, 0, -99
+    for _, t in ipairs(m.liquids[i].liquid.textures) do
+        if t.masks and t.masks[1] == mask then masked = masked + 1 else free = free + 1 end
+        if t.layer == 'ARTWORK' and t.sub > top then top = t.sub end
+    end
+    local d = m.liquids[i]
+    return masked > 0 and free == 64 and m.clip.useParentLevel and d.pool.useParentLevel and d.mover.useParentLevel
+        and top
+end)"""
+check(hm.eval(HEAL_LAYERS + "(1)") == 2 and hm.eval(HEAL_LAYERS + "(2)") == -3,
+      "cut by the bar's mask, motes free, at the bar's level, under the health liquid; the second under the first")
+run(hm, 2)  # Renew's first tick, 3 s after the cast
+check(hm.eval("__heal()") == 664, f"a tick lands every 3 seconds: 4 of 5 left, 664 to come ({hm.eval('__heal()')})")
+hm.execute("__target = { guid = 'Player-1-00000002', name = 'Friend', friendly = true }; __fire('PLAYER_TARGET_CHANGED')")
+hm.execute("__instant(139, 'Cast-2', 'Friend')")
+run(hm, 0.3)
+check(hm.eval("__heal()") == 664, "Renew on a friend: not yours to show")
+hm.execute("__send(746, 'Cast-3'); __fire('UNIT_SPELLCAST_CHANNEL_START', 'player', 'Cast-3', 746)"
+           "; __fire('UNIT_SPELLCAST_SUCCEEDED', 'player', 'Cast-3', 746)")
+run(hm, 0.3)
+check(hm.eval("__heal()") == renew() + 66 and hm.eval("__hd(1).themeKey") == "holy" and hm.eval("__hd(2).themeKey") == "bandage"
+      and hm.eval("__hd(2).pool.shown") and hm.eval("__hd(2).value") == renew() + 66,
+      "a bandage on yourself: 66 more, a liquid of its own past the Holy one, its own success event not counted twice")
+check(hm.eval("__hd(2).pool.points.TOPLEFT.rel == __hd(1).fill") and hm.eval("__hd(2).pool.points.TOPLEFT.x") == -6
+      and hm.eval("__hd(2).mover.points.TOPRIGHT.rel == __hd(2).fill"),
+      "the bandage's liquid starts on the Holy one's end")
+check(hm.eval("__hd(2).liquid.burst.texture") == "Plus" and hm.eval("__hd(2).liquid.ambient[1].texture") == "Plus"
+      and hm.eval("__hd(2).liquid.theme.fillB[1]") > 0.8 and hm.eval("__hd(1).liquid.burst.texture") != "Plus",
+      "a bandage throws green pluses, as the game shows over a healed character, in the heals' spring green")
+run(hm, 0.8)
+check(hm.eval("__heal()") == renew() + 55, f"bandages tick every second ({hm.eval('__heal()')})")
+hm.execute("__fire('UNIT_SPELLCAST_CHANNEL_STOP', 'player', 'Cast-3', 746)")
+run(hm, 0.3)
+check(hm.eval("__heal()") == renew(), "the bandage broken (or done): what it had left is gone")
+for _ in range(120):
+    run(hm, 1 / 60)
+    if not hm.eval("__hd(2).pool.shown"):
+        break
+check(not hm.eval("__hd(2).pool.shown") and hm.eval("__hd(1).pool.shown"), "its liquid glides away, Renew's stays")
+hm.execute("__target = nil; __fire('PLAYER_TARGET_CHANGED')")
+hm.execute("__player.surname = 'Hootsman'; __send(2061, 'Cast-s1', 'Testchar Hootsman')"
+           "; __fire('UNIT_SPELLCAST_START', 'player', 'Cast-s1', 2061)")
+run(hm, 0.3)
+full = hm.eval("__heal()") == renew() + 193
+hm.execute("__fire('UNIT_SPELLCAST_STOP', 'player', 'Cast-s1', 2061)"
+           "; __send(2061, 'Cast-s2', 'Testchar-Mockrealm'); __fire('UNIT_SPELLCAST_START', 'player', 'Cast-s2', 2061)")
+run(hm, 0.3)
+check(full and hm.eval("__heal()") == renew() + 193,
+      "a cast sent at your name with Forever's surname, or with the realm, is on you")
+hm.execute("__fire('UNIT_SPELLCAST_STOP', 'player', 'Cast-s2', 2061); __player.surname = nil")
+run(hm, 0.3)
+hm.execute("__send(2061, 'Cast-4', ''); __fire('UNIT_SPELLCAST_START', 'player', 'Cast-4', 2061)")
+run(hm, 0.3)
+check(hm.eval("__heal()") == renew() + 193, f"Flash Heal being cast on yourself: its lowest roll shows ({hm.eval('__heal()')})")
+OWN, OTHERS = "PlayerFrame.healthbar.MyHealPredictionBar.Fill.alpha", "PlayerFrame.healthbar.OtherHealPredictionBar.Fill.alpha"
+check(hm.eval(OWN) == 0 and hm.eval(OTHERS) == 1,
+      "the game's own prediction of your heals is hidden under the marker; others' heals keep theirs")
+hm.execute("__fire('UNIT_SPELLCAST_INTERRUPTED', 'player', 'Cast-4', 2061)")
+run(hm, 0.3)
+check(hm.eval("__heal()") == renew(), "interrupted: gone")
+hm.execute("__settings.playerHealth:SetValue(false)")
+run(hm, 0.3)
+check(hm.eval("__hd(1).liquid.body.sub") == 3 and hm.eval("__hd(1).pool.points.TOPLEFT.x") == 0
+      and hm.eval("__h().clip.shown"), "health liquid off: the heal liquid lies over the game's fill, from its edge")
+hm.execute("__settings.playerHealth:SetValue(true)")
+run(hm, 0.3)
+check(hm.eval("__hd(1).liquid.body.sub") == -2, "and goes back under the liquid when it is on again")
+# Seen in game: in combat the aura lookup said "none" for a Rejuvenation that was on the player.
+hm.execute("__aurasReadable = true; __combat = true; __instant(139, 'Cast-A'); __renewAt = __now")
+run(hm, 1)
+check(hm.eval("__heal()") == renew() == 830, "in combat, a lookup that never found Renew's aura does not drop it")
+hm.execute("__playerAuras[139] = { expirationTime = __now + 30 }")
+run(hm, 0.6)
+hm.execute("__playerAuras[139] = nil; __fire('UNIT_AURA', 'player')")
+run(hm, 0.6)
+check(hm.eval("__heal()") == renew(), "nor does its aura going missing in combat")
+hm.execute("__combat = false; __fire('UNIT_AURA', 'player')")
+run(hm, 0.3)
+check(hm.eval("__heal()") == 0 and any("GONE Renew" in m for m in hm.eval("__ns.Heals.Debug(20)").values()),
+      "out of combat, an aura seen and then gone (dispelled, cancelled): dropped")
+hm.execute("__playerAuras[139] = { expirationTime = __now + 4.5 }; __instant(139, 'Cast-5')")
+run(hm, 1)
+check(hm.eval("__heal()") == 332, f"with its aura there, Renew follows the aura's time left ({hm.eval('__heal()')})")
+hm.execute("__player.dead = true")
+run(hm, 0.3)
+check(not hm.eval("__h().clip.shown") and hm.eval(OWN) == 1, "dead: marker hidden, the game's prediction back")
+hm.execute("__player.dead = false; __fire('PLAYER_DEAD')")
+run(hm, 0.3)
+check(hm.eval("__heal()") == 0, "and dying drops every heal")
+hm.execute("SlashCmdList.SMOOTHANIMATEDBARS('heals')")
+check(any("Heal marker (health): on" in m for m in chat(hm)) and any("HOT Renew" in m for m in chat(hm)),
+      "/sab heals reports the marker and the tracking")
+check(not any("Error in" in m for m in chat(hm)), "no errors (the player's health stayed secret)")
+hm.execute("__settings.heals:SetValue(false)")
+run(hm, 0.2)
+check(not hm.eval("__ns.Heals.IsEnabled()") and not hm.eval(HEAL_EVENTS) and not hm.eval("__h().clip.shown"),
+      "off: tracking stops and listens to nothing")
+over, dur, direct = hm.eval("__ns.Heals.parseHeal('Heals a friendly target for 93 to 107 and another 98 over 21 sec.')")
+check((over, dur, direct) == (98, 21, 93)
+      and hm.eval("(__ns.Heals.parseHeal('Heals the target for 32 over 12 sec.'))") == 32
+      and hm.eval("(__ns.Heals.parseHeal('Corrupts the target, causing 90 Shadow damage over 18 sec.'))") is None,
+      "spell text: direct and over time, over time only, and a DoT is no heal")
+dr = session("{ setupDone = true }", "__player.class = 'DRUID'")
+dr.execute("""
+    __spells[774] = { 'Rejuvenation', 'Heals the target for 32 over 12 sec.' }
+    __fire('UNIT_SPELLCAST_SENT', 'player', 'Testchar', 'Cast-1', 774)
+    __fire('UNIT_SPELLCAST_SUCCEEDED', 'player', 'Cast-1', 774)
+""")
+run(dr, 0.5)
+check(dr.eval("(__ns.Heals.Player())") == 32 and dr.eval("__ns.HealMarker.State().liquids[1].themeKey") == "nature",
+      "a druid's Rejuvenation is Nature")
+print("== food and drink")
+fd = session("{ setupDone = true }", "__player.class = 'MAGE'; __player.power = 0")
+fd.execute("""
+    __spells[433] = { 'Food', 'Restores 61 health over 18 sec. Must remain seated while eating.' }
+    __spells[430] = { 'Drink', 'Restores 151 mana over 18 sec. Must remain seated while drinking.' }
+    __spells[18234] = { 'Refreshment', 'Restores 294 health and 294 mana over 18 sec. Must remain seated.' }
+    __spells[133] = { 'Fireball', 'Hurls a fiery ball that causes 14 to 22 Fire damage.' }
+    function __hp() return (__ns.HealMarker.State()) end
+    function __mp() return select(2, __ns.HealMarker.State()) end
+    function __use(id, guid)
+        __fire('UNIT_SPELLCAST_SENT', 'player', '', guid, id)
+        __fire('UNIT_SPELLCAST_SUCCEEDED', 'player', guid, id)
+    end
+""")
+fd.execute("__use(433, 'Cast-1'); __use(430, 'Cast-2')")
+run(fd, 1)
+check(fd.eval("(__ns.Heals.Player())") == 61 and fd.eval("(__ns.Heals.Mana())") == 151,
+      "eating and drinking: 61 health and 151 mana on the way, the drink not standing you up from the food")
+check(fd.eval("__hp().liquids[1].themeKey") == "honey" and fd.eval("__hp().clip.shown")
+      and fd.eval("__mp().liquids[1].themeKey") == "nagrand" and fd.eval("__mp().clip.shown")
+      and fd.eval("__mp().bar == PlayerFrame.manabar") and fd.eval("__mp().liquids[1].run.max == PlayerFrame.manabar.max")
+      and fd.eval("__mp().spec.mask == PlayerFrame.manabar.ManaBarMask"),
+      "food as Honey ahead of the health, drink as Nagrand ahead of the mana, on the mana bar's secret range and mask")
+SEAM = """(function()
+    local s = __mp().liquids[1].seam
+    local before = __ns.Bars.Liquid(PlayerFrame.manabar)
+    local r = before.gradC:GetRGBA()
+    local width, differ = nil, false
+    for _, t in ipairs(s.rows) do
+        if width and t.w ~= width then differ = true end
+        width = t.w
+    end
+    local a = s.mover.points.TOPRIGHT
+    return s.mover.shown and a.rel == __mp().proxy.fill and a.relPoint == 'TOPRIGHT' and differ
+        and s.rows[1].vc[1] == r and s.rows[1].layer == 'ARTWORK' and s.rows[1].sub == 7
+        and s.rows[1].masks[1] == PlayerFrame.manabar.ManaBarMask
+end)()"""
+check(fd.eval(SEAM), "a seam of the mana's colour lies above the drink on the mana's edge, following its waves slice by slice")
+fd.execute("__settings.playerPower:SetValue(false)")
+run(fd, 0.3)
+check(not fd.eval("__mp().liquids[1].seam.mover.shown") and fd.eval("__mp().clip.shown"),
+      "with the mana liquid off there is no front to follow: no seam")
+fd.execute("__settings.playerPower:SetValue(true)")
+run(fd, 0.5)
+INFLOW = """(function(bar, source)
+    -- Motes in the bar's own liquid moving back from its front, in the incoming liquid's colours.
+    local n = 0
+    for _, m in ipairs(__ns.Bars.Liquid(bar).motes) do
+        if m.active and m.vx < 0 and m.r1 == source.theme.splashFrom[1] and m.g1 == source.theme.splashFrom[2] then
+            n = n + 1
+        end
+    end
+    return n
+end)"""
+check(fd.eval(INFLOW + "(PlayerFrame.manabar, __mp().liquids[1].liquid)") > 0
+      and fd.eval(INFLOW + "(PlayerFrame.healthbar, __hp().liquids[1].liquid)") > 0,
+      "they pour in: the drink's motes drift back into the mana liquid, the food's into the health")
+run(fd, 2.2)
+check(fd.eval("(__ns.Heals.Player())") < 61 and fd.eval("(__ns.Heals.Mana())") < 151, "both tick down")
+fd.execute("__fire('PLAYER_STARTED_MOVING')")
+run(fd, 1.8)
+check(fd.eval("(__ns.Heals.Player())") == 0 and fd.eval("(__ns.Heals.Mana())") == 0
+      and fd.eval(INFLOW + "(PlayerFrame.manabar, __mp().liquids[1].liquid)") == 0,
+      "moving stands you up: food and drink end, and stop pouring in")
+fd.execute("__use(18234, 'Cast-3')")
+run(fd, 0.5)
+both = fd.eval("(__ns.Heals.Player())") == 294 and fd.eval("(__ns.Heals.Mana())") == 294
+fd.execute("__use(133, 'Cast-4')")
+run(fd, 0.3)
+check(both and fd.eval("(__ns.Heals.Player())") == 0 and fd.eval("(__ns.Heals.Mana())") == 0,
+      "food and drink in one feeds both bars; casting anything else stands you up")
+fd.execute("__player.power = 1; __use(430, 'Cast-5')")
+run(fd, 0.5)
+check(not fd.eval("__mp().clip.shown"), "with rage on the power bar (a druid's bear form), no drink marker")
+fd.execute("SlashCmdList.SMOOTHANIMATEDBARS('heals')")
+check(any("Heal marker (mana)" in m for m in chat(fd)) and any("REST Drink" in m for m in chat(fd))
+      and not any("Error in" in m for m in chat(fd)), "/sab heals reports both markers; no errors")
+check(fd.eval("(__ns.Heals.parseRest('Restores 2148 health and 4410 mana over 30 sec.'))") == 2148
+      and fd.eval("(__ns.Heals.parseRest('Heals the target for 32 over 12 sec.'))") is None,
+      "food text read; a heal is not food")
+print("== a meal's buff")
+FED_FOOD = "Restores 61 health over 18 sec. Must remain seated while eating. If you spend at least 10 seconds eating you will become well fed and gain 4 Stamina for 15 min."
+mb = session("{ setupDone = true }", "__player.class = 'DRUID'; __player.power = 0")
+mb.execute(f"""
+    __spells[433] = {{ 'Food', '{FED_FOOD}' }}
+    __spells[434] = {{ 'Bread', 'Restores 61 health over 18 sec. Must remain seated while eating.' }}
+    function __eat(id, guid)
+        __fire('UNIT_SPELLCAST_SENT', 'player', '', guid, id)
+        __fire('UNIT_SPELLCAST_SUCCEEDED', 'player', guid, id)
+    end
+    function __stars()
+        local n = 0
+        for _, m in ipairs(__ns.Bars.Liquid(PlayerFrame.healthbar).motes) do
+            if m.active and m.style and m.style.texture == 'Star' then n = n + 1 end
+        end
+        return n
+    end
+    function __tint() return __ns.Bars.Liquid(PlayerFrame.healthbar).inflowMix end
+""")
+mb.execute("__eat(434, 'Cast-0')")
+run(mb, 11)
+check(mb.eval("(__ns.Heals.Charge('health'))") is None and mb.eval("__stars()") == 0,
+      "food without a buff: no build-up, no burst")
+check(any("Bread has no buff" in m for m in mb.eval("__ns.Heals.Debug(30)").values()),
+      "and /sab heals shows its text, in case Forever words the buff differently")
+mb.execute("__fire('PLAYER_STARTED_MOVING')")
+run(mb, 2)
+mb.execute("__eat(433, 'Cast-1')")
+run(mb, 1)
+early = mb.eval("__tint()")
+run(mb, 8)
+late = mb.eval("__tint()")
+progress = mb.eval("(__ns.Heals.Charge('health'))")
+check(0.85 < progress < 1 and late > early and mb.eval("__stars()") == 0,
+      f"food with a buff: it builds up in the health liquid, the tint growing ({early:.2f} then {late:.2f}), no stars yet")
+run(mb, 1.2)
+check(mb.eval("__stars()") > 25 and mb.eval("__tint()") > 0.9,
+      f"at 10 seconds it lets go: {mb.eval('__stars()')} stars along the bar and a flash of the honey's colour")
+run(mb, 3)
+check(0 < mb.eval("__stars()") < 25 and mb.eval("__tint()") < 0.9,
+      "then slow stars keep rising while you stay sitting: you can get up")
+mb.execute("__fire('PLAYER_STARTED_MOVING')")
+run(mb, 3)
+check(mb.eval("__stars()") == 0 and mb.eval("__ns.Bars.Liquid(PlayerFrame.healthbar).inflowTheme == nil") and not mb.eval("(__ns.HealMarker.State()).clip.shown"),
+      "standing up ends it")
+mb.execute("__eat(433, 'Cast-2')")
+run(mb, 5)
+mb.execute("__fire('PLAYER_STARTED_MOVING')")
+run(mb, 8)
+check(mb.eval("__stars()") == 0, "standing up before 10 seconds: no burst")
+mb.execute("__eat(433, 'Cast-3')")
+run(mb, 10.5)
+check(mb.eval("__stars()") > 25, "and the next meal builds up and lets go again")
+check(not any("Error in" in m for m in chat(mb)), "no errors")
+fl = session("{ setupDone = true }", "__player.class = 'PRIEST'")
+fl.execute("""
+    __spells[2061] = { 'Flash Heal', 'Heals a friendly target for 193 to 237.' }
+    function __d1() return __ns.HealMarker.State().liquids[1] end
+    __fire('UNIT_SPELLCAST_SENT', 'player', '', 'Cast-L', 2061)
+    __fire('UNIT_SPELLCAST_START', 'player', 'Cast-L', 2061)
+""")
+run(fl, 1.5)
+before = fl.eval("__d1().liquid.energy")
+fl.execute("__fire('UNIT_SPELLCAST_STOP', 'player', 'Cast-L', 2061); __fire('UNIT_SPELLCAST_SUCCEEDED', 'player', 'Cast-L', 2061)")
+run(fl, 0.15)
+check(fl.eval("(__ns.Heals.Player())") == 0 and fl.eval("__ns.HealMarker.State().clip.shown") and fl.eval("__d1().pool.shown")
+      and fl.eval("__d1().liquid.energy") > max(before, 1.0),
+      "a lone cast heal landing: its liquid bursts, and glides into the health instead of vanishing")
+for _ in range(180):
+    run(fl, 1 / 60)
+    if not fl.eval("__ns.HealMarker.State().clip.shown"):
+        break
+check(not fl.eval("__ns.HealMarker.State().clip.shown") and not any("Error in" in m for m in chat(fl)),
+      "then the marker hides")
+fl.execute("""
+    __fire('UNIT_SPELLCAST_SENT', 'player', '', 'Cast-M', 2061)
+    __fire('UNIT_SPELLCAST_START', 'player', 'Cast-M', 2061)
+""")
+run(fl, 0.5)
+fl.execute("__fire('UNIT_SPELLCAST_STOP', 'player', 'Cast-M', 2061)")
+run(fl, 0.2)
+held = fl.eval("(__ns.Heals.Player())")
+run(fl, 0.5)
+check(held == 193 and fl.eval("(__ns.Heals.Player())") == 0,
+      "a cast that stops without landing (moved, cancelled) holds a moment for its success, then goes")
 
 print("== /sab capture (gallery art)")
 cap = session()

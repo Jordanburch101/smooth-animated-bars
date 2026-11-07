@@ -33,6 +33,23 @@ local STIR = 0.15        -- splash intensity of a stir
 local ROOM = 10
 local SPILL = 16         -- how far motes can fly above, below and past the end of a bar, px
 
+-- Inflow (Bars.Inflow): while something is on the way into a bar, its particles drift back from the front into
+-- the bar's liquid, and the front ripples where the two meet.
+local INFLOW_RATE = 12         -- motes per second
+local INFLOW_RIPPLE_EVERY = 0.5
+local INFLOW_RIPPLE = 0.12
+local INFLOW_MIX = 0.35        -- how far the front's tip, glow and colour turn toward the incoming liquid's
+
+-- The build-up to a food's buff (Bars.Charge, Bars.Release), all in the bar's own liquid, so it shows at full
+-- health too, when what is on the way lies past the bar's end.
+local CHARGE_RATE = 24         -- motes per second more at the top of the build-up
+local CHARGE_MIX = 0.4         -- how much further the bar turns toward the incoming colour
+local CHARGE_ENERGY = 0.7
+local RELEASE_STARS = 40
+local FLASH_SECONDS = 1.2      -- the bar's flash of the incoming colour at the release fades over this
+local SATED_RATE = 3           -- stars per second once the buff is reached, until the meal ends
+local STAR = { texture = "Star", blend = "ADD", buoyancy = 30, drag = 1.6, spin = { -2, 2 } }
+
 local HEALTH_COLOR = { 0.10, 0.90, 0.10 }
 -- PowerBarColor's values, for when the client has no PowerBarColor.
 local POWER_COLORS = {
@@ -255,6 +272,63 @@ local function Stir(b)
     b.liquid:Splash(STIR, b.width - 8, b.width)
 end
 
+-- The incoming liquid's burst style, slowed to drift: little lift, little drag, so the motes keep moving back.
+local function InflowStyle(source)
+    local burst = source.burst
+    if source.inflowFor ~= burst then
+        local style = {}
+        for k, v in pairs(burst) do style[k] = v end
+        style.buoyancy = (burst.buoyancy or 0) * 0.2
+        style.drag = 0.4
+        source.inflowFor, source.inflowStyle = burst, style
+    end
+    return source.inflowStyle
+end
+
+local function Rand(lo, hi)
+    return lo + (hi - lo) * math.random()
+end
+
+local function Inflow(b, dt, w, h)
+    local source = b.inflow
+    if not source then return end
+    local charge = b.charge or 0
+    b.inflowAcc = (b.inflowAcc or 0) + dt * (INFLOW_RATE + CHARGE_RATE * charge)
+    local theme = source.theme
+    while b.inflowAcc >= 1 do
+        b.inflowAcc = b.inflowAcc - 1
+        b.liquid:EmitMote(w - math.random() * 3, 2 + math.random() * math.max(0, h - 4), -(25 + math.random() * 25),
+            (math.random() - 0.5) * 8, 1.0 + math.random() * 0.7, 7 + math.random() * 4 + charge * 4,
+            theme.splashFrom, theme.splashTo, InflowStyle(source))
+    end
+    b.rippleIn = (b.rippleIn or 0) - dt
+    if b.rippleIn <= 0 then
+        b.rippleIn = INFLOW_RIPPLE_EVERY * (1 - 0.6 * charge)
+        b.liquid:Ripple(INFLOW_RIPPLE + 0.35 * charge)
+    end
+    if charge > 0 then
+        b.liquid:Warm(CHARGE_ENERGY * charge)
+        if math.random() < dt * 10 * charge then b.liquid:EmitBubble(Rand(4, math.max(4, w - 4))) end
+    end
+    -- Once the buff is reached, slow stars drift up along the bar until the meal ends.
+    if b.sated then
+        b.satedAcc = (b.satedAcc or 0) + dt * SATED_RATE
+        while b.satedAcc >= 1 do
+            b.satedAcc = b.satedAcc - 1
+            b.liquid:EmitMote(Rand(0, w), Rand(2, math.max(2, h - 2)), Rand(-4, 4), Rand(6, 16), Rand(1.2, 2),
+                Rand(7, 11), theme.tip, theme.splashTo, STAR)
+        end
+    end
+    -- The front's colour follows: further with the build-up, furthest in the release's flash.
+    b.flash = math.max(0, (b.flash or 0) - dt / FLASH_SECONDS)
+    local mix = INFLOW_MIX + CHARGE_MIX * charge + (b.sated and CHARGE_MIX * 0.5 or 0)
+    mix = math.min(1, mix + (1 - mix) * b.flash)
+    if math.abs(mix - (b.inflowMix or INFLOW_MIX)) > 0.02 then
+        b.inflowMix = mix
+        b.liquid:SetInflow(b.inflowTheme, mix)
+    end
+end
+
 local function UpdateBar(b, dt)
     local bar = b.bar
     if not bar:IsVisible() then return end
@@ -274,6 +348,8 @@ local function UpdateBar(b, dt)
         b.mover:SetWidth(w)
         b.liquid:SetSize(w + ROOM, h)
     end
+
+    Inflow(b, dt, w, h)
 
     -- Once settled only the idle wobble remains, so it drops to IDLE_FPS.
     if b.liquid:IsQuiet() then
@@ -336,6 +412,13 @@ local EVENTS = { "PLAYER_TARGET_CHANGED", "UNIT_DISPLAYPOWER", "UNIT_HEALTH", "U
 --------------------------------------------------------------------------------
 -- API
 --------------------------------------------------------------------------------
+
+-- The game's bar for a spot's on/off setting ("playerHealth"...), or nil if it is not there.
+function Bars.Find(key)
+    for _, spot in ipairs(SPOTS) do
+        if spot.key == key then return spot.find() end
+    end
+end
 
 -- Show the liquid on the bars that are switched on, building each the first time it is wanted.
 -- Returns how many of the game's bars are showing it and how many were wanted but not found.
@@ -426,6 +509,48 @@ function Bars.Front(bar, region)
         mover:SetPoint("BOTTOMRIGHT", fill, "BOTTOMRIGHT")
     end
     mover:SetWidth(b.width)
+end
+
+-- Something is on the way into a bar (HealMarker.lua): source is the incoming Liquid, whose particles then drift
+-- back into the bar's liquid from its front, which ripples; nil stops it.
+function Bars.Inflow(bar, source)
+    local b = StateFor(bar)
+    if not b then return end
+    b.inflow = source
+    local theme = source and source.theme or nil
+    if theme ~= b.inflowTheme then
+        b.inflowTheme = theme
+        b.liquid:SetInflow(theme, b.inflowMix or INFLOW_MIX)
+    end
+    if not source then
+        b.charge, b.sated, b.flash, b.inflowMix = nil, nil, nil, nil
+    end
+end
+
+-- The build-up to a food's buff while something pours in: progress 0..1, or nil when there is none.
+function Bars.Charge(bar, progress)
+    local b = StateFor(bar)
+    if b then b.charge = progress end
+end
+
+-- The buff is reached: the build-up lets go in stars along the whole bar, a splash and a flash of the incoming
+-- colour, and slow stars keep rising until the meal ends.
+function Bars.Release(bar)
+    local b = StateFor(bar)
+    if not b or not b.live or not b.inflow then return end
+    b.charge, b.sated, b.flash = nil, true, 1
+    local theme, w, h = b.inflow.theme, b.width, b.height
+    for _ = 1, RELEASE_STARS do
+        b.liquid:EmitMote(Rand(0, w), Rand(0, h), Rand(-30, 30), Rand(20, 70), Rand(0.9, 1.7), Rand(10, 18),
+            theme.tip, theme.splashTo, STAR)
+    end
+    b.liquid:Splash(0.8, 0, w)
+end
+
+-- The Liquid on a bar, if it has one (the heal marker's seam follows its front; also for the tests).
+function Bars.Liquid(bar)
+    local b = StateFor(bar)
+    return b and b.liquid
 end
 
 -- Stir a bar's liquid, as a change to its value does.
