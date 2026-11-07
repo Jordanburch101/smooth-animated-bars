@@ -50,7 +50,7 @@ Capture again only if the game's frame art changes. The mage, rogue and warlock 
 characters' portraits: capture on each, then `capture_art.py --portrait mage --pair 2`, `--portrait rogue
 --pair 1` and `--portrait warlock --pair N` (the newest pair is the last capture; until a warlock portrait is
 captured, the warlock uses the capturing character's; `rend` is the warrior again). `gallery.py` takes scenario
-names to render only some: `hero`, `mage`, `rogue`, `warlock`, `rend`, `priest`, `druid`, `themes`. The druid
+names to render only some: `hero`, `mage`, `rogue`, `warlock`, `rend`, `priest`, `druid`, `eating`, `themes`. `eating` is the player frame alone, a meal up to its buff, with the druid's portrait. The druid
 carries both markers (Moonfire on the target, Rejuvenation and Healing Touch on itself) and has its own
 portrait (`--portrait druid`). The priest's
 health carries the heal marker (Holy, then a bandage's Nature), its casts going through the addon's own heal

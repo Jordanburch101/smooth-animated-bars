@@ -11,6 +11,11 @@ https://www.wowhead.com/icon=132870/inv-enchant-essencenetherlarge). The toc sho
 - `smooth-animated-bars-64.png`, `-128.png`, `-256.png` - upscaled from the 54px crop (Lanczos).
 - `../public/favicon.ico` - the borderless 64 at 16, 32, 48 and 64 px.
 
+## Store page
+
+`curseforge.md` is the CurseForge project description, to paste into its Markdown editor. Keep it in step with
+the top-level README. Its images load from `main`, so push them before pasting.
+
 ## Art and gallery
 
 `art/` is Forever's unit frame art, captured in game, and `gallery/` the README's images rendered from it

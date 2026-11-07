@@ -2,7 +2,7 @@
 
 Usage: python gallery.py <addon dir> [out dir] [scenario ...]
 Default out dir: branding/gallery. Writes each scenario as an animated WebP (hero is the warrior, then
-mage, rogue, then warlock and rend, whose targets carry the DoT marker, priest, with the heal marker, and druid, with both), frames.png (a still of the warrior) and themes.png (the player frame in a few themes).
+mage, rogue, then warlock and rend, whose targets carry the DoT marker, priest, with the heal marker, druid, with both, and eating, a meal up to its buff), frames.png (a still of the warrior) and themes.png (the player frame in a few themes).
 A full run takes about a quarter of an hour.
 
 The frame art comes from branding/art, which tools/capture_art.py cuts out of the screenshots /sab
@@ -141,6 +141,17 @@ SCENARIOS = {
                 (3.4, "__hit(4, 64)"), (4.8, "__healStart(5185, 'Cast-3')"), (6.4, "__hit(4, 64)"),
                 (7.3, "__healDone(5185, 'Cast-3')"), (9.4, "__hit(4, 64)"),
                 (9.6, "__dotsCast(8921, 'Cast-4'); __hit(11, 64)"), (12.6, "__hit(4, 64)")]),
+    # Eating, on the player frame alone: from 20% health the food goes up as Honey, the health rising into it tick by
+    # tick. The bar builds up for ten seconds and lets go in stars as the druid becomes well fed; slow stars
+    # follow until it stands up.
+    "eating": dict(
+        player="Hotdog Tree", level="6", power="MANA", target="", target_level="", solo=True, portrait="druid",
+        maxes=(150, 210, 120, 160), loop=14.6, cls="DRUID", regen=0.008,
+        heals={433: ("Food", "Restores 108 health over 18 sec. Must remain seated while eating. If you spend at "
+                             "least 10 seconds eating you will become well fed and gain 4 Stamina and Spirit.")},
+        script=[(0.0, 0.20, 0.70, 1.0, 1.0), (3.5, 0.32, 0.70, 1.0, 1.0), (6.5, 0.44, 0.70, 1.0, 1.0),
+                (9.5, 0.56, 0.70, 1.0, 1.0), (12.5, 0.68, 0.70, 1.0, 1.0)],
+        events=[(0.5, "__healCast(433, 'Cast-1')"), (13.8, "__fire('PLAYER_STARTED_MOVING')")]),
 }
 
 
@@ -495,11 +506,14 @@ def scenario(art, key):
     if "heals" in sc:
         dots += heals_setup(sc["cls"], sc["heals"])
     session = start({}, sc["power"], dots, sc.get("events", ()))
-    portrait = portrait_for(art, key)
+    portrait = portrait_for(art, sc.get("portrait", key))
     pad, gap = round(24 * K), round(30 * K)
-    w, h = pad * 2 + gap + round(FRAME_W * K) * 2, pad * 2 + round(FRAME_H * K)
+    solo = sc.get("solo")  # the player frame alone
+    w, h = pad * 2 + round(FRAME_W * K) * (1 if solo else 2) + (0 if solo else gap), pad * 2 + round(FRAME_H * K)
     back = backdrop(w, h)
-    spots = {"player": (pad, pad), "target": (pad + gap + round(FRAME_W * K), pad)}
+    spots = {"player": (pad, pad)}
+    if not solo:
+        spots["target"] = (pad + gap + round(FRAME_W * K), pad)
     maxes = dict(zip(ORDER, sc["maxes"]))
 
     def at(t):
