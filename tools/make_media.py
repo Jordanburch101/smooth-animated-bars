@@ -164,6 +164,31 @@ def make_heat(path, w=256, h=64):
     write_field(path, w, h, field)
 
 
+def make_flames(path, w=256, h=64):
+    """Licking flame tongues, taller than wide with dark gaps between, that waver as they rise. Tiles both ways
+    so a theme can scroll it upward (swirl.rise)."""
+    tongues = [(TileNoise(32 * 2**i, 4 * 2**i, 190 + i), 0.5**i) for i in range(3)]
+    warp = [(TileNoise(8, 4, 195), 1.0), (TileNoise(16, 8, 196), 0.5)]
+
+    def field(u, v):
+        wu = u + (fbm(warp, u, v) - 0.5) * 0.07
+        n = fbm(tongues, wu % 1.0, v)
+        return max(0.0, n - 0.4) ** 1.4
+
+    write_field(path, w, h, field)
+
+
+def make_ramp(path, w=4, h=64):
+    """Vertical ramp: opaque at the top, fading out two thirds of the way down. Liquid.lua's shade layers map it
+    once over the bar's height (flipped for the hot base)."""
+
+    def pixel(x, y):
+        v = (y + 0.5) / h
+        return 1, 1, 1, max(0.0, 1 - v / 0.7) ** 1.6
+
+    write_tga(path, w, h, pixel)
+
+
 def make_cracks(path, w=256, h=64):
     """Glowing cell edges, like cooling lava."""
     cells = TileWorley(16, 4, 90)
@@ -369,6 +394,24 @@ def make_ember(path, size=32):
     write_tga(path, size, size, radial(size, fn))
 
 
+def make_spark(path, size=32):
+    """A spark in flight: a small white-hot head near the top and a thin tail fading below it. Kept inside the
+    middle circle so it can turn any way (burst.orient) without its corners clipping."""
+    head_y, tail = -0.4, 0.95  # head position, tail length (texture halves, y down)
+
+    def fn(dx, dy, d):
+        head = math.exp(-(math.hypot(dx, dy - head_y) / 0.12) ** 2)
+        along = (dy - head_y) / tail
+        streak = 0.0
+        if 0 <= along <= 1:
+            width = 0.075 * (1 - 0.7 * along)
+            streak = 0.85 * math.exp(-(dx / width) ** 2) * (1 - along) ** 1.6
+        halo = 0.22 * math.exp(-(math.hypot(dx, dy - head_y + 0.05) / 0.3) ** 2)
+        return 1, 1, 1, min(1.0, head + streak + halo)
+
+    write_tga(path, size, size, radial(size, fn))
+
+
 def make_snow(path, size=32):
     """Six-armed snowflake with side branches."""
 
@@ -464,6 +507,8 @@ def main():
     os.makedirs(out, exist_ok=True)
     make_swirl(os.path.join(out, "Swirl.tga"))
     make_heat(os.path.join(out, "Heat.tga"))
+    make_flames(os.path.join(out, "Flames.tga"))
+    make_ramp(os.path.join(out, "Ramp.tga"))
     make_cracks(os.path.join(out, "Cracks.tga"))
     make_caustics(os.path.join(out, "Caustics.tga"))
     make_nebula(os.path.join(out, "Nebula.tga"))
@@ -477,6 +522,7 @@ def main():
     make_bolt(os.path.join(out, "Bolt.tga"))
     make_wisp(os.path.join(out, "Wisp.tga"))
     make_ember(os.path.join(out, "Ember.tga"))
+    make_spark(os.path.join(out, "Spark.tga"))
     make_snow(os.path.join(out, "Snow.tga"))
     make_leaf(os.path.join(out, "Leaf.tga"))
     make_star(os.path.join(out, "Star.tga"))

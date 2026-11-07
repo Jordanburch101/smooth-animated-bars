@@ -3,15 +3,17 @@
 --
 -- Besides colours a theme can set (see Liquid.lua for the defaults):
 --   physics   = { amplitude, stiffness, damping, coupling, slosh, ambient, crest }  how the liquid moves
---   swirl     = { texture, flow = { u, v }, alpha, pulse, pulseRate }      the veins inside
+--   swirl     = { texture, flow = { u, v }, alpha, pulse, pulseRate, rise }  the veins inside
 --   clouds    = { texture, dark, light, scale }                           slow clouds behind the veins
 --   core      = { alpha, pulseRate }                                      glow through the middle (glow colour)
+--   shade     = { dark, color, hot, hotColor }                            dark from the top, hot light from the bottom
+--   flicker   = { amount, rate }                                          the whole liquid brightening and dimming
 --   crackle   = { rate, energyRate, alpha, glow, sheet, strokes, length, color }  lightning in the clouds
 --   swirlC    = third vein colour for the clouds; defaults to swirlA turned a little round the colour wheel
---   bubbles   = { texture, blend, rate, energyRate, rise, size, alpha, drift }
---   burst     = { texture, blend, mode = "throw" | "attract", buoyancy, drag, spin, twinkle }
+--   bubbles   = { texture, blend, rate, energyRate, rise, size, alpha, drift, splash }
+--   burst     = { texture, blend, mode = "throw" | "attract", buoyancy, drag, spin, twinkle, wander, orient }
 --   ambient   = { { area, rate, energyRate, texture, blend, size, life, vx, vy, buoyancy, drag,
---                   spin, twinkle, grow, alpha, from, to }, ... }          continuous particles
+--                   spin, twinkle, wander, orient, grow, alpha, from, to }, ... }  continuous particles
 --   Resolve(self)          -> theme   pick colours once the player is known (class, faction)
 --   Colors(self, t, frac)  -> fillA, fillB, accent   animate colours every frame
 
@@ -369,23 +371,35 @@ Themes.Register("nagrand", {
 
 Themes.Register("fire", {
     name = "Fire",
-    fillA      = { 0.45, 0.05, 0.00 },
-    fillB      = { 1.00, 0.55, 0.08 },
-    tip        = { 1.00, 0.95, 0.70 },
-    glow       = { 1.00, 0.55, 0.15 },
-    swirlA     = { 1.00, 0.75, 0.30 },
-    swirlB     = { 1.00, 0.40, 0.05 },
-    splashFrom = { 1.00, 0.90, 0.50 },
+    fillA      = { 0.32, 0.02, 0.00 },
+    fillB      = { 1.00, 0.44, 0.04 },
+    tip        = { 1.00, 1.00, 0.85 },
+    glow       = { 1.00, 0.60, 0.18 },
+    -- Green stays well under red throughout: added light that takes both to 1 reads lemon, nearly green, by the
+    -- orange, and anything dark laid over yellow reads olive.
+    swirlA     = { 1.00, 0.70, 0.28 },
+    swirlB     = { 1.00, 0.40, 0.04 },
+    swirlC     = { 1.00, 0.42, 0.05 },
+    splashFrom = { 1.00, 0.95, 0.60 },
     splashTo   = { 1.00, 0.25, 0.00 },
-    -- Quick, jumpy and always flickering.
-    physics    = { stiffness = 140, damping = 2.5, coupling = 1200, slosh = 0.22, ambient = 2.2 },
-    swirl      = { texture = "Heat", flow = { 0.1, -2.5 }, alpha = 1.3 },
-    bubbles    = { rate = 0, energyRate = 0 },
-    burst      = { texture = "Ember", buoyancy = 60, drag = 1.2 },
+    -- Quick, jumpy and always flickering: flame tongues licking upward, a hot base and a smoky top.
+    physics    = { stiffness = 150, damping = 2.4, coupling = 1250, slosh = 0.24, ambient = 2.4 },
+    swirl      = { texture = "Flames", flow = { 0.05, -1 }, rise = 24, alpha = 2.4 },
+    clouds     = { dark = 0.08, light = 0.25 }, -- the shade's dark top does the clouds' darkening
+    shade      = { dark = 0.62, color = { 0.10, 0.01, 0.00 }, hot = 0.55, hotColor = { 1.00, 0.62, 0.18 } },
+    flicker    = { amount = 0.22, rate = 7 },
+    crackle    = { rate = 0, energyRate = 3, sheet = 1, glow = 0.8 }, -- flare-ups, never arcs
+    bubbles    = { rate = 0, energyRate = 0, splash = 0 },
+    burst      = { texture = "Spark", orient = true, wander = 90, buoyancy = 60, drag = 1.0 },
     ambient    = {
-        { area = "surface", rate = 5, energyRate = 25, texture = "Ember", size = { 7, 12 }, life = { 0.6, 1.3 },
-          vx = { -10, 10 }, vy = { 20, 45 }, buoyancy = 30, drag = 1, twinkle = 5,
-          from = { 1.00, 0.90, 0.50 }, to = { 1.00, 0.25, 0.00 } },
+        -- Quick small sparks spat off the top of the fire, cooling from white-gold to deep red.
+        { area = "surface", rate = 7, energyRate = 35, texture = "Spark", orient = true, wander = 140,
+          size = { 7, 11 }, life = { 0.5, 1.1 }, vx = { -14, 14 }, vy = { 30, 65 }, buoyancy = 20, drag = 0.9,
+          twinkle = 9, from = { 1.00, 0.95, 0.70 }, to = { 0.85, 0.12, 0.00 } },
+        -- A few bigger, slower embers that drift higher and wander more.
+        { area = "surface", rate = 1.2, energyRate = 5, texture = "Spark", orient = true, wander = 70,
+          size = { 11, 15 }, life = { 1.1, 1.9 }, vx = { -8, 8 }, vy = { 14, 28 }, buoyancy = 6, drag = 0.4,
+          twinkle = 4, from = { 1.00, 0.82, 0.45 }, to = { 0.70, 0.07, 0.00 } },
     },
 })
 

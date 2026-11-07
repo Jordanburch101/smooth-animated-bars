@@ -8,6 +8,7 @@ local _, ns = ...
 
 local exp, min, max, abs, sin, cos, sqrt, floor, random, pi =
     math.exp, math.min, math.max, math.abs, math.sin, math.cos, math.sqrt, math.floor, math.random, math.pi
+local atan2 = math.atan2 or math.atan
 
 local MEDIA = "Interface\\AddOns\\SmoothAnimatedBars\\Media\\"
 local SWIRL_W, SWIRL_H = 256, 64
@@ -41,6 +42,22 @@ local SWIRL = {
     alpha   = 1,        -- multiplier on the swirl brightness
     pulse   = 0,        -- extra brightness that throbs at pulseRate Hz
     pulseRate = 0.5,
+    rise    = 0,        -- steady climb of the veins, px/s, on top of the flow (flames)
+}
+
+-- Unsteady light, like a fire's: the whole liquid brightens and dims at random, about rate times a second.
+local FLICKER = {
+    amount = 0,  -- how far the brightness swings, 0..1
+    rate   = 6,
+}
+
+-- Light that changes with height: a dark layer from the top (smoke over a fire) and a bright one from the bottom
+-- (its hot base), both mapped once over the bar's height.
+local SHADE = {
+    dark     = 0,           -- alpha of the dark layer
+    color    = { 0, 0, 0 },
+    hot      = 0,           -- alpha of the bright layer; it flickers with the liquid
+    hotColor = nil,         -- defaults to the tip colour
 }
 
 -- Slow clouds behind the veins for depth: dark pockets and light wisps, larger and slower than the veins.
@@ -81,6 +98,7 @@ local BUBBLES = {
     size    = { 3, 6 },
     alpha   = 0.45,
     drift   = 1,            -- slow drifters anywhere in the liquid, per second per unit of rate
+    splash  = 1,            -- multiplier on the bubbles a change stirs up (0 for none)
 }
 
 -- Motes thrown off when the bar changes.
@@ -93,6 +111,8 @@ local BURST = {
     drag     = 1.8,
     spin     = nil,  -- { min, max } rad/s
     twinkle  = nil,  -- Hz
+    wander   = nil,  -- px/s^2 of sideways sway, each mote at its own pace (sparks in hot air)
+    orient   = nil,  -- true: turn the texture's top along the flight, so a spark's tail trails behind it
 }
 
 local function Rand(a, b)
@@ -207,6 +227,11 @@ function Liquid.New(parent, width, height, theme, opts)
     self.swirlA = Layer(5, "Swirl", "ADD")
     self.swirlB = Layer(5, "Swirl", "ADD")
     self.cloudLight.u, self.swirlB.u = 0.5, 0.37
+    -- The hot base is added light, so its order among the other added layers does not matter. The dark layer
+    -- lies over the veins so flames fade as they rise.
+    self.shadeHot = Layer(5, "Ramp", "ADD")
+    self.shadeDark = Layer(6, "Ramp", "BLEND")
+    self.shadeHot.v = 1 -- read bottom to top: the ramp's opaque end at the bottom
 
     self.bolts = {}
     for i = 1, CFG.bolts do
@@ -231,6 +256,7 @@ function Liquid.New(parent, width, height, theme, opts)
     self.t, self.acc, self.energy, self.fizzAcc, self.driftAcc, self.crackleAcc = 0, 0, 0, 0, 0, 0
     self.edge, self.speed, self.back = 0, 0, 0
     self.flowX, self.flowY, self.storm, self.charge = 0, 0, 0, 0
+    self.flick, self.flickV, self.flickGoal, self.flickNext = 1, 0, 0, 0
     self.mixColor = { 1, 1, 1 }
     self.ambientAcc = {}
     self:SetTheme(theme)
@@ -244,6 +270,10 @@ function Liquid:SetTheme(theme)
     self.clouds = Merge(CLOUDS, theme.clouds)
     self.coreStyle = Merge(CORE, theme.core)
     self.crackle = Merge(CRACKLE, theme.crackle)
+    self.flicker = Merge(FLICKER, theme.flicker)
+    self.shade = Merge(SHADE, theme.shade)
+    self:LayerColor(self.shadeDark, self.shade.color)
+    self:LayerColor(self.shadeHot, self.shade.hotColor or theme.tip)
     -- A third vein colour a little round the wheel from the first; the light clouds drift between it and
     -- swirlB, and the dark pockets take a deep shifted tint, so the inside mixes related colours.
     self.veinC = theme.swirlC or HueShift(theme.swirlA, 0.18)
@@ -464,7 +494,7 @@ function Liquid:Splash(intensity, fromX, toX)
                 Rand(-20, 60) * s, Rand(10, 70) * s, life, size, from, to, style)
         end
     end
-    for _ = 1, floor(intensity * 8) do
+    for _ = 1, floor(intensity * 8 * self.bubbleStyle.splash) do
         self:EmitBubble(Rand(max(4, fromX - 40), max(4, fromX - 2)))
     end
 end
@@ -549,6 +579,8 @@ function Liquid:EmitMote(x, y, vx, vy, life, size, from, to, style, ambient)
     m.spin = RandRange(style.spin, 0)
     m.rot = Rand(0, 2 * pi)
     m.phase = Rand(0, 2 * pi)
+    m.wf = Rand(3, 7) -- wander pace, rad/s
+    if style.orient then m.rot = atan2(-vx, vy) end
     local tex = m.tex
     if m.file ~= style.texture then
         m.file = style.texture
@@ -558,7 +590,7 @@ function Liquid:EmitMote(x, y, vx, vy, life, size, from, to, style, ambient)
         m.blend = style.blend
         tex:SetBlendMode(style.blend)
     end
-    if tex.SetRotation then tex:SetRotation(style.spin and m.rot or 0) end
+    if tex.SetRotation then tex:SetRotation((style.spin or style.orient) and m.rot or 0) end
     m.active = true
     tex:Show()
 end
@@ -756,6 +788,9 @@ function Liquid:UpdateParticles(dt)
                 else
                     m.vx = m.vx * drag
                     m.vy = m.vy * drag + (st.buoyancy or 20) * dt
+                    if st.wander then
+                        m.vx = m.vx + st.wander * sin(m.phase + m.age * m.wf) * dt
+                    end
                 end
             end
             if done then
@@ -780,7 +815,11 @@ function Liquid:UpdateParticles(dt)
                 if st.twinkle then
                     alpha = alpha * (0.55 + 0.45 * sin(m.phase + t * st.twinkle * 2 * pi))
                 end
-                if m.spin ~= 0 and m.tex.SetRotation then
+                if st.orient and m.tex.SetRotation then
+                    -- Rotation is counter-clockwise from straight up.
+                    m.rot = atan2(-m.vx, m.vy)
+                    m.tex:SetRotation(m.rot)
+                elseif m.spin ~= 0 and m.tex.SetRotation then
                     m.rot = m.rot + m.spin * dt
                     m.tex:SetRotation(m.rot)
                 end
@@ -907,11 +946,24 @@ function Liquid:Draw(dt)
         end
     end
 
+    -- Flicker: a smoothed random walk to a new brightness a few times a second, with a waver on top.
+    local fl, k = self.flicker, 1
+    if fl.amount > 0 then
+        self.flickNext = self.flickNext - dt
+        if self.flickNext <= 0 then
+            self.flickNext, self.flickGoal = Rand(0.5, 1.5) / fl.rate, Rand(-1, 1)
+        end
+        self.flickV = self.flickV + (self.flickGoal - self.flickV) * (1 - exp(-fl.rate * 2.5 * dt))
+        k = 1 + fl.amount * (0.65 * self.flickV + 0.35 * sin(t * fl.rate * 4.6 + sin(t * 1.7) * 2))
+    end
+    self.flick = k
+
     -- Gradient stretched over the whole fill, like the WeakAura; the body stops where the front begins.
     local tb = edge > 0 and base / edge or 0
-    self.gradA:SetRGBA(fa[1], fa[2], fa[3], 1)
-    self.gradB:SetRGBA(Lerp(fa[1], fb[1], tb), Lerp(fa[2], fb[2], tb), Lerp(fa[3], fb[3], tb), 1)
-    self.gradC:SetRGBA(fb[1], fb[2], fb[3], 1)
+    self.gradA:SetRGBA(min(1, fa[1] * k), min(1, fa[2] * k), min(1, fa[3] * k), 1)
+    self.gradB:SetRGBA(min(1, Lerp(fa[1], fb[1], tb) * k), min(1, Lerp(fa[2], fb[2], tb) * k),
+        min(1, Lerp(fa[3], fb[3], tb) * k), 1)
+    self.gradC:SetRGBA(min(1, fb[1] * k), min(1, fb[2] * k), min(1, fb[3] * k), 1)
 
     if base >= 0.5 then
         self.body:SetGradient("HORIZONTAL", self.gradA, self.gradB)
@@ -921,7 +973,7 @@ function Liquid:Draw(dt)
         self.body:Hide()
     end
 
-    local tipAlpha = 0.25 + 0.5 * min(1, energy)
+    local tipAlpha = (0.25 + 0.5 * min(1, energy)) * k
     local rowH, back, ends = self.rowH, edge, self.ends
     for i = 1, CFG.rows do
         local row, tip = self.rows[i], self.tips[i]
@@ -960,17 +1012,19 @@ function Liquid:Draw(dt)
     if self.back >= 1 and opts.swirl then
         local flow = 0.015 + 0.12 * energy + max(0, self.speed) / 2000
         local fu, fv = sw.flow[1], sw.flow[2]
+        -- A rising texture moves up the screen as its v grows; swirlB rises a little slower, for depth.
+        local rise = sw.rise / SWIRL_H
         swirlA.u = (swirlA.u - flow * fu * dt) % 1
-        swirlA.v = (swirlA.v - flow * fv * dt) % 1
+        swirlA.v = (swirlA.v + (rise - flow * fv) * dt) % 1
         swirlB.u = (swirlB.u - flow * fu * 0.6 * dt) % 1
-        swirlB.v = (swirlB.v + (0.03 - flow * fv * 0.6) * dt) % 1
+        swirlB.v = (swirlB.v + (0.03 + rise * 0.5 - flow * fv * 0.6) * dt) % 1
         cloudDark.u = (cloudDark.u - (0.004 + flow * fu * 0.3) * dt) % 1
         cloudDark.v = (cloudDark.v + (0.008 - flow * fv * 0.3) * dt) % 1
         cloudLight.u = (cloudLight.u - (0.006 + flow * fu * 0.45) * dt) % 1
         cloudLight.v = (cloudLight.v - (0.012 + flow * fv * 0.45) * dt) % 1
         core.u = (core.u - (0.01 + flow * 0.3) * dt) % 1
         -- How fast the veins move on screen, px/s with y up, so bubbles can ride along with them.
-        self.flowX, self.flowY = flow * fu * SWIRL_W, -flow * fv * SWIRL_H
+        self.flowX, self.flowY = flow * fu * SWIRL_W, sw.rise - flow * fv * SWIRL_H
 
         -- The light clouds and the second veins trade between swirlB and the third colour, out of step.
         local mix, vb, vcol, mc = 0.5 + 0.5 * sin(t * 2 * pi / 9), self.theme.swirlB, self.veinC, self.mixColor
@@ -986,12 +1040,12 @@ function Liquid:Draw(dt)
         local storm, room = self.storm * self.headroom, self.headroom
         self:DrawLayer(cloudLight, cs * 1.4 / SWIRL_W, cs * 1.4 / SWIRL_H, min(1, cl.light * (1 + energy * room + storm * 1.2)))
         local glow = 0.2 + 0.07 * sin(t * co.pulseRate * 2 * pi) + 0.3 * min(1, energy) * room + 0.15 * storm
-        self:DrawLayer(core, 0.5 / SWIRL_W, 1 / h, min(1, glow * co.alpha))
+        self:DrawLayer(core, 0.5 / SWIRL_W, 1 / h, min(1, glow * co.alpha * k))
 
         local pulse = sw.pulse * (0.5 + 0.5 * sin(t * sw.pulseRate * 2 * pi))
-        self:DrawLayer(swirlA, 1 / SWIRL_W, 1 / SWIRL_H, min(1, (0.12 + 0.3 * energy * room + pulse) * sw.alpha))
+        self:DrawLayer(swirlA, 1 / SWIRL_W, 1 / SWIRL_H, min(1, (0.12 + 0.3 * energy * room + pulse) * sw.alpha * k))
         self:DrawLayer(swirlB, 0.7 / SWIRL_W, 0.7 / SWIRL_H,
-            min(1, (0.08 + 0.22 * energy * room + 0.05 * sin(t * 1.3) + pulse * 0.6) * sw.alpha))
+            min(1, (0.08 + 0.22 * energy * room + 0.05 * sin(t * 1.3) + pulse * 0.6) * sw.alpha * k))
     else
         self.flowX, self.flowY = 0, 0
         HideLayer(cloudDark)
@@ -1001,9 +1055,15 @@ function Liquid:Draw(dt)
         HideLayer(swirlB)
     end
 
+    -- Height shading is part of the colour, so it stays when the swirl is off. The hot base burns brighter
+    -- with energy; DrawLayer hides a layer whose alpha is 0.
+    local sh = self.shade
+    self:DrawLayer(self.shadeHot, 0, -1 / h, min(1, sh.hot * k * k * (1 + 0.5 * min(1, energy))))
+    self:DrawLayer(self.shadeDark, 0, 1 / h, sh.dark * (1 - 0.3 * min(1, energy)))
+
     if edge > 1 and edge < w - 1 then
         self.glow:SetPoint("CENTER", parent, "LEFT", edge, 0)
-        self.glow:SetAlpha(min(1, 0.12 + 0.55 * energy))
+        self.glow:SetAlpha(min(1, (0.12 + 0.55 * energy) * k))
         self.glow:Show()
     else
         self.glow:Hide()

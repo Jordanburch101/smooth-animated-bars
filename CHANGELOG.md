@@ -4,6 +4,14 @@ Player-facing notes for each release. Write for players: what they can now
 do or see, and what was broken and now works. Leave out internal changes.
 Sections are `### New` and `### Fixed`; skip one that would be empty.
 
+## 1.4.0
+
+### New
+- Fire looks like fire now rather than lava: flame tongues lick up through
+  the bar from a hot base into a smoky top, the whole fire flickers, and
+  real sparks fly off it, swaying as they rise and cooling from white-gold to
+  red. Fire DoTs on your target (Immolate and the like) burn the same way.
+
 ## 1.3.0
 
 ### New
