@@ -128,7 +128,7 @@ Open the settings with `/sab`, from **Open Settings** when you right-click your 
 ## Credits
 
 *   The liquid comes from [Smooth Experience Bar](https://www.curseforge.com/wow/addons/smooth-experience-bar), whose look is based on the [Luxthos Experience Bar](https://wago.io/LuxthosExperienceBar) WeakAura by Luxthos & Daemoos.
-*   The DoT tracking is ported from DoesItDie by Joe Greive (MIT licence), which worked out how to follow your DoTs on WoW Forever.
+*   The DoT tracking is ported from DoesItDie by JoeGG (MIT licence), which worked out how to follow your DoTs on WoW Forever.
 *   The art is the game's own, the poison skulls too.
 
 Open source under the MIT licence: [source, issues and licence on GitHub](https://github.com/Jordanburch101/smooth-animated-bars).

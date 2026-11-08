@@ -186,7 +186,7 @@ Install it from CurseForge, or download the zip from the
 - **The liquid** comes from [Smooth Experience Bar](https://www.curseforge.com/wow/addons/smooth-experience-bar),
   whose look is based on the [Luxthos Experience Bar](https://wago.io/LuxthosExperienceBar) WeakAura by
   Luxthos & Daemoos.
-- **The DoT tracking** is ported from DoesItDie by Joe Greive (MIT licence), which worked out how to follow
+- **The DoT tracking** is ported from DoesItDie by JoeGG (MIT licence), which worked out how to follow
   your DoTs on WoW Forever, where the combat log is closed to addons. The idea of marking them on the
   target's health bar is its too.
 - **The art** is the game's own: the addon's icon (Greater Nether Essence), the kill icon's skull, the poison
