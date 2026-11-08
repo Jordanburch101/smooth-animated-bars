@@ -382,6 +382,28 @@ def make_wisp(path, size=48):
     write_tga(path, size, size, radial(size, fn))
 
 
+def make_smoke(path, size=64):
+    """A ragged drift of smoke, wider than tall, curling and torn into holes, for smoke trailing over the liquid."""
+    warp_x = [(TileNoise(3 * 2**i, 3 * 2**i, 210 + i), 0.5**i) for i in range(2)]
+    warp_y = [(TileNoise(3 * 2**i, 3 * 2**i, 215 + i), 0.5**i) for i in range(2)]
+    detail = [(TileNoise(5 * 2**i, 5 * 2**i, 220 + i), 0.55**i) for i in range(3)]
+
+    def fn(dx, dy, d):
+        u, v = (dx + 1) / 2, (dy + 1) / 2
+        # Curl: the shape is bent by slow noise, so no two puffs read as the same round blob.
+        wx = dx + (fbm(warp_x, u, v) - 0.5) * 0.5
+        wy = dy + (fbm(warp_y, u, v) - 0.5) * 0.5
+        e = math.hypot(wx * 0.95, wy * 1.5)
+        body = max(0.0, 1 - e) ** 0.8
+        # Torn: thin where the detail noise is low, so the edges fray and the middle has gaps.
+        n = fbm(detail, u, v)
+        tear = min(1.0, max(0.0, (n + body * 0.6 - 0.38) / 0.35))
+        rim = max(0.0, 1 - d) ** 0.6  # nothing past the edge, where the warp would leave stray bits
+        return 1, 1, 1, min(1.0, body * tear * rim * 1.3)
+
+    write_tga(path, size, size, radial(size, fn))
+
+
 def make_ember(path, size=32):
     """Teardrop flame: wide and bright at the bottom, thin at the top."""
 
@@ -521,6 +543,7 @@ def main():
     make_core(os.path.join(out, "Core.tga"))
     make_bolt(os.path.join(out, "Bolt.tga"))
     make_wisp(os.path.join(out, "Wisp.tga"))
+    make_smoke(os.path.join(out, "Smoke.tga"))
     make_ember(os.path.join(out, "Ember.tga"))
     make_spark(os.path.join(out, "Spark.tga"))
     make_snow(os.path.join(out, "Snow.tga"))

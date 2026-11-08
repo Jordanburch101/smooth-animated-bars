@@ -884,6 +884,9 @@ function Liquid:Update(dt, edge)
     local leanTo = self.opts.waves and self.phys.crest * min(1, max(0, speed) / 250) or 0
     self.lean = self.lean + (leanTo - self.lean) * (1 - exp(-14 * dt))
 
+    -- Themes that stir themselves (Shadow's slow swells) do it here, before the physics step.
+    if self.theme.Animate then self.theme:Animate(self, self.t, dt) end
+
     self:Simulate(dt)
     self.energy = self.energy * exp(-CFG.energyDecay * dt)
 

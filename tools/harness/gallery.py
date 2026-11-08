@@ -72,7 +72,7 @@ SCENARIOS = {
                 (2.2, 0.91, 0, 0.76, 0.70), (2.8, 0.83, 0, 0.76, 0.70), (4.4, 0.83, 0, 0.60, 0.70),
                 (5.0, 0.76, 0, 0.60, 0.70), (6.0, 0.76, 0, 0.50, 0.70), (7.0, 0.76, 0, 0.38, 0.70),
                 (8.0, 0.76, 0, 0.00, 0.70), (9.4, 0.76, 0, 1.00, 0.70), (10.6, 0.88, 0, 1.00, 0.70)]),
-    # The DoT marker, Shadow then Fire: Corruption goes up first as a Void liquid at the health's edge, and
+    # The DoT marker, Shadow then Fire: Corruption goes up first as a Shadow liquid at the health's edge, and
     # Immolate follows as a Fire liquid behind it. Shadow Bolts land between the ticks until the
     # DoTs will finish the conjurer and the skull comes up. Casts and ticks go through the addon's own
     # tracking (events).

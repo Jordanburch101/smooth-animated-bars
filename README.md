@@ -15,7 +15,7 @@ short setup on the first login lets you choose the look, or skip it.
 - **Every power type:** mana, rage, energy and focus, each in its own colour, as the game shows it.
 - **Moves with the fight:** the liquid eases to wherever the game's bar is, and stirs with every hit, heal,
   cast and tick.
-- **24 themes:** keep the game's colours, or pick Class Color, Fire, Frost, Arcane, Void and more, many with
+- **25 themes:** keep the game's colours, or pick Class Color, Fire, Frost, Arcane, Shadow, Void and more, many with
   particles of their own. Health and power each get their own choice.
 - **Your call on every effect:** waves, swirl, bubbles, sparkles, theme particles and lightning can each be
   switched off, and so can each bar.
@@ -35,8 +35,8 @@ short setup on the first login lets you choose the look, or skip it.
 
 ## Your DoTs on the target
 
-<p align="center"><img src="https://raw.githubusercontent.com/Jordanburch101/smooth-animated-bars/refs/heads/main/branding/gallery/warlock.webp" alt="A warlock's Corruption eating into the target's green health as a purple Void liquid, then Immolate joining behind it as an orange Fire liquid, until no green is left and a skull shows on the target's portrait"></p>
-<p align="center"><em>Warlock: Corruption eats in as Void, then Immolate joins behind it as Fire. When no green is left, they will finish it.</em></p>
+<p align="center"><img src="https://raw.githubusercontent.com/Jordanburch101/smooth-animated-bars/refs/heads/main/branding/gallery/warlock.webp" alt="A warlock's Corruption eating into the target's green health as a near-black Shadow liquid, then Immolate joining behind it as an orange Fire liquid, until no green is left and a skull shows on the target's portrait"></p>
+<p align="center"><em>Warlock: Corruption eats in as Shadow, then Immolate joins behind it as Fire. When no green is left, they will finish it.</em></p>
 
 <p align="center"><img src="https://raw.githubusercontent.com/Jordanburch101/smooth-animated-bars/refs/heads/main/branding/gallery/rend.webp" alt="A warrior's Rend eating into the target's green health as a red Blood liquid while swings and Heroic Strikes land, until a skull shows on the target's portrait"></p>
 <p align="center"><em>Warrior: Rend bleeds as Blood. When no green is left, it will finish the pillager.</em></p>
@@ -44,7 +44,7 @@ short setup on the first login lets you choose the look, or skip it.
 Turn it on in the setup or under Damage Over Time in the settings. The health your damage-over-time spells
 will still burn away turns into liquid, eating into your target's health liquid:
 
-- **Each school is a liquid of its own:** Void for Shadow, Fire, Frost, Arcane, Holy, Plague for Nature and
+- **Each school is a liquid of its own:** Shadow, Fire, Frost, Arcane, Holy, Plague for Nature and
   Blood for bleeds. The school you put up first sits at the front of the health, the next behind it. Two
   schools show at once; a third joins the second. Each ripples with every tick and splashes when a DoT
   lands.

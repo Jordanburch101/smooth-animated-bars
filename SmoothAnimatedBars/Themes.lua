@@ -16,6 +16,7 @@
 --                   spin, twinkle, wander, orient, grow, alpha, from, to }, ... }  continuous particles
 --   Resolve(self)          -> theme   pick colours once the player is known (class, faction)
 --   Colors(self, t, frac)  -> fillA, fillB, accent   animate colours every frame
+--   Animate(self, liquid, t, dt)   stir the liquid every frame (liquid:Warm, :Ripple); state goes on liquid
 
 local _, ns = ...
 
@@ -549,4 +550,65 @@ Themes.Register("void", {
           life = { 1.8, 2.8 }, vx = { -3, 3 }, vy = { 6, 12 }, buoyancy = 3, drag = 0.6, spin = { -0.4, 0.4 },
           grow = true, alpha = 0.59, from = { 0.45, 0.25, 0.75 }, to = { 0.12, 0.04, 0.25 } },
     },
+})
+
+--------------------------------------------------------------------------------
+-- Shadow: darker and heavier than Void, the liquid for Shadow DoTs too (Marker.lua)
+--------------------------------------------------------------------------------
+
+-- Ink: nearly black and thick as tar. Smoke trails low off its surface, tar bubbles rise through it and burst, and
+-- a violet light far down in it waxes and wanes.
+--
+-- The smoke is kept low: motes fly free of the bar's mask only as far as the clip frame (Bars.lua SPILL, 16 px
+-- above the bar), which would cut a tall plume off flat. So it drifts back over the liquid rather than rising, and
+-- fades out before it gets there. The bubbles are inside the mask, so they stay in the bar.
+Themes.Register("shadow", {
+    name = "Shadow",
+    crackle    = { rate = 0.06, energyRate = 4, glow = 0.9, sheet = 0.6, color = { 0.70, 0.30, 1.00 } },
+    fillA      = { 0.01, 0.00, 0.03 },
+    fillB      = { 0.15, 0.04, 0.30 },
+    tip        = { 0.80, 0.45, 1.00 },
+    glow       = { 0.50, 0.15, 0.90 },
+    swirlA     = { 0.55, 0.25, 0.95 },
+    swirlB     = { 0.30, 0.10, 0.70 },
+    bubble     = { 0.40, 0.12, 0.75 },
+    splashFrom = { 0.22, 0.08, 0.38 },
+    splashTo   = { 0.01, 0.00, 0.03 },
+    physics    = { amplitude = 12, stiffness = 45, damping = 4.5, coupling = 400, slosh = 0.3, ambient = 0.8 },
+    swirl      = { texture = "Tendrils", flow = { -0.3, 0.4 }, alpha = 1.6 },
+    clouds     = { dark = 1.0, light = 0.15, scale = 0.4 },
+    -- Darkness pressing down from the top, a violet light far down in it...
+    shade      = { dark = 0.85, color = { 0.00, 0.00, 0.02 }, hot = 0.32, hotColor = { 0.45, 0.12, 0.80 } },
+    -- ...that waxes and wanes slowly and unevenly, like something breathing down there.
+    flicker    = { amount = 0.35, rate = 0.6 },
+    -- Tar bubbles: few, slow and heavy, a faint violet rim, bursting at the surface.
+    bubbles    = { texture = "Bubble", blend = "ADD", rate = 0.5, energyRate = 4, rise = { 4, 8 }, size = { 5, 9 },
+                   alpha = 0.55, drift = 0.6 },
+    -- A hit throws up a puff of black smoke that spreads out and settles rather than shooting up.
+    burst      = { texture = "Smoke", blend = "BLEND", buoyancy = -12, drag = 6, spin = { -0.3, 0.3 }, alpha = 0.6 },
+    ambient    = {
+        -- Smoke trailing low off the whole surface and drifting back over the liquid, lit violet from below as it
+        -- leaves and going black as it drifts off (the frame behind is nearly black, so only lit smoke reads
+        -- there). Kept even: puffs much alike, long-lived so they fade softly, and hardly more of them after a hit,
+        -- so the smoke is a steady haze rather than puffs popping up...
+        { area = "surface", rate = 4, energyRate = 1, texture = "Smoke", blend = "BLEND", size = { 14, 18 },
+          life = { 2.2, 3.2 }, vx = { -8, -3 }, vy = { 1.5, 4 }, buoyancy = 0.8, drag = 0.8, spin = { -0.15, 0.15 },
+          grow = true, alpha = 0.55, from = { 0.30, 0.12, 0.52 }, to = { 0.04, 0.01, 0.08 } },
+        -- ...a little thicker at the front, where it boils off.
+        { area = "vapour", rate = 2, energyRate = 1.5, texture = "Smoke", blend = "BLEND", size = { 14, 20 },
+          life = { 1.8, 2.6 }, vx = { -10, -4 }, vy = { 2, 5 }, buoyancy = 0.8, drag = 0.9, spin = { -0.2, 0.2 },
+          grow = true, alpha = 0.6, from = { 0.40, 0.17, 0.68 }, to = { 0.05, 0.01, 0.10 } },
+        -- Violet sparks sinking a little way into it and going out.
+        { area = "liquid", rate = 2, energyRate = 6, texture = "Mote", size = { 4, 7 }, life = { 0.8, 1.4 },
+          vx = { -2, 2 }, vy = { -5, -2 }, buoyancy = -2, drag = 0.8, twinkle = 2,
+          from = { 0.90, 0.55, 1.00 }, to = { 0.30, 0.05, 0.60 } },
+    },
+    -- Now and then, never on a beat, a slow heavy swell rolls through the tar.
+    Animate = function(self, liquid, t)
+        if not liquid.nextSwell then liquid.nextSwell = t + 1 end
+        if t >= liquid.nextSwell then
+            liquid.nextSwell = t + 1.8 + 2.4 * math.random()
+            liquid:Ripple(0.8)
+        end
+    end,
 })

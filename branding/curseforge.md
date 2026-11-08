@@ -14,7 +14,7 @@ Your frames stay the game's own. Only the fill changes, so nothing moves: log in
 *   **Your heals on the way:** your own heals over time, bandages and the heal you are casting on yourself show ahead of your health as far as they will still bring it, and pour into it.
 *   **Food and drink:** what you are eating and drinking shows ahead of your health and mana, and food with a buff builds up to a burst of stars when you become well fed.
 *   **Your DoTs on the target (optional):** liquid in your DoTs' own colours eats into your target's health as far as they will still burn it, and the game's skull shows on its portrait when they will finish it.
-*   **24 themes:** keep the game's colours, or pick Class Color, Fire, Frost, Arcane, Void and more, many with particles of their own. Health and power each get their own choice.
+*   **25 themes:** keep the game's colours, or pick Class Color, Fire, Frost, Arcane, Shadow, Void and more, many with particles of their own. Health and power each get their own choice.
 *   **Your call on every effect:** waves, swirl, bubbles, sparkles, theme particles and lightning can each be switched off, and so can each bar.
 *   **A quick setup** the first time you log in, with preview frames that show each choice as you pick it.
 
@@ -58,9 +58,9 @@ _Eating: the honey pours in, the bar builds up, and a burst of stars says you ar
 
 ## Your DoTs on the target
 
-![A warlock's Corruption eating into the target's green health as a purple Void liquid, then Immolate joining behind it as an orange Fire liquid, until no green is left and a skull shows on the target's portrait](https://raw.githubusercontent.com/Jordanburch101/smooth-animated-bars/refs/heads/main/branding/gallery/warlock.webp)
+![A warlock's Corruption eating into the target's green health as a near-black Shadow liquid, then Immolate joining behind it as an orange Fire liquid, until no green is left and a skull shows on the target's portrait](https://raw.githubusercontent.com/Jordanburch101/smooth-animated-bars/refs/heads/main/branding/gallery/warlock.webp)
 
-_Warlock: Corruption eats in as Void, then Immolate joins behind it as Fire. When no green is left, they will finish it._
+_Warlock: Corruption eats in as Shadow, then Immolate joins behind it as Fire. When no green is left, they will finish it._
 
 ![A warrior's Rend eating into the target's green health as a red Blood liquid while swings and Heroic Strikes land, until a skull shows on the target's portrait](https://raw.githubusercontent.com/Jordanburch101/smooth-animated-bars/refs/heads/main/branding/gallery/rend.webp)
 
@@ -68,7 +68,7 @@ _Warrior: Rend bleeds as Blood. When no green is left, it will finish the pillag
 
 Turn it on in the setup or under Damage Over Time in the settings. The health your damage-over-time spells will still burn away turns into liquid, eating into your target's health:
 
-*   **Each school is a liquid of its own:** Void for Shadow, Fire, Frost, Arcane, Holy, Plague for Nature and Blood for bleeds like Rend and Rupture. The school you put up first sits at the front of the health, the next behind it. Two schools show at once; a third joins the second.
+*   **Each school is a liquid of its own:** Shadow, Fire, Frost, Arcane, Holy, Plague for Nature and Blood for bleeds like Rend and Rupture. The school you put up first sits at the front of the health, the next behind it. Two schools show at once; a third joins the second.
 *   **It ripples with every tick** and splashes when a DoT lands.
 *   **The health liquid's front** sits where the target's health will end once your DoTs are done.
 *   **When no health liquid is left,** your DoTs will kill it, and the game's own skull (the one it shows for a target far above your level) comes up on its portrait.

@@ -194,7 +194,7 @@ check(keys == ["playerHealth", "playerPower", "targetHealth", "targetPower", "he
 check(not lua.eval("__sharedListTainted"), "nothing added to the game's shared settings list (Forever: Social blocked)")
 options = [o for o in rows if o.key == "healthColor"][0].options
 labels = [options[i].label for i in range(1, len(options) + 1)]
-check(labels[0] == "Game Colour" and "Class Color" in labels and "Item Quality" not in labels and len(labels) == 25,
+check(labels[0] == "Game Colour" and "Class Color" in labels and "Item Quality" not in labels and len(labels) == 26,
       f"colour choices: game colour then the themes, without Item Quality ({len(labels)})")
 lua.execute("__settings.playerHealth:SetValue(false)")
 run(lua, 0.2)
@@ -374,8 +374,8 @@ run(pv, 0.2)
 check(pv.eval("__pm().clip.shown") and pv.eval("__pm().value") == 58 and pv.eval("__pm().killBar.max") == 53
       and pv.eval("__pm().killBar.value") == 58 and pv.eval("__pm().window.shown"),
       "DoTs on: the target preview plays two DoTs that will kill it, marker and skull showing")
-check(pv.eval("__pm().liquids[1].themeKey") == "void" and pv.eval("__pm().liquids[2].themeKey") == "fire"
-      and pv.eval("__pm().liquids[2].pool.shown"), "the preview shows Corruption as Void and Immolate as Fire")
+check(pv.eval("__pm().liquids[1].themeKey") == "shadow" and pv.eval("__pm().liquids[2].themeKey") == "fire"
+      and pv.eval("__pm().liquids[2].pool.shown"), "the preview shows Corruption as Shadow and Immolate as Fire")
 check(pv.eval("__pm().window.points.CENTER.rel == __ns.Wizard.State().ui.preview.target.portrait"),
       "the skull sits on the preview's portrait")
 for _ in range(300):
@@ -439,9 +439,9 @@ dm.execute("__cast(172, 'Cast-1')")
 run(dm, 0.15)
 check(dm.eval("__d(1).liquid.energy") > 0.3, "a DoT landing splashes the DoT liquid")
 run(dm, 1)
-check(dm.eval("__total()") == 90 and dm.eval("__m().clip.shown") and dm.eval("__d(1).themeKey") == "void"
+check(dm.eval("__total()") == 90 and dm.eval("__m().clip.shown") and dm.eval("__d(1).themeKey") == "shadow"
       and dm.eval("__d(1).pool.shown") and not dm.eval("__d(2).pool.shown"),
-      "Corruption: 90 damage to come, shown as one Void liquid (Shadow)")
+      "Corruption: 90 damage to come, shown as one Shadow liquid")
 check(dm.eval("__d(1).run.max == TargetFrame.healthbar.max") and dm.eval("__d(1).run.value") == 90
       and dm.eval("__d(2).run.value") == 90 and dm.eval("__d(1).run.reverse"),
       "its running total takes the health bar's secret range, its value the DoT's damage, filling back from the front")
@@ -492,12 +492,12 @@ check(dm.eval("__total()") == 80, "a melee hit is not taken for a tick")
 dm.execute("__cast(348, 'Cast-2')")
 run(dm, 1)
 check(dm.eval("__total()") == 100 and dm.eval("__d(1).run.value") == 80 and dm.eval("__d(2).run.value") == 100
-      and dm.eval("__d(1).themeKey") == "void" and dm.eval("__d(2).themeKey") == "fire" and dm.eval("__d(2).pool.shown"),
-      "Immolate's 20 more: Corruption stays Void at the front, Immolate a Fire liquid of its own behind it")
+      and dm.eval("__d(1).themeKey") == "shadow" and dm.eval("__d(2).themeKey") == "fire" and dm.eval("__d(2).pool.shown"),
+      "Immolate's 20 more: Corruption stays Shadow at the front, Immolate a Fire liquid of its own behind it")
 check(dm.eval("__d(2).mover.points.TOPRIGHT.rel == __d(1).fill") and dm.eval("__d(2).mover.points.TOPRIGHT.relPoint") == "TOPLEFT"
       and dm.eval("__d(2).pool.points.TOPLEFT.rel == __d(2).fill") and dm.eval("__d(2).pool.points.TOPLEFT.x") == -6
       and dm.eval("__d(2).pool.points.BOTTOMRIGHT.rel == __d(1).fill") and dm.eval("__d(2).pool.points.BOTTOMRIGHT.x") == 10,
-      "the Fire liquid hangs on the end of the Void one, its waves reaching over it")
+      "the Fire liquid hangs on the end of the Shadow one, its waves reaching over it")
 dm.execute("__settings.targetHealth:SetValue(false)")
 run(dm, 0.3)
 check(dm.eval("__d(1).liquid.body.sub") == 3 and dm.eval("__d(2).liquid.body.sub") == 3

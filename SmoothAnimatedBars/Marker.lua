@@ -1,7 +1,7 @@
 -- The DoT marker on the target frame's health bar, and the kill icon on its portrait (the dots setting).
 --
 -- The marker is liquid eating into the health: the health the player's DoTs will still burn away turns into
--- liquid of the DoTs' own colour (Void for Shadow, Fire for Fire, ...), one liquid per school, and the health
+-- liquid of the DoTs' own colour (Shadow, Fire, Plague for Nature, ...), one liquid per school, and the health
 -- liquid draws back to where the target's health will end once they are done. If the health liquid is gone,
 -- the DoTs will kill the target. The numbers come from Dots.lua; the target's health is secret, so, as for the
 -- liquid (Bars.lua), the client does every comparison:
@@ -48,10 +48,10 @@ local SPLASH_APPLIED, SPLASH_TICK = 0.6, 0.2
 
 -- A DoT liquid's theme by its school (Dots.lua's masks).
 local SCHOOL_THEMES = {
-    [1] = "blood", [2] = "holy", [4] = "fire", [8] = "plague", [16] = "frost", [20] = "fire", [32] = "void",
+    [1] = "blood", [2] = "holy", [4] = "fire", [8] = "plague", [16] = "frost", [20] = "fire", [32] = "shadow",
     [64] = "arcane",
 }
-local DEFAULT_THEME = "void"
+local DEFAULT_THEME = "shadow"
 
 local function Secret(v)
     return issecretvalue and issecretvalue(v) or false

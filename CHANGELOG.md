@@ -11,6 +11,11 @@ Sections are `### New` and `### Fixed`; skip one that would be empty.
   the bar from a hot base into a smoky top, the whole fire flickers, and
   real sparks fly off it, swaying as they rise and cooling from white-gold to
   red. Fire DoTs on your target (Immolate and the like) burn the same way.
+- New theme, Shadow: a near-black liquid, thick as tar, with smoke trailing
+  low off it, slow bubbles rising and bursting, and a violet light deep
+  inside that waxes and wanes. Shadow DoTs on your target (Corruption,
+  Shadow Word: Pain and the like) now show as Shadow rather than Void.
+  Void is still there to pick.
 
 ## 1.3.0
 
