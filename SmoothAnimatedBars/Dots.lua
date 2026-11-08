@@ -98,6 +98,22 @@ local IGNORED_SPELLS = {
 -- first plausible unmatched tick of its school while it's armed. See springTrap.
 local TRAP_DOTS = { ["Immolation Trap"] = true }
 
+-- Rogue poisons coat a weapon and proc on its strikes, so no cast event says when one lands or on whom. Forever
+-- keeps hit amounts secret but not their school (DoesItDie's saved log there: "HIT (amount hidden) school 8"), so
+-- while the player's weapon carries a poison that deals damage over time, a Nature hit on a mob is taken as its
+-- tick, and starts or keeps its DoT (onPoisonCombat). The numbers come from the coating's description, read when
+-- it is applied, and are kept in the saved variables until it wears off. The estimate errs low: one stack, and a
+-- refresh is only seen once the ticks run on past the end.
+local POISON_LIFETIME = 30 * 60 -- seconds a coating lasts when its description does not say
+local POISON_GRACE = 10         -- seconds after coating before the weapon's own word on it is taken
+local POISON_CANDIDATE_KEEP = 10
+-- Saved: dots, coating name -> { spellID, name, total, school, duration, coatedAt, expires } (time() seconds),
+-- and directAt and directUntil, when the last coating that strikes at once (Instant Poison) was put on and wears
+-- off. Its Nature hits look like a poison's ticks, so while it is on, a poison is only taken as on after two hits
+-- a tick apart.
+local poisonState = { dots = {}, directUntil = 0 }
+local poisonCandidates = {} -- mob key -> when a Nature hit not yet confirmed as a poison's tick landed
+
 -- One spell ID per entry of the name-keyed tables above (Classic rank 1; all ranks share the name). At login
 -- the tables also get the name this client reports for it, which covers Forever's own renames.
 local SPELL_IDS = {
@@ -213,6 +229,15 @@ local function parseFinisher(desc, comboPoints)
     return entry.total, SCHOOL_MASKS.Physical, entry.duration
 end
 
+-- The last "<amount> <school> damage over <secs> sec" clause: total, school mask, duration.
+local function lastOverTime(desc)
+    local total, school, duration
+    for amount, words, secs in desc:gmatch("(%d+)%s*([%a ]-)%s*damage over (%d+%.?%d*) sec") do
+        total, school, duration = tonumber(amount), schoolFromWords(words), tonumber(secs)
+    end
+    return total, school, duration
+end
+
 -- Returns total damage, school mask, duration and (if the description states it) tick interval.
 --   "... 10 Nature damage over 15 sec."  Takes the last such clause, so Immolate's
 --       "11 Fire damage and then an additional 20 Fire damage over 15 sec" yields the periodic part.
@@ -221,15 +246,12 @@ end
 local function parseDot(desc, comboPoints)
     if type(desc) ~= "string" or isSecret(desc) then return nil end
     if desc:find("Finishing move") then return parseFinisher(desc, comboPoints or 5) end
-    -- Weapon enchants (rogue poisons) describe a proc DoT but aren't cast on the target.
+    -- Weapon enchants (rogue poisons) describe a proc DoT but aren't cast on the target (parseCoating).
     if desc:find("[Cc]oats a weapon") then return nil end
     -- Heals over time: Forever's Renew reads "Heals the target of 830 damage over 15 sec".
     if desc:find("^Heals") then return nil end
 
-    local total, school, duration
-    for amount, words, secs in desc:gmatch("(%d+)%s*([%a ]-)%s*damage over (%d+%.?%d*) sec") do
-        total, school, duration = tonumber(amount), schoolFromWords(words), tonumber(secs)
-    end
+    local total, school, duration = lastOverTime(desc)
     if total and duration > 0 then return total, school, duration end
 
     local amount, words, every = desc:match("(%d+)%s*([%a ]-)%s*damage every (%d+%.?%d*) sec")
@@ -244,6 +266,22 @@ local function parseDot(desc, comboPoints)
             return tonumber(amount) * math.floor(lasts / every + 0.5), schoolFromWords(words), lasts, every
         end
     end
+end
+
+-- A weapon coating's poison, from its description:
+--   "Coats a weapon with poison that lasts for 30 min. Each strike has a 30% chance of poisoning the enemy for
+--    36 Nature damage over 12 sec. Stacks up to 5 times on a single target."  (Deadly Poison)
+-- Returns "dot", total, school, duration and the coating's lifetime in seconds; "direct" and the lifetime for one
+-- that strikes at once ("instantly inflicts 19 to 25 Nature damage", Instant Poison); nil for anything else.
+local function parseCoating(desc)
+    if type(desc) ~= "string" or isSecret(desc) or not desc:find("[Cc]oats a weapon") then return nil end
+    local minutes = tonumber(desc:match("[Ll]asts? for (%d+) min"))
+    local lifetime = minutes and minutes * 60 or POISON_LIFETIME
+    local total, school, duration = lastOverTime(desc)
+    if total and duration > 0 and school == SCHOOL_MASKS.Nature then
+        return "dot", total, school, duration, lifetime
+    end
+    if desc:find("Nature damage") then return "direct", lifetime end
 end
 
 ---------------------------------------------------------------------------
@@ -536,6 +574,88 @@ local function newDot(spellID, tickKey, name, total, school, duration, statedInt
     }
 end
 
+-- The poison tracking can't be tried in game here, so it never raises an error: each way in runs through
+-- poisonGuard, and an error turns it off until the next reload, with a line in /sab dots. The other DoTs carry on.
+local poisonsBroken = false
+local function poisonGuard(fn, ...)
+    if poisonsBroken then return nil end
+    local ok, result = pcall(fn, ...)
+    if ok then return result end
+    poisonsBroken = true
+    trace("ERROR in the poison tracking, off until reload: " .. tostring(result))
+    return nil
+end
+
+-- Wall-clock seconds for the saved coatings, from time(); GetTime() if the client gives none.
+local function wallClock()
+    if type(time) == "function" then
+        local ok, now = pcall(time)
+        if ok and type(now) == "number" and not isSecret(now) then return now end
+    end
+    return GetTime()
+end
+
+-- A saved coating that holds what the tracking needs (the saved variables may be from another version, or edited).
+local function wellFormedPoison(poison)
+    return type(poison) == "table" and type(poison.name) == "string" and type(poison.total) == "number"
+        and poison.total > 0 and type(poison.school) == "number" and type(poison.duration) == "number"
+        and poison.duration > 0 and type(poison.coatedAt) == "number" and type(poison.expires) == "number"
+end
+
+-- A poison put on a weapon: remember what it will do, until it wears off.
+local function onCoating(spellID, name, desc)
+    local kind, a, b, c, d = parseCoating(desc)
+    if not kind then return end
+    local now = wallClock()
+    if kind == "direct" then
+        poisonState.directAt, poisonState.directUntil = now, now + a
+        trace("POISON " .. name .. " coated: strikes at once, so other poisons wait for a second tick")
+        return
+    end
+    poisonState.dots[name] = { spellID = spellID, name = name, total = a, school = b, duration = c,
+        coatedAt = now, expires = now + d }
+    trace(string.format("POISON %s coated: %s dmg over %ss on a proc, for %s min", name, tostring(a), tostring(c),
+        tostring(math.floor(d / 60 + 0.5))))
+end
+
+-- Whether the weapons carry a coating, by the game's own word: true, false, or nil when it can't be read.
+local function weaponsCoated()
+    if type(GetWeaponEnchantInfo) ~= "function" then return nil end
+    local ok, main, _, _, _, off = pcall(GetWeaponEnchantInfo)
+    if not ok or isSecret(main) or isSecret(off) then return nil end
+    return (main or off) and true or false
+end
+
+-- Whether a coating is still on: within its lifetime, and not denied by the weapons (after a moment to update).
+-- A weapon that still carries a coating keeps it past its lifetime, which may have run on while logged out.
+local function coatingOn(coatedAt, expires, now)
+    local coated = weaponsCoated()
+    if coated == false and now - coatedAt > POISON_GRACE then return false end
+    return now <= expires or coated == true
+end
+
+-- The poison with damage over time the weapons carry, the latest coated, or nil. Worn-off coatings are forgotten.
+local function activePoison()
+    local now, best = wallClock(), nil
+    for name, poison in pairs(poisonState.dots) do
+        if not wellFormedPoison(poison) then
+            poisonState.dots[name] = nil
+        elseif not coatingOn(poison.coatedAt, poison.expires, now) then
+            poisonState.dots[name] = nil
+            trace("POISON " .. tostring(name) .. " worn off")
+        elseif not best or poison.coatedAt > best.coatedAt then
+            best = poison
+        end
+    end
+    return best
+end
+
+local function directPoisonOn()
+    local now = wallClock()
+    local untilAt = tonumber(poisonState.directUntil) or 0
+    return untilAt > now and coatingOn(tonumber(poisonState.directAt) or 0, untilAt, now)
+end
+
 -- Returns the target key the DoT was applied to, or nil if the cast wasn't a tracked DoT.
 local function onPlayerCast(spellID, castGUID)
     local key = castTargetKey(castGUID)
@@ -546,6 +666,10 @@ local function onPlayerCast(spellID, castGUID)
         if awarded then onBuilderCast(key, awarded) end
         -- Only one Fire trap can be active: any new one (Explosive Trap too) replaces the armed one.
         if armedTrap and desc:find("Fire trap") then armedTrap = nil end
+        if desc:find("[Cc]oats a weapon") then
+            poisonGuard(onCoating, spellID, name, desc)
+            return
+        end
     end
     if IGNORED_SPELLS[name] then return end
     local isFinisher = isFinisherDescription(desc)
@@ -794,6 +918,67 @@ local function springTrap(key, unit, amount, school, isCrit, now)
     return true
 end
 
+-- A hit on a mob as a poison's tick (see POISON_LIFETIME): only its school is read, so it works with the amounts
+-- secret. A Nature hit on the rhythm of the poison's DoT on the mob is its next tick; with none there, or past its
+-- end (it was put on again meanwhile), it is the first tick of a new one (or, with a poison that strikes at once
+-- also on, the second of two a tick apart). Hits off the rhythm, and those on the rhythm of the player's own
+-- Nature spells, are left alone. Returns the mob's key when a poison's DoT starts.
+local function onPoisonCombat(unit, action, school)
+    if isSecret(action) or (action ~= "WOUND" and action ~= "ABSORB") then return end
+    if isSecret(school) or school ~= SCHOOL_MASKS.Nature then return end
+    local key = unitKey(unit)
+    if not key then return end
+    local poison = activePoison()
+    if not poison then return end
+    local now = GetTime()
+    local dots = dotsByTarget[key]
+    local dot = dots and dots[poison.name]
+    -- The same hit arrives once per unit token showing the mob.
+    if (dot and dot.lastTickAt == now) or poisonCandidates[key] == now then return end
+    for _, other in pairs(dots or {}) do
+        if not other.proc and other.school == school and distanceToExpectedTick(other, now) <= TICK_MATCH_WINDOW then
+            return
+        end
+    end
+    if dot and now <= dot.expiresAt + TICK_MATCH_WINDOW then
+        local distance, index = distanceToExpectedTick(dot, now)
+        if distance > TICK_MATCH_WINDOW_ANCHORED or index <= dot.lastTickIndex then return end
+        dot.ticksSeen = dot.ticksSeen + 1
+        local number = anchorTick(dot, index, now)
+        trace(string.format("POISON %s tick on %s (%s/%s)", poison.name, tostring(unit), tostring(number),
+            tostring(dot.totalTicks)))
+        return
+    end
+    local interval = KNOWN_TICK_INTERVALS[poison.name] or DEFAULT_TICK_INTERVAL
+    local first = now
+    if directPoisonOn() then
+        local seen = poisonCandidates[key]
+        if not seen or math.abs(now - seen - interval) > TICK_MATCH_WINDOW then
+            poisonCandidates[key] = now
+            trace(string.format("POISON Nature hit on %s: %s, or a poison that strikes at once; waiting for a tick",
+                unit, poison.name))
+            return
+        end
+        first = seen
+    end
+    poisonCandidates[key] = nil
+    local fresh = newDot(poison.spellID, nil, poison.name, poison.total, poison.school, poison.duration, interval,
+        first - interval)
+    fresh.proc = true
+    fresh.seenAt = first -- the marker lists it from here, not from its proc, which came before the DoTs seen since
+    fresh.ticksSeen = 1
+    anchorTick(fresh, 1, first)
+    if first ~= now then
+        fresh.ticksSeen = 2
+        anchorTick(fresh, 1, now)
+    end
+    dotsByTarget[key] = dotsByTarget[key] or {}
+    dotsByTarget[key][poison.name] = fresh
+    trace(string.format("POISON %s on %s%s: %s dmg over %ss, one stack", poison.name, tostring(unit),
+        dot and " again" or "", tostring(poison.total), tostring(poison.duration)))
+    return key
+end
+
 -- Returns the target key when this hit was the first tick of a DoT that was waiting for it (so the marker can
 -- flash now that the DoT shows), else nil.
 -- The same hit arrives once per unit token showing the mob (target, nameplateN, focus...) and must count once. But
@@ -853,7 +1038,7 @@ local function onUnitCombat(unit, action, flag, amount, school)
     local zeroAbsorb = absorbed and amount == 0
     local candidates = 0
     for name, dot in pairs(dots) do
-        if not fed[name] and dot.school == school
+        if not fed[name] and not dot.proc and dot.school == school
             and (zeroAbsorb or plausibleTickAmount(dot, amount, isCrit, tickNumberAt(dot, now))) then
             local distance, index = distanceToExpectedTick(dot, now)
             local window = dot.firstTickAt and TICK_MATCH_WINDOW_ANCHORED or TICK_MATCH_WINDOW
@@ -871,7 +1056,7 @@ local function onUnitCombat(unit, action, flag, amount, school)
     if not best then
         -- Not a tick as things stand; it may still correct one (same-slot swap, or a wrong learned size).
         for name, dot in pairs(dots) do
-            if not fed[name] and dot.school == school then
+            if not fed[name] and not dot.proc and dot.school == school then
                 local distance, index = distanceToExpectedTick(dot, now)
                 local wasWaiting = isWaiting(dot)
                 if trySwapSameSlot(dot, name, amount, isCrit, now) then
@@ -910,6 +1095,9 @@ end
 local function housekeep(now)
     for key, at in pairs(readableHitAt) do
         if now - at > READABLE_KEEP then readableHitAt[key] = nil end
+    end
+    for key, at in pairs(poisonCandidates) do
+        if now - at > POISON_CANDIDATE_KEEP then poisonCandidates[key] = nil end
     end
     for key, dots in pairs(dotsByTarget) do
         for name, dot in pairs(dots) do
@@ -952,8 +1140,9 @@ local function remainingDamage(dot)
     return total
 end
 
--- Remaining damage per DoT on a mob (by unitKey), oldest application first. DoTs still waiting for their first
--- tick are left out. A DoT being cast on the mob replaces the one of the same name it would refresh.
+-- Remaining damage per DoT on a mob (by unitKey), oldest application first (a poison from when it was first seen).
+-- DoTs still waiting for their first tick are left out. A DoT being cast on the mob replaces the one of the same
+-- name it would refresh.
 local function dotBreakdown(key)
     local dots = key and dotsByTarget[key]
     local cast = key and castInProgress and castInProgress.key == key and castInProgress or nil
@@ -964,7 +1153,7 @@ local function dotBreakdown(key)
             local damage = remainingDamage(dot)
             if damage > 0 then
                 list[#list + 1] = { name = name, spellID = dot.spellID, school = dot.school,
-                    appliedAt = dot.appliedAt, damage = damage }
+                    appliedAt = dot.seenAt or dot.appliedAt, damage = damage }
             end
         end
     end
@@ -1038,8 +1227,11 @@ local function onEvent(_, event, ...)
         end
 
     elseif event == "UNIT_COMBAT" then
+        local unit, action, _, _, school = ...
         local revealed = onUnitCombat(...)
-        if revealed and revealed == unitKey("target") then
+        local poisoned = poisonGuard(onPoisonCombat, unit, action, school)
+        local target = unitKey("target")
+        if (revealed and revealed == target) or (poisoned and poisoned == target) then
             notify("changed")
             notify("applied")
         end
@@ -1082,6 +1274,13 @@ function Dots.Load(db)
         db.dotTicks, db.dotTicksVersion = {}, TICKS_VERSION
     end
     ticks = db.dotTicks
+    -- The poisons on the weapons, kept across reloads (see POISON_LIFETIME).
+    if type(db.dotPoisons) ~= "table" or type(db.dotPoisons.dots) ~= "table" then
+        db.dotPoisons = { dots = {}, directUntil = 0 }
+    end
+    if type(db.dotPoisons.directUntil) ~= "number" then db.dotPoisons.directUntil = 0 end
+    if type(db.dotPoisons.directAt) ~= "number" then db.dotPoisons.directAt = nil end
+    poisonState = db.dotPoisons
 end
 
 -- Tracking on or off. Off forgets every DoT and listens to nothing.
@@ -1098,6 +1297,7 @@ function Dots.Enable(on)
         frame:UnregisterAllEvents()
         wipe(dotsByTarget)
         wipe(readableHitAt)
+        wipe(poisonCandidates)
         castInProgress, lastDotCast, lastOutcome, armedTrap = nil, nil, nil, nil
         wipe(sentTargets)
         resetComboCount()
@@ -1136,9 +1336,20 @@ function Dots.Debug(n)
     local out = { string.format("DoTs: tracking %s, target %d left (%s), %d tick sizes learned, hit amounts %s",
         enabled and "on" or "off", total, #parts > 0 and table.concat(parts, ", ") or "none", learned,
         amounts or "not seen yet") }
+    local poison = poisonGuard(activePoison)
+    if poisonsBroken then
+        out[#out + 1] = "Poison on the weapons: tracking off after an error (see below), back on after a reload"
+    elseif poison then
+        out[#out + 1] = string.format("Poison on the weapons: %s, %s dmg over %ss%s", poison.name,
+            tostring(poison.total), tostring(poison.duration),
+            poisonGuard(directPoisonOn) and " (and one that strikes at once)" or "")
+    else
+        out[#out + 1] = "Poison on the weapons: none with damage over time seen"
+    end
     for i = math.max(1, #log - (n or 10) + 1), #log do out[#out + 1] = log[i] end
     return out
 end
 
 -- For the tests.
 Dots.parseDot = parseDot
+Dots.parseCoating = parseCoating

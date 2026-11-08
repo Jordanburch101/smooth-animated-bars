@@ -97,6 +97,21 @@ Facts found while building this, which the code relies on and which are not obvi
   the health liquid (`Liquid:SetSublevelOffset`; Liquid.lua uses sublevels 3 to 7 of -8..7, so there is no
   room for a third), and the health liquid's front is moved onto where the health will end (`Bars.Front`). The kill icon is the
   atlas `UI-HUD-UnitFrame-Target-HighLevelTarget_Icon` (Forever's `TargetFrame.xml`).
+- **Rogue poisons** (`Dots.lua`, `onPoisonCombat`): a coating procs on weapon strikes, so no cast event says when it
+  lands. DoesItDie's saved log on Forever has `HIT (amount hidden) school 8`: the amount is secret but the school is
+  not, so a Nature hit on a mob while the weapon carries a poison with damage over time is taken as its tick. The
+  coating is read from the poison's own `UNIT_SPELLCAST_SUCCEEDED` ("Coats a weapon ...") and saved with a `time()`
+  expiry; `GetWeaponEnchantInfo` (if it answers) forgets it once the weapons are bare. One stack is counted, and with
+  a poison that strikes at once (Instant Poison) also on, it takes two Nature hits a tick apart. Not yet tried in
+  game: the coating's text on Forever, whether `GetWeaponEnchantInfo` answers, and how other players' Nature damage
+  on the same mob gets in the way.
+- **Poison skulls** (`Marker.lua`, Skulls): the game's own `SPELLS/Skull.m2` (file ID 166881) loads in a
+  `PlayerModel` frame by file ID, and `SetFacing` and `SetModelAlpha` work on it (seen in game, on a target's Nature
+  DoT). The skulls hang on a hidden bar from the health bar's left edge to the health's edge, over the target's
+  secret health, so they stay over the bar when the DoTs would take more than the health. The mock draws no model,
+  so the gallery cannot show them, and no gallery scenario has a Nature DoT. `Skull.tga` (`make_media.py`) stands in
+  where no model frame can be made. `SPELLS/Poison_ImpactDot_Med_Base.m2` (166644), the game's poison effect,
+  also loads, but drew as tangled green lines in a frame.
 - **Heal prediction:** Forever's player frame has the game's own heal prediction (`healthBar.MyHealPredictionBar`
   and `OtherHealPredictionBar`, Mainline `PlayerFrame.xml`), a flat teal bar seen in game on a priest's Lesser
   Heal. At the bar's level it draws over the liquid, so `HealMarker.lua` keeps `MyHealPredictionBar.Fill`

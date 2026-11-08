@@ -788,11 +788,117 @@ for _ in range(4):
 run(dm, 0.5)
 check(dm.eval("__total()") == 0,
       "with hit amounts readable, a DoT whose ticks never come is still dropped (resisted or immune)")
+# A rogue's poisons: a weapon coating, never cast on the mob. Its ticks are known by their school alone, the
+# amounts secret as on Forever.
+dm.execute("""
+    __spells[2823] = { 'Deadly Poison', 'Coats a weapon with poison that lasts for 30 min. Each strike has a 30% '
+        .. 'chance of poisoning the enemy for 36 Nature damage over 12 sec. Stacks up to 5 times on a single target.' }
+    __spells[8679] = { 'Instant Poison', 'Coats a weapon with poison that lasts for 30 min. Each strike has a 20% '
+        .. 'chance of poisoning the enemy which instantly inflicts 19 to 25 Nature damage.' }
+    function __nature() __fire('UNIT_COMBAT', 'target', 'WOUND', '', __secret(), 8) end
+    __target = { guid = 'Creature-0-1-2-3-524-0004', name = 'Rockhide Boar' }
+    __fire('PLAYER_TARGET_CHANGED')
+    __fire('UNIT_COMBAT', 'target', 'WOUND', '', __secret(), 1)
+""")
+run(dm, 0.3)
+dm.execute("__nature()")
+run(dm, 0.3)
+check(dm.eval("__total()") == 0, "a Nature hit with no poison on the weapons is not a poison")
+dm.execute("__cast(2823, 'Cast-6'); __weapons.mainHand = true")
+run(dm, 0.3)
+check(dm.eval("__total()") == 0 and dm.eval("SmoothAnimatedBarsDB.dotPoisons.dots['Deadly Poison'].total") == 36,
+      "coating a weapon with Deadly Poison puts nothing on the target, and is remembered across reloads")
+dm.execute("__nature()")
+run(dm, 0.3)
+check(dm.eval("__total()") == 27 and dm.eval("__m().clip.shown") and dm.eval("__d(1).themeKey") == "plague",
+      f"its first Nature tick on the boar: three ticks of 9 to come, one Plague liquid ({dm.eval('__total()')})")
+SKULLS = """(function()
+    local out = {}
+    for _, f in ipairs(__frames) do
+        if f.kind == 'PlayerModel' and f.shown then out[#out + 1] = f end
+    end
+    return out
+end)()"""
+check(dm.eval("""(function()
+    local skulls = """ + SKULLS + """
+    if #skulls < 6 then return false end
+    for _, f in ipairs(skulls) do
+        local at = f.points.CENTER
+        if f.model ~= 166881 or not at or at.rel ~= __d(1).clampFill or f.modelAlpha < 0 or f.modelAlpha > 1
+            or f.level <= TargetFrame:GetFrameLevel() then return false end
+    end
+    return true
+end)()"""), "the poison landing sends up a burst of the game's own skull (Skull.m2), on the end of its liquid, over the frame")
+check(dm.eval("__d(1).clamp.points.TOPLEFT.rel == TargetFrame.healthbar and __d(1).clamp.points.BOTTOMRIGHT.rel == __m().proxy.fill")
+      and dm.eval("issecretvalue(__d(1).clamp.max)") and dm.eval("__d(1).clamp.reverse"),
+      "the skulls' place is held inside the bar: from its left edge to the health's, over the target's secret health")
+check(dm.eval("""(function()
+    local l, motes, fumes = __d(1).liquid, false, false
+    for _, em in ipairs(l.ambient or {}) do
+        if em.texture == 'Mote' then motes = true end
+        if em.texture == 'Wisp' then fumes = true end
+    end
+    return l.burst.texture == 'Glow' and motes and fumes
+end)()"""), "and the liquid glows with green motes among Plague's fumes")
+check(dm.eval("__d(1).liquid.theme.fillB[1] < __ns.Themes.Get('plague').fillB[1]")
+      and dm.eval("__ns.Themes.Get('plague').fillB[1]") == 0.75,
+      "in a darker green than Plague's, which the bars' own Plague theme keeps")
+run(dm, 1.2)
+dm.execute("__nature()")
+run(dm, 1.5)
+dm.execute("__nature()")
+run(dm, 0.3)
+check(dm.eval("__total()") == 18, f"a Nature hit off its rhythm is not taken; the next tick is ({dm.eval('__total()')})")
+dm.execute("__cast(6546, 'Cast-7')")
+run(dm, 0.3)
+check(dm.eval("__total()") == 46 and dm.eval("__d(1).themeKey") == "plague" and dm.eval("__d(2).themeKey") == "blood",
+      "Rend joins it as Blood behind the poison")
+run(dm, 2.4)
+dm.execute("__nature()")
+run(dm, 3)
+dm.execute("__nature()")  # the last of its four ticks
+run(dm, 3)
+dm.execute("__nature()")  # and one more: it was put on again meanwhile
+run(dm, 0.3)
+check(dm.eval("__total()") == 27 + 14,
+      f"ticking on past its end, the poison starts again from that tick, next to Rend's last two ({dm.eval('__total()')})")
+dm.execute("""
+    __cast(8679, 'Cast-8')
+    __target = { guid = 'Creature-0-1-2-3-524-0005', name = 'Rockhide Boar' }
+    __fire('PLAYER_TARGET_CHANGED')
+""")
+run(dm, 0.3)
+dm.execute("__nature()")
+run(dm, 0.3)
+check(dm.eval("__total()") == 0, "with Instant Poison on as well, one Nature hit could be either: nothing yet")
+run(dm, 2.7)
+dm.execute("__nature()")
+run(dm, 0.3)
+check(dm.eval("__total()") == 18, f"a second a tick later is Deadly Poison's: two ticks seen, 18 to come ({dm.eval('__total()')})")
+run(dm, 12)
+dm.execute("""
+    __weapons.mainHand = false
+    __target = { guid = 'Creature-0-1-2-3-524-0006', name = 'Rockhide Boar' }
+    __fire('PLAYER_TARGET_CHANGED')
+""")
+run(dm, 0.3)
+dm.execute("__nature()")
+run(dm, 3)
+dm.execute("__nature()")
+run(dm, 0.3)
+check(dm.eval("__total()") == 0 and dm.eval("SmoothAnimatedBarsDB.dotPoisons.dots['Deadly Poison']") is None,
+      "weapons the game says are bare: the poisons are forgotten")
+check(dm.eval("(__ns.Dots.parseCoating(__spells[8679][2]))") == "direct"
+      and dm.eval("(__ns.Dots.parseCoating('Coats a weapon with poison that lasts for 30 min. Each strike has a 30% "
+                  "chance of poisoning the enemy, slowing their movement speed by 50% for 12 sec.'))") is None
+      and dm.eval("(__ns.Dots.parseDot(__spells[2823][2]))") is None,
+      "coating text: a poison that strikes at once, one that only slows, and a coating is never a cast DoT")
 dm.execute("__target.dead = true")
 run(dm, 0.2)
 dm.execute("SlashCmdList.SMOOTHANIMATEDBARS('dots')")
 check(any(m.startswith("|cff40d060Smooth Animated Bars|r DoT marker: on") for m in chat(dm))
-      and any("CAST Corruption" in m for m in chat(dm)), "/sab dots reports the marker and the tracking")
+      and any("POISON Deadly Poison worn off" in m for m in chat(dm))
+      and any("Poison on the weapons: none" in m for m in chat(dm)), "/sab dots reports the marker and the tracking")
 check(not any("Error in" in m or "Error " in m for m in chat(dm)), "no errors (the target's health stayed secret)")
 dm.execute("__settings.dots:SetValue(false)")
 run(dm, 0.2)
@@ -807,6 +913,99 @@ dd = session("{ setupDone = true, dots = true }", "__addons.DoesItDie = true")
 run(dd, 0.3)
 check(not dd.eval("__ns.Dots.IsEnabled()") and any("DoesItDie is loaded" in m for m in chat(dd)),
       "with DoesItDie loaded the marker stays off and says why")
+
+# The poison tracking is untried in game, so nothing in it may raise an error: bad saved data is dropped, and an
+# error inside it turns only it off.
+dp = session("{ setupDone = true, dots = true, dotPoisons = { dots = { Bad = { name = 'Bad', total = 'lots' }, "
+             "['Deadly Poison'] = 'x' }, directUntil = 'soon' } }")
+dp.execute("""
+    __spells[172] = { 'Corruption', 'Corrupts the target, causing 90 Shadow damage over 18 sec.' }
+    __spells[2823] = { 'Deadly Poison', 'Coats a weapon with poison that lasts for 30 min. Each strike has a 30% '
+        .. 'chance of poisoning the enemy for 36 Nature damage over 12 sec.' }
+    __weapons.mainHand = true
+    function __cast(id, guid)
+        __fire('UNIT_SPELLCAST_SENT', 'player', __target.name, guid, id)
+        __fire('UNIT_SPELLCAST_SUCCEEDED', 'player', guid, id)
+    end
+    function __nature() __fire('UNIT_COMBAT', 'target', 'WOUND', '', __secret(), 8) end
+    __target = { guid = 'Creature-0-1-2-3-524-0001', name = 'Rockhide Boar' }
+    __fire('PLAYER_TARGET_CHANGED')
+""")
+run(dp, 0.3)
+dp.execute("__nature(); __fire('UNIT_COMBAT', 'target', 'WOUND', '', __secret(), __secret())")
+run(dp, 0.3)
+check(dp.eval("(__ns.Dots.Target())") == 0 and dp.eval("next(SmoothAnimatedBarsDB.dotPoisons.dots)") is None
+      and not any("Error in" in m for m in chat(dp)),
+      "saved poisons that make no sense are dropped, and a secret school is left alone, without an error")
+dp.execute("__cast(2823, 'Cast-1'); SmoothAnimatedBarsDB.dotPoisons.dots = 5")
+run(dp, 0.3)
+dp.execute("__nature(); __cast(172, 'Cast-2')")
+run(dp, 0.3)
+dp.execute("SlashCmdList.SMOOTHANIMATEDBARS('dots')")
+check(not any("Error in" in m for m in chat(dp)) and dp.eval("(__ns.Dots.Target())") == 90
+      and any("tracking off after an error" in m for m in chat(dp))
+      and any("ERROR in the poison tracking" in m for m in chat(dp)),
+      "an error in the poison tracking prints nothing in chat, turns only it off (Corruption still shows), "
+      "and /sab dots says so")
+dp.execute("__nature()")
+run(dp, 0.3)
+check(dp.eval("(__ns.Dots.Target())") == 90 and not any("Error in" in m for m in chat(dp)),
+      "and it stays off quietly")
+
+POISON_SETUP = """
+    __spells[2823] = { 'Deadly Poison', 'Coats a weapon with poison that lasts for 30 min. Each strike has a 30% '
+        .. 'chance of poisoning the enemy for 36 Nature damage over 12 sec.' }
+    __weapons.mainHand = true
+    function __cast(id, guid)
+        __fire('UNIT_SPELLCAST_SENT', 'player', __target.name, guid, id)
+        __fire('UNIT_SPELLCAST_SUCCEEDED', 'player', guid, id)
+    end
+    function __nature() __fire('UNIT_COMBAT', 'target', 'WOUND', '', __secret(), 8) end
+    function __d(i) return (__ns.Marker.State()).liquids[i] end
+    __target = { guid = 'Creature-0-1-2-3-524-0001', name = 'Rockhide Boar' }
+    __fire('PLAYER_TARGET_CHANGED')
+"""
+sk = session("{ setupDone = true, dots = true }")
+sk.execute(POISON_SETUP)
+run(sk, 0.3)
+sk.execute("__cast(2823, 'Cast-1')")
+run(sk, 0.3)
+sk.execute("__nature()")
+run(sk, 1.2)
+moved = sk.eval("(function() local n = 0 for _, f in ipairs(" + SKULLS + ") do if f.points.CENTER.y > 4 then n = n + 1 end end return n end)()")
+check(moved > 0 and sk.eval("#" + SKULLS) <= 16, f"the skulls rise off the liquid ({moved} risen), at most 16 at once")
+sk.execute("__settings.sparkles:SetValue(false); __settings.ambient:SetValue(false)")
+run(sk, 3)
+check(sk.eval("#" + SKULLS) == 0, "with Sparkles and Ambient off, no more skulls")
+sk.execute("__settings.sparkles:SetValue(true); __settings.ambient:SetValue(true)")
+run(sk, 1.5)
+check(sk.eval("#" + SKULLS) > 0, "on again: they drift up while the poison runs")
+sk.execute("__target = nil; __fire('PLAYER_TARGET_CHANGED')")
+run(sk, 0.3)
+check(sk.eval("#" + SKULLS) == 0 and not any("Error in" in m for m in chat(sk)), "no target: the skulls go with the marker")
+
+# Where no model frame can be made, the liquid throws up the addon's drawn skull instead.
+sf = session("{ setupDone = true, dots = true }", """
+    local create = CreateFrame
+    CreateFrame = function(kind, ...)
+        if kind == 'PlayerModel' then error('no model frames here') end
+        return create(kind, ...)
+    end
+""")
+sf.execute(POISON_SETUP)
+run(sf, 0.3)
+sf.execute("__cast(2823, 'Cast-1')")
+run(sf, 0.3)
+sf.execute("__nature()")
+run(sf, 0.3)
+check(sf.eval("""(function()
+    local l, flying = __d(1).liquid, false
+    for _, mote in ipairs(l.motes) do
+        if mote.active and mote.file == 'Skull' then flying = true end
+    end
+    return l.burst.texture == 'Skull' and flying
+end)()""") and not any("Error in" in m for m in chat(sf)),
+      "with no model frames, the liquid throws up the drawn skull instead, without an error")
 
 print("== heal marker")
 hm = session("{ setupDone = true }", "__player.class = 'PRIEST'")

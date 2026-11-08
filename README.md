@@ -56,6 +56,11 @@ will still burn away turns into liquid, eating into your target's health liquid:
 - **It goes by your spells' tooltips.** WoW Forever keeps the damage of each hit hidden from addons, so the
   amounts come from what each spell's tooltip says it deals, and a DoT runs down tick by tick for its whole
   duration. A DoT that is dodged, parried, missed or resisted as you cast it is left out.
+- **Nature DoTs give off the game's own poison skulls**, poisons and stings alike, in a darker green than the
+  Plague theme: a few skulls drift up while they run, and a burst comes with each tick.
+- **Rogue poisons** that do damage over time, like Deadly Poison, show too. The addon notes the poison when
+  you put it on your weapon, and sees it land by its Nature ticks on your target. It counts one stack, so with
+  more stacks the poison deals more than it shows.
 - **Your own DoTs only**, on your current target. Spells that do damage over time on the ground (Rain of Fire,
   Consecration) and channels (Drain Life, Mind Flay) are left out.
 

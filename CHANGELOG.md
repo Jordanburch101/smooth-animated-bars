@@ -10,6 +10,14 @@ Sections are `### New` and `### Fixed`; skip one that would be empty.
 - Right-click your frame, your target's, your pet's or your focus's: the
   menu now ends with Open Settings for Smooth Animated Bars, which opens
   the settings at that frame's section.
+- Rogue poisons on your target: a poison that does damage over time, like
+  Deadly Poison, now shows on the DoT marker as a Plague liquid. The poison
+  is noted when you put it on your weapon, and seen landing by its Nature
+  ticks. It counts one stack, so with more stacks it deals more than it shows.
+- Nature DoTs on your target (poisons, Serpent Sting) give off the game's
+  own poison skulls: a few drift up while they run, swinging their heads as
+  they fade, and a burst comes with each tick. Their liquid is a darker
+  green than the Plague theme, so it stands apart from the health.
 
 ## 1.4.0
 

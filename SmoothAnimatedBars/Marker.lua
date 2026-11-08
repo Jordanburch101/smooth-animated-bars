@@ -53,8 +53,191 @@ local SCHOOL_THEMES = {
 }
 local DEFAULT_THEME = "shadow"
 
+-- What a DoT liquid changes from its theme. Nature's, the poisons and stings, gives off the game's own poison skulls
+-- (model frames, see Skulls below) amid glowing green motes, and the theme's own ambient particles (Plague's fumes)
+-- stay alongside. Where no model frame can be made, the liquid throws up the addon's drawn skull (Skull.tga) itself:
+-- its colours are its own, so the tint is near white, and it has no spin, as Liquid.lua starts a spinning mote at a
+-- random angle and a skull stays upright.
+local SKULL_FROM, SKULL_TO = { 1.00, 1.00, 1.00 }, { 0.80, 0.95, 0.60 }
+local VENOM_FROM, VENOM_TO = { 0.80, 1.00, 0.40 }, { 0.30, 0.75, 0.10 }
+-- Plague's own yellow-green is bright beside the health's green, so the DoT liquid takes a darker one.
+local VENOM_DARK = {
+    fillA = { 0.10, 0.15, 0.02 }, fillB = { 0.48, 0.60, 0.08 }, tip = { 0.78, 0.90, 0.40 }, glow = { 0.55, 0.80, 0.15 },
+}
+local DOT_LOOKS = {
+    plague = {
+        colors = VENOM_DARK,
+        splashFrom = VENOM_FROM, splashTo = VENOM_TO,
+        burst = { texture = "Glow", blend = "ADD", buoyancy = 18, drag = 1.6 },
+        ambient = {
+            { area = "liquid", rate = 2, energyRate = 4, texture = "Mote", blend = "ADD", size = { 5, 9 },
+              life = { 1, 1.8 }, vx = { -3, 3 }, vy = { 6, 12 }, buoyancy = 4, drag = 0.5, twinkle = 3,
+              from = VENOM_FROM, to = VENOM_TO },
+        },
+    },
+}
+local SPRITE_LOOKS = {
+    plague = {
+        colors = VENOM_DARK,
+        splashFrom = SKULL_FROM, splashTo = SKULL_TO,
+        burst = { texture = "Skull", blend = "BLEND", buoyancy = 12, drag = 2.2 },
+        ambient = {
+            { area = "liquid", rate = 1.3, energyRate = 3, texture = "Skull", blend = "BLEND", size = { 11, 15 },
+              life = { 1.6, 2.4 }, vx = { -4, 4 }, vy = { 5, 10 }, buoyancy = 3, drag = 0.6, alpha = 0.9,
+              from = SKULL_FROM, to = SKULL_TO },
+        },
+    },
+}
+
 local function Secret(v)
     return issecretvalue and issecretvalue(v) or false
+end
+
+--------------------------------------------------------------------------------
+-- Skulls: the game's own poison skull rising off a Nature DoT's liquid
+--------------------------------------------------------------------------------
+-- A shared pool of model frames showing the game's skull (SPELLS/Skull.m2, by file ID; seen working in game), as the
+-- game shows over a poisoned character: a few drift up while a Nature DoT runs, and a burst comes with each tick and
+-- when one lands. Each pops in, swings its head, rises and fades. A skull hangs on the end of its liquid (the run
+-- bar's fill): where that is on the bar comes from the target's secret health, so it is only anchored to, never
+-- read. The frames sit just above the frame the marker belongs to, so they rise over it, under the kill icon.
+local SKULL_MODEL = 166881
+local SKULL_POOL = 16
+local SKULL_SIZE = { 22, 30 }
+local SKULL_LIFE = { 1.8, 2.6 }
+local SKULL_RATE = 1.6                 -- a second, while a Nature DoT runs
+local SKULL_TICK, SKULL_LANDED = 3, 6  -- in a burst
+local SKULL_LEVEL = 10                 -- over the marker's frame (the kill icon is at 20)
+local SKULL_STAGGER = 0.45             -- seconds over which a burst's skulls start
+
+local skulls     -- the pool once made: { frame, active, ... }; false where no model frame can be made
+local skullFade  -- the frame method that fades the model: SetModelAlpha, else SetAlpha
+
+local function Rand(a, b) return a + math.random() * (b - a) end
+
+-- Makes the pool the first time; false where no model frame can be made (the drawn skull stands in).
+local function SkullPool()
+    if skulls ~= nil then return skulls end
+    skulls = false
+    local pool = {}
+    for i = 1, SKULL_POOL do
+        local ok, f = pcall(CreateFrame, "PlayerModel", nil, UIParent)
+        if not ok or type(f) ~= "table" or type(f.SetModel) ~= "function" or type(f.SetFacing) ~= "function" then
+            return skulls
+        end
+        if not pcall(f.SetModel, f, SKULL_MODEL) then return skulls end
+        f:Hide()
+        pool[i] = { frame = f, active = false, age = 0, life = 1 }
+    end
+    skullFade = type(pool[1].frame.SetModelAlpha) == "function" and "SetModelAlpha" or "SetAlpha"
+    skulls = pool
+    return skulls
+end
+
+-- The look for a DoT liquid's key: green motes beside the model skulls, or the drawn skull where there are none.
+local function LookFor(key)
+    if SkullPool() then return DOT_LOOKS[key] end
+    return SPRITE_LOOKS[key]
+end
+
+-- Sends count skulls up off liquid d of marker m: bursts follow the Sparkles setting, the steady ones Ambient.
+local function EmitSkulls(m, d, count, steady)
+    local pool = SkullPool()
+    if not pool or not ns.Core.Get(steady and "ambient" or "sparkles") then return end
+    local host = m.spec.iconHost
+    local okStrata, strata = pcall(host.GetFrameStrata, host)
+    for _ = 1, count do
+        -- A free skull, else the one furthest through its life.
+        local s, oldest
+        for _, candidate in ipairs(pool) do
+            if not candidate.active then
+                s = candidate
+                break
+            end
+            if not oldest or candidate.age / candidate.life > oldest.age / oldest.life then oldest = candidate end
+        end
+        s = s or oldest
+        s.active, s.m, s.anchor = true, m, d.clampFill
+        -- A burst's skulls start a moment apart (a negative age is a wait), so they come up one after another.
+        s.age = steady and 0 or -Rand(0, SKULL_STAGGER)
+        s.life, s.size = Rand(SKULL_LIFE[1], SKULL_LIFE[2]), Rand(SKULL_SIZE[1], SKULL_SIZE[2])
+        s.x, s.y = Rand(2, 18), Rand(-4, 6)
+        s.vx, s.rise = Rand(-12, 12), Rand(14, 40)
+        s.facing, s.swing, s.phase = Rand(-0.3, 0.3), Rand(0.3, 0.6), Rand(0, 2 * math.pi)
+        local f = s.frame
+        if okStrata and type(strata) == "string" and not Secret(strata) then f:SetFrameStrata(strata) end
+        if m.iconLevel then f:SetFrameLevel(m.iconLevel + SKULL_LEVEL) end
+        f[skullFade](f, 0)
+        f:SetSize(s.size * 0.6, s.size * 0.6)
+        f:ClearAllPoints()
+        f:SetPoint("CENTER", s.anchor, "LEFT", s.x, s.y)
+        pcall(f.SetModel, f, SKULL_MODEL) -- again: a model frame may let its model go while hidden
+        f:Show()
+    end
+end
+
+local function HideSkull(s)
+    s.active, s.m, s.anchor = false, nil, nil
+    s.frame:Hide()
+end
+
+-- Moves every skull on.
+local function UpdateSkulls(dt)
+    if not skulls then return end
+    for _, s in ipairs(skulls) do
+        if s.active then
+            s.age = s.age + dt
+            local p = s.age / s.life
+            if p >= 1 then
+                HideSkull(s)
+            elseif p > 0 then
+                local f = s.frame
+                -- Pops in a little big, settles, and shrinks a touch as it fades.
+                local scale
+                if p < 0.12 then
+                    scale = 0.6 + 0.5 * p / 0.12
+                elseif p < 0.25 then
+                    scale = 1.1 - 0.1 * (p - 0.12) / 0.13
+                else
+                    scale = 1 - 0.15 * (p - 0.25) / 0.75
+                end
+                local alpha = math.min(1, p / 0.1) * (p > 0.6 and (1 - p) / 0.4 or 1)
+                -- Rises fast at first and slows, drifting aside.
+                local rise = s.rise * (1 - (1 - p) * (1 - p))
+                local size = s.size * scale
+                f:SetSize(size, size)
+                f:ClearAllPoints()
+                f:SetPoint("CENTER", s.anchor, "LEFT", s.x + s.vx * s.age, s.y + rise)
+                f:SetFacing(s.facing + s.swing * math.sin(s.phase + s.age * 2.5))
+                f[skullFade](f, alpha)
+            end
+        end
+    end
+end
+
+local function ClearSkulls(m)
+    if not skulls then return end
+    for _, s in ipairs(skulls) do
+        if s.active and s.m == m then HideSkull(s) end
+    end
+end
+
+-- A DoT liquid's theme by key: the unit frames' version of the theme (Bars.Theme), with its look's changes.
+local function DotTheme(key)
+    local base = ns.Bars.Theme(key)
+    local look = LookFor(key)
+    if not look then return base end
+    local t = setmetatable({}, { __index = base })
+    for field, value in pairs(look) do
+        if field ~= "colors" then t[field] = value end
+    end
+    for field, value in pairs(look.colors or {}) do t[field] = value end
+    local ambient = {}
+    for _, list in ipairs({ base.ambient or {}, look.ambient or {} }) do
+        for _, emitter in ipairs(list) do ambient[#ambient + 1] = emitter end
+    end
+    t.ambient = ambient
+    return t
 end
 
 local function AtParentLevel(frame, parent)
@@ -127,6 +310,15 @@ local function New(spec)
         d.run:SetWidth(w)
         if d.run.SetReverseFill then d.run:SetReverseFill(true) end
         d.fill = d.run:GetStatusBarTexture()
+        -- Where this liquid ends, held inside the bar, for the skulls: a bar from the bar's left edge to the health's
+        -- edge, filling back from the health's edge over the target's (secret) health with the same running total.
+        -- Past the health it is full, so its fill's left edge never goes past the bar's.
+        d.clamp = HiddenBar(m.clip)
+        AtParentLevel(d.clamp, m.clip)
+        d.clamp:SetPoint("TOPLEFT", bar, "TOPLEFT")
+        d.clamp:SetPoint("BOTTOMRIGHT", edge, "BOTTOMRIGHT")
+        if d.clamp.SetReverseFill then d.clamp:SetReverseFill(true) end
+        d.clampFill = d.clamp:GetStatusBarTexture()
         -- The liquid hangs on the edge in front of it: the health's, or the end of the liquid before.
         d.front = i == 1 and edge or m.liquids[i - 1].fill
         d.pool = CreateFrame("Frame", nil, m.clip)
@@ -208,6 +400,7 @@ local function Hide(m)
         ns.Bars.Front(m.bar, nil)
     end
     m.window:Hide()
+    ClearSkulls(m)
     m.fresh = true -- grows in again next time
 end
 
@@ -258,16 +451,18 @@ local function Refresh(m)
             local key = SCHOOL_THEMES[g.school] or DEFAULT_THEME
             if key ~= d.themeKey then
                 d.themeKey = key
-                d.liquid:SetTheme(ns.Bars.Theme(key))
+                d.liquid:SetTheme(DotTheme(key))
             end
             -- A tick (less to come) ripples its liquid.
             if not landed and running + g.damage < d.value - 0.5 and d.pool:IsShown() then
                 d.liquid:Splash(SPLASH_TICK, m.width - 8, m.width)
+                if key == "plague" then EmitSkulls(m, d, SKULL_TICK) end
             end
             running = running + g.damage
         end
         d.value = running -- a liquid without a school of its own runs to the one before: no width
         d.run:SetMinMaxValues(0, max)
+        d.clamp:SetMinMaxValues(0, health)
     end
     m.killBar:SetMinMaxValues(0, health)
     m.killBar:SetValue(total)
@@ -276,6 +471,7 @@ local function Refresh(m)
         for _, d in ipairs(m.liquids) do
             d.shown = 0
             d.run:SetValue(0)
+            d.clamp:SetValue(0)
             d.liquid:Snap(m.width)
         end
         Feed(m, false)
@@ -300,7 +496,10 @@ local function Refresh(m)
     -- A DoT landing stirs every liquid.
     if landed then
         for _, d in ipairs(m.liquids) do
-            if d.pool:IsShown() then d.liquid:Splash(SPLASH_APPLIED, m.width - 8, m.width) end
+            if d.pool:IsShown() then
+                d.liquid:Splash(SPLASH_APPLIED, m.width - 8, m.width)
+                if d.themeKey == "plague" then EmitSkulls(m, d, SKULL_LANDED) end
+            end
         end
         ns.Bars.StirBar(m.bar)
     end
@@ -344,6 +543,7 @@ local function Update(m, dt)
             d.shown = d.shown + (d.value - d.shown) * math.min(1, dt * GLIDE)
             if math.abs(d.value - d.shown) < math.max(0.05, d.value * 0.002) then d.shown = d.value end
             d.run:SetValue(d.shown)
+            d.clamp:SetValue(d.shown)
         end
         if d.pool:IsShown() then
             -- Once settled only the idle wobble remains, so it drops to IDLE_FPS, as Bars.lua does.
@@ -356,6 +556,13 @@ local function Update(m, dt)
                 d.idle = 0
             end
             if step then d.liquid:Update(step, m.width) end
+            if d.themeKey == "plague" then
+                d.skullAcc = (d.skullAcc or 0) + dt * SKULL_RATE
+                if d.skullAcc >= 1 then
+                    d.skullAcc = d.skullAcc - 1
+                    EmitSkulls(m, d, 1, true)
+                end
+            end
         end
     end
 end
@@ -409,6 +616,13 @@ end
 local function OnUpdate(_, elapsed)
     local dt = math.min(elapsed, 0.1)
     if dt <= 0 then return end
+    -- The skulls likewise: an error turns them off until a reload, and the liquid carries on.
+    local okSkulls, errSkulls = pcall(UpdateSkulls, dt)
+    if not okSkulls and skulls then
+        for _, sk in ipairs(skulls) do pcall(HideSkull, sk) end
+        skulls = false
+        ns.Core.Print("Error in the DoT marker's skulls, which are off until a reload: " .. tostring(errSkulls))
+    end
     Each(function(m)
         if m.live and not m.err then
             local ok, err = pcall(Update, m, dt)

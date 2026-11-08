@@ -252,12 +252,29 @@ local function insideOpenSettings(f)
     end
 end
 
+-- A model frame (SimpleModelAPI): the model by file ID or path, its facing and its alpha, as Forever's docs list them.
+function __makeModel(f)
+    f.kind, f.modelAlpha, f.facing = "PlayerModel", 1, 0
+    function f:SetModel(asset)
+        assert(type(asset) == "number" or type(asset) == "string", "SetModel: a file ID or path")
+        self.model = asset
+    end
+    function f:SetFacing(radians) assert(type(radians) == "number", "SetFacing: radians"); self.facing = radians end
+    function f:GetFacing() return self.facing end
+    function f:SetModelAlpha(a)
+        assert(type(a) == "number" and a >= 0 and a <= 1, "SetModelAlpha: 0 to 1")
+        self.modelAlpha = a
+    end
+    function f:GetModelAlpha() return self.modelAlpha end
+end
+
 function CreateFrame(frameType, name, parent, template)
     assert(template == nil or ROW_TEMPLATES[template] or TEMPLATES[template], "unknown template " .. tostring(template))
     local f = NewRegion("Frame", parent, "BACKGROUND", 0)
     __frames[#__frames + 1] = f
     if name then _G[name], f.name = f, name end
     if frameType == "StatusBar" then __makeStatusBar(f) end
+    if frameType == "PlayerModel" then __makeModel(f) end
     if ROW_TEMPLATES[template] then
         f.rowTemplate, f.Init, f.Release = template, RowTemplate.Init, RowTemplate.Release
     end
@@ -528,6 +545,16 @@ end
 function UnitCanAttack(_, unit) return unit == "target" and __target ~= nil and not __target.friendly
     and not __target.isPlayer end
 function GetComboPoints() return 0 end
+-- Wall-clock seconds, as the client's time(): moves with the mock's clock.
+__epoch = 1800000000
+function time() return __epoch + math.floor(__now) end
+-- Temporary enchants (rogue poisons) on the weapons: __weapons.mainHand and offHand, true when coated. The client
+-- answers hasMainHandEnchant, expiration, charges, enchantID, then the same for the off hand.
+__weapons = { mainHand = false, offHand = false }
+function GetWeaponEnchantInfo()
+    return __weapons.mainHand, __weapons.mainHand and 1800000 or nil, 0, __weapons.mainHand and 7 or nil,
+        __weapons.offHand, __weapons.offHand and 1800000 or nil, 0, __weapons.offHand and 7 or nil
+end
 
 -- Spells by ID: __spells[id] = { name, description }.
 __spells = {}

@@ -45,6 +45,8 @@ On by default, under Healing in the settings. The health your own heals will sti
 *   **Heals over time** (Renew, Rejuvenation, Regrowth) run down tick by tick for their duration.
 *   **Bandages** tick every second, throwing up green pluses as the game does over a healed character, and if damage breaks one, what it had left drops out at once.
 *   **It goes by your spells' tooltips,** as WoW Forever keeps your health and each heal's size hidden from addons. Healing past full health is cut off at the bar's end.
+*   **Nature DoTs give off the game's own poison skulls,** poisons and stings alike, in a darker green than the Plague theme: a few skulls drift up while they run, and a burst comes with each tick.
+*   **Rogue poisons** that do damage over time, like Deadly Poison, show too: the poison is noted when you put it on your weapon and seen landing by its Nature ticks on your target. It counts one stack, so with more stacks the poison deals more than it shows.
 *   **Your own heals on yourself only.** Heals from others depend on their gear, which no tooltip tells, so they keep the game's own bar. Your own heals take the place of the game's flat teal bar while they show.
 
 ## Food and drink

@@ -524,6 +524,80 @@ def make_plus(path, size=32):
     write_tga(path, size, size, radial(size, fn))
 
 
+def make_skull(path, size=64):
+    """A poison's skull, like the ones the game shows over a poisoned character: a rounded cranium over cheekbones
+    and a narrower jaw, shaded as if lit from the upper left (gold where the light falls, sickly green in shadow),
+    with deep eye sockets, a nose hole and a row of teeth, inside a soft green glow. Its colours are its own, so it
+    is drawn with a near-white tint."""
+    pix = 2 / (size - 1)
+
+    def smin(a, b, k):
+        h = max(0.0, min(1.0, 0.5 + 0.5 * (b - a) / k))
+        return b + (a - b) * h - k * h * (1 - h)
+
+    def ellipse(x, y, cx, cy, rx, ry):
+        return (math.hypot((x - cx) / rx, (y - cy) / ry) - 1) * min(rx, ry)
+
+    def box(x, y, cx, cy, bx, by, r):
+        qx, qy = abs(x - cx) - bx + r, abs(y - cy) - by + r
+        return math.hypot(max(qx, 0.0), max(qy, 0.0)) + min(max(qx, qy), 0.0) - r
+
+    def outline(x, y):
+        """Signed distance to the skull's outline (negative inside); y grows downwards."""
+        cranium = ellipse(x, y, 0, -0.2, 0.64, 0.58)
+        face = box(x, y, 0, 0.12, 0.47, 0.2, 0.14)
+        jaw = box(x, y, 0, 0.47, 0.3, 0.19, 0.12)
+        return smin(smin(cranium, face, 0.1), jaw, 0.08)
+
+    def height(x, y):
+        return math.sqrt(max(0.0, min(1.0, -outline(x, y) / 0.32)))
+
+    def smooth(edge0, edge1, v):
+        t = max(0.0, min(1.0, (v - edge0) / (edge1 - edge0)))
+        return t * t * (3 - 2 * t)
+
+    light = (-0.45, -0.6, 0.66)
+    norm = math.sqrt(sum(c * c for c in light))
+    light = tuple(c / norm for c in light)
+    lit, shadow, dark, halo = (1.0, 0.9, 0.34), (0.36, 0.54, 0.06), (0.07, 0.09, 0.01), (0.55, 0.95, 0.2)
+
+    def fn(x, y, d):
+        sd = outline(x, y)
+        cover = max(0.0, min(1.0, 0.5 - sd / pix))
+        glow = 0.45 * math.exp(-(max(sd, 0.0) / 0.14) ** 2)
+        if cover <= 0:
+            return halo[0], halo[1], halo[2], glow
+        e = pix
+        nx = -(height(x + e, y) - height(x - e, y)) / (2 * e) * 0.35
+        ny = -(height(x, y + e) - height(x, y - e)) / (2 * e) * 0.35
+        n = math.sqrt(nx * nx + ny * ny + 1)
+        lambert = max(0.0, (nx * light[0] + ny * light[1] + light[2]) / n)
+        bright = min(1.0, 0.25 + 0.85 * lambert - 0.25 * max(0.0, y - 0.1))
+        # Hollows under the cheekbones.
+        cheek = min(ellipse(x, y, -0.37, 0.24, 0.12, 0.1), ellipse(x, y, 0.37, 0.24, 0.12, 0.1))
+        bright *= 1 - 0.45 * (1 - smooth(-0.06, 0.04, cheek))
+        col = [shadow[i] + (lit[i] - shadow[i]) * bright for i in range(3)]
+        # Deep sockets, dark at the middle and shading in at the rim; a nose hole; teeth under a dark mouth line.
+        socket = min(ellipse(x, y, -0.25, -0.07, 0.18, 0.16), ellipse(x, y, 0.25, -0.07, 0.18, 0.16))
+        nose = max(abs(x) * 1.6 + (y - 0.12) * 0.7 - 0.13, 0.04 - (y - 0.12), (y - 0.12) - 0.2)
+        mouth = abs(y - 0.45) - 0.025
+        gaps = 1.0
+        if 0.33 < y < 0.6 and abs(x) < 0.27:
+            k = (x + 0.27) / 0.108
+            gaps = (abs(k - round(k)) * 0.108) - 0.014
+        mouth = max(mouth, abs(x) - 0.27)
+        hole = min(socket, nose, mouth, gaps if 0.33 < y < 0.6 and abs(x) < 0.27 else 1.0)
+        inside = 1 - smooth(-pix, pix, hole)
+        depth = 0.15 * smooth(-0.1, 0.0, socket)  # the sockets' rims catch a little light
+        for i in range(3):
+            col[i] = col[i] * (1 - inside) + (dark[i] + depth * shadow[i]) * inside
+        a = cover + glow * (1 - cover)
+        rgb = [(col[i] * cover + halo[i] * glow * (1 - cover)) / a for i in range(3)]
+        return rgb[0], rgb[1], rgb[2], a
+
+    write_tga(path, size, size, radial(size, fn))
+
+
 def main():
     out = sys.argv[1]
     os.makedirs(out, exist_ok=True)
@@ -551,6 +625,7 @@ def main():
     make_star(os.path.join(out, "Star.tga"))
     make_crystal(os.path.join(out, "Crystal.tga"))
     make_plus(os.path.join(out, "Plus.tga"))
+    make_skull(os.path.join(out, "Skull.tga"))
     print("wrote", sorted(os.listdir(out)))
 
 
