@@ -92,7 +92,7 @@ On by default, under Mana in the settings. After a spell that costs mana, your m
 
 ![The player frame's health in eight colours: Game Colour, Class Color, Fire, Frost, Arcane, Fel, Cosmic and Void](https://raw.githubusercontent.com/Jordanburch101/smooth-animated-bars/refs/heads/main/branding/gallery/themes.png)
 
-Open the settings with `/sab`, or from **Options > AddOns > Smooth Animated Bars**:
+Open the settings with `/sab`, from **Open Settings** when you right-click your frame (or your target's, pet's or focus's), or from **Options > AddOns > Smooth Animated Bars**:
 
 *   **Player, Target, Pet, Focus and Target of Target:** each frame's Health and Power, on or off, and while one is on, its colour: the game's own, any theme, or Same as Yours or Same as Target.
 *   **Class Color** shows each unit's own, and you choose what it shows on mobs: Reaction, Game Colour, Mob's Class or Your Class.

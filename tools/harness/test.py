@@ -402,6 +402,56 @@ ss.execute("TargetFrame.healthbar.w, TargetFrame.healthbar.h = 140, 20")
 run(ss, 0.5)
 check(ss.eval("__ns.Bars.Liquid(TargetFrame.healthbar).width") == 150, "and follows the size again once it can read it")
 
+print("== unit frame menus")
+um = session()
+check(um.eval("__menuCallbacks['MENU_UNIT_SELF'] ~= nil and __menuCallbacks['MENU_UNIT_TARGET'] ~= nil "
+              "and __menuCallbacks['MENU_UNIT_PET'] ~= nil and __menuCallbacks['MENU_UNIT_FOCUS'] ~= nil"),
+      "added to the player, target, pet and focus frames' menus through Menu.ModifyMenu")
+items = um.eval("__openUnitMenu('SELF', { ownerFrame = PlayerFrame, unit = 'player', fromPlayerFrame = true })")
+kinds = [(items[i].kind, items[i].text) for i in range(1, len(items) + 1)]
+check(kinds == [("divider", None), ("title", "Smooth Animated Bars"), ("button", "Open Settings")],
+      f"right-clicking your frame: a divider, the addon's name and Open Settings ({kinds})")
+um.execute("__closeSettings(); __openedCategory = nil")
+items[3].onClick()
+check(um.eval("__openedCategory") == "Smooth Animated Bars", "which opens the settings")
+um.execute("__closeSettings(); __openedCategory = nil; __combat = true")
+items[3].onClick()
+check(um.eval("__openedCategory") is None, "in combat it waits")
+um.execute("__combat = false; __fire('PLAYER_REGEN_ENABLED')")
+check(um.eval("__openedCategory") == "Smooth Animated Bars", "and opens once combat ends")
+for which, frame in (("TARGET", "TargetFrame"), ("ENEMY_PLAYER", "TargetFrame"), ("PET", "PetFrame"), ("FOCUS", "FocusFrame")):
+    got = um.eval(f"#__openUnitMenu('{which}', {{ ownerFrame = {frame}, unit = 'target' }})")
+    check(got == 3, f"{which} menu from {frame}: added")
+check(um.eval("#__openUnitMenu('PLAYER', { name = 'Somebody' })") == 0
+      and um.eval("#__openUnitMenu('PARTY', { ownerFrame = UIParent, unit = 'party1' })") == 0,
+      "a player's menu from a chat name or a party frame: left alone")
+um.execute("""
+    __closeSettings()
+    for _, f in ipairs(__frames) do
+        if f.scrollChild and f.parent == __settingsCategory.frame then __page = f end
+    end
+    __page.h = 300
+    function __headerY(title)
+        for _, r in ipairs(__regions) do
+            local init = r.initializer
+            if r.rowTemplate and init and init.kind == 'header' and init.data.name == title then
+                for _, p in pairs(r.points) do return -p.y end
+            end
+        end
+    end
+""")
+for which, frame, section in (("PET", "PetFrame", "Pet"), ("FOCUS", "FocusFrame", "Focus"), ("SELF", "PlayerFrame", "Player")):
+    um.execute(f"__closeSettings(); local items = __openUnitMenu('{which}', {{ ownerFrame = {frame} }}); items[3].onClick(items[3])")
+    run(um, 0.1)
+    got, want = um.eval("__page:GetVerticalScroll()"), um.eval(f"__headerY('{section}')") - 10
+    check(abs(got - max(0, want)) < 0.5, f"from the {frame} menu the settings open at {section} (scrolled to {got}, header at {want})")
+um.execute("__closeSettings(); __combat = true; local items = __openUnitMenu('TARGET', { ownerFrame = TargetFrame }); items[3].onClick(items[3])")
+um.execute("__combat = false; __fire('PLAYER_REGEN_ENABLED')")
+run(um, 0.1)
+got, want = um.eval("__page:GetVerticalScroll()"), um.eval("__headerY('Target')") - 10
+check(abs(got - want) < 0.5, f"and from the target's in combat, at Target once combat ends ({got}, {want})")
+check(not any("Error" in m for m in chat(um)), "no errors")
+
 print("== every theme")
 lua2 = session()
 rows2 = lua2.eval("__settingsRows()")

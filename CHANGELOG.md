@@ -4,6 +4,13 @@ Player-facing notes for each release. Write for players: what they can now
 do or see, and what was broken and now works. Leave out internal changes.
 Sections are `### New` and `### Fixed`; skip one that would be empty.
 
+## 1.5.0
+
+### New
+- Right-click your frame, your target's, your pet's or your focus's: the
+  menu now ends with Open Settings for Smooth Animated Bars, which opens
+  the settings at that frame's section.
+
 ## 1.4.0
 
 ### New

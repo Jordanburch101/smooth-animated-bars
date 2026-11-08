@@ -143,10 +143,12 @@ end
 
 local events = CreateFrame("Frame")
 local openAfterCombat = false
+local openSection
 
--- The settings panel cannot be opened safely in combat, so wait for it to end.
-function Core.OpenSettings()
+-- The settings panel cannot be opened safely in combat, so wait for it to end. section: where to open it ("Pet"...).
+function Core.OpenSettings(section)
     if InCombatLockdown() then
+        openSection = section
         if not openAfterCombat then
             openAfterCombat = true
             events:RegisterEvent("PLAYER_REGEN_ENABLED")
@@ -154,7 +156,7 @@ function Core.OpenSettings()
         end
         return true
     end
-    return ns.Options.Open()
+    return ns.Options.Open(section)
 end
 
 events:SetScript("OnEvent", function(self, event, arg1, arg2)
@@ -196,7 +198,8 @@ events:SetScript("OnEvent", function(self, event, arg1, arg2)
         self:UnregisterEvent("PLAYER_REGEN_ENABLED")
         if openAfterCombat then
             openAfterCombat = false
-            ns.Options.Open()
+            ns.Options.Open(openSection)
+            openSection = nil
         end
     end
 end)

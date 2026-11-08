@@ -123,7 +123,8 @@ for five seconds, and your mana bar shows that wait:
 
 <p align="center"><img src="https://raw.githubusercontent.com/Jordanburch101/smooth-animated-bars/refs/heads/main/branding/gallery/themes.png" alt="The player frame's health in eight colours: Game Colour, Class Color, Fire, Frost, Arcane, Fel, Cosmic and Void" width="760"></p>
 
-Open the settings with `/sab`, or from Options > AddOns > Smooth Animated Bars:
+Open the settings with `/sab`, from Open Settings at the bottom of the menu when you right-click your frame (or
+your target's, pet's or focus's), or from Options > AddOns > Smooth Animated Bars:
 
 - **Player, Target, Pet, Focus and Target of Target:** each frame's Health and Power, on or off, and while one is
   on, its colour. Game Colour keeps green health and the game's power colours (blue mana, red rage, yellow

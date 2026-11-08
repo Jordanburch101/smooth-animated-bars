@@ -79,7 +79,11 @@ function Region:SetScrollChild(child) self.scrollChild = child end
 function Region:EnableMouseWheel(v) self.mouseWheel = v end
 function Region:GetVerticalScroll() return self.vscroll or 0 end
 function Region:SetVerticalScroll(v) self.vscroll = v end
-function Region:GetVerticalScrollRange() return 0 end
+-- How far a scroll frame scrolls: its scroll child's height past its own.
+function Region:GetVerticalScrollRange()
+    local child = self.scrollChild
+    return child and math.max(0, (child.h or 0) - (self.h or 0)) or 0
+end
 function Region:SetAlpha(a) self.alpha = a end
 function Region:SetScale(s) self.scale = s end
 local STRATA = { BACKGROUND = true, LOW = true, MEDIUM = true, HIGH = true, DIALOG = true,
@@ -672,6 +676,27 @@ function menuManager:IsAnyMenuOpen()
     return __menuOpen
 end
 Menu = { GetManager = function() return menuManager end }
+-- Menu.ModifyMenu (Blizzard_Menu/Menu.lua): callbacks by tag, run with (owner, rootDescription, contextData) as each
+-- menu with that tag is built. __openUnitMenu builds one as UnitPopup_OpenMenu does and returns its elements.
+__menuCallbacks = {}
+function Menu.ModifyMenu(tag, callback)
+    assert(type(tag) == "string" and type(callback) == "function", "Menu.ModifyMenu(tag, callback)")
+    __menuCallbacks[tag] = __menuCallbacks[tag] or {}
+    table.insert(__menuCallbacks[tag], callback)
+end
+function __openUnitMenu(which, contextData)
+    local root = { elements = {} }
+    local function add(kind, text, fn)
+        local e = { kind = kind, text = text, onClick = fn }
+        table.insert(root.elements, e)
+        return e
+    end
+    function root:CreateDivider() return add("divider") end
+    function root:CreateTitle(text) return add("title", text) end
+    function root:CreateButton(text, fn) return add("button", text, fn) end
+    for _, cb in ipairs(__menuCallbacks["MENU_UNIT_" .. which] or {}) do cb(contextData.ownerFrame, root, contextData) end
+    return root.elements
+end
 function Settings.RegisterAddOnCategory(cat) __settingsCategory = cat end
 -- Opening a canvas category puts its page in the panel and shows it (SettingsPanelMixin:DisplayLayout).
 function Settings.OpenToCategory(id)

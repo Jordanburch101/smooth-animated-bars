@@ -20,8 +20,8 @@ local LIST_X, LIST_Y, LIST_RIGHT, LIST_BOTTOM = -15, -2, -20, -2
 local PAD, PAD_LEFT, SPACING = 10, 25, 9
 local ROW_H, SECTION_H = 26, 45
 
-local category, canvas, content, db, defaults
-local rows = {} -- { frame, initializer, height, shown }, in page order
+local category, canvas, content, scroll, db, defaults
+local rows = {} -- { frame, initializer, height, shown, title (a header's), y (from the top, as laid out) }, in page order
 local registered = {}
 local LayoutRows
 
@@ -51,6 +51,7 @@ end
 
 local function Header(text)
     Row(CreateSettingsListSectionHeaderInitializer(text), SECTION_H)
+    rows[#rows].title = text
 end
 
 local function Checkbox(key, name, tooltip)
@@ -115,7 +116,7 @@ local function BuildPage(title)
     divider:SetPoint("TOPRIGHT", LIST_RIGHT, -HEADER_H)
     divider:SetHeight(1)
 
-    local scroll = CreateFrame("ScrollFrame", nil, canvas)
+    scroll = CreateFrame("ScrollFrame", nil, canvas)
     scroll:SetPoint("TOPLEFT", LIST_X, -HEADER_H + LIST_Y)
     scroll:SetPoint("BOTTOMRIGHT", LIST_RIGHT, LIST_BOTTOM)
     content = CreateFrame("Frame", nil, scroll)
@@ -155,6 +156,7 @@ function LayoutRows()
         local shown = not row.shown or row.shown()
         row.frame:SetShown(shown)
         if shown then
+            row.y = y
             row.frame:ClearAllPoints()
             row.frame:SetPoint("TOPLEFT", content, "TOPLEFT", PAD_LEFT, -y)
             row.frame:SetPoint("TOPRIGHT", content, "TOPRIGHT", 0, -y)
@@ -163,6 +165,34 @@ function LayoutRows()
         end
     end
     content:SetHeight(y - SPACING + PAD)
+end
+
+-- "Open Settings" at the bottom of the right-click menus of the frames the liquid is on, through Menu.ModifyMenu, the
+-- game's way for addons to add to a menu. The same menus open from chat names, the friends list and party frames,
+-- so only a menu whose owner is one of these frames gets it. The target of target has no menu.
+local UNIT_MENUS = { "SELF", "VEHICLE", "PET", "OTHERPET", "PLAYER", "ENEMY_PLAYER", "PARTY", "RAID_PLAYER", "TARGET",
+                     "FOCUS" }
+local MENU_FRAMES = { "PlayerFrame", "TargetFrame", "PetFrame", "FocusFrame" }
+-- The section of the settings each frame's menu opens at.
+local MENU_SECTIONS = { PlayerFrame = "Player", TargetFrame = "Target", PetFrame = "Pet", FocusFrame = "Focus" }
+
+local function AddToUnitMenus()
+    if not (Menu and Menu.ModifyMenu) then return end
+    local frames = {}
+    for _, name in ipairs(MENU_FRAMES) do
+        local f = rawget(_G, name)
+        if f then frames[f] = true end
+    end
+    for _, which in ipairs(UNIT_MENUS) do
+        Menu.ModifyMenu("MENU_UNIT_" .. which, function(_, rootDescription, contextData)
+            if not (type(contextData) == "table" and frames[contextData.ownerFrame]) then return end
+            rootDescription:CreateDivider()
+            rootDescription:CreateTitle("Smooth Animated Bars")
+            rootDescription:CreateButton("Open Settings", function()
+                ns.Core.OpenSettings(MENU_SECTIONS[contextData.ownerFrame:GetName() or ""])
+            end)
+        end)
+    end
 end
 
 function Options.Register(savedDB, defaultValues)
@@ -241,6 +271,7 @@ function Options.Register(savedDB, defaultValues)
 
     LayoutRows()
     Settings.RegisterAddOnCategory(category)
+    AddToUnitMenus()
 end
 
 -- Change one setting through its control, as the player would. False when there is no control.
@@ -251,9 +282,25 @@ function Options.Set(key, value)
     return true
 end
 
-function Options.Open()
+-- Scroll the page so a section's header is at the top, as far as the page scrolls.
+local function ScrollTo(section)
+    for _, row in ipairs(rows) do
+        if row.title == section and row.y then
+            scroll:SetVerticalScroll(math.max(0, math.min(row.y - PAD, scroll:GetVerticalScrollRange())))
+            return
+        end
+    end
+end
+
+-- Open the settings, at a section ("Pet"...) if one is given, else where they were left.
+function Options.Open(section)
     if category and Settings.OpenToCategory then
         Settings.OpenToCategory(category:GetID())
+        if section then
+            ScrollTo(section)
+            -- The page lays out its rows as it shows, and the scroll range follows a frame later.
+            C_Timer.After(0, function() ScrollTo(section) end)
+        end
         return true
     end
 end

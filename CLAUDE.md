@@ -123,6 +123,10 @@ Facts found while building this, which the code relies on and which are not obvi
   named after them; the focus is the target's template; each target of target is `TargetFrameToT`/`FocusFrameToT`
   (`.HealthBar`, `.ManaBar`, masks on the bar). No unit events fire for `targettarget`/`focustarget`, so their
   liquid is refreshed on `UNIT_TARGET` and never stirred. Not yet seen in game.
+- **Unit frame menus** (`Options.lua`, `AddToUnitMenus`): `Menu.ModifyMenu("MENU_UNIT_" .. which, ...)` adds Open
+  Settings; the frames pass themselves as `contextData.ownerFrame` (Mainline `PlayerFrame.lua`, `TargetFrame.lua`,
+  `PetFrame.lua`), which tells them from chat names and party frames. Seen in game on the player frame's menu; not
+  yet checked there that the menus' protected actions (Set Focus) still work with it.
 - **Toc changes** (a new file) need a full game restart; `/reload` does not pick them up.
 - **Capture:** `/sab capture` uses `Screenshot()` and the `screenshotFormat` CVar (TGA, put back after).
   The screenshot is the full render resolution (an ultrawide 3440x1440 here), and the red "?" target
