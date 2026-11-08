@@ -115,6 +115,8 @@ local BURST = {
     orient   = nil,  -- true: turn the texture's top along the flight, so a spark's tail trails behind it
 }
 
+local STEADY_DAMPING = 20 -- more damping on a steady front at its steadiest, so what moves it dies out (Liquid:SetSteady)
+
 local function Rand(a, b)
     return a + (b - a) * random()
 end
@@ -256,6 +258,7 @@ function Liquid.New(parent, width, height, theme, opts)
     self.t, self.acc, self.energy, self.fizzAcc, self.driftAcc, self.crackleAcc = 0, 0, 0, 0, 0, 0
     self.edge, self.speed, self.back = 0, 0, 0
     self.flowX, self.flowY, self.storm, self.charge = 0, 0, 0, 0
+    self.steady = 0
     self.flick, self.flickV, self.flickGoal, self.flickNext = 1, 0, 0, 0
     self.mixColor = { 1, 1, 1 }
     self.ambientAcc = {}
@@ -473,7 +476,7 @@ function Liquid:Splash(intensity, fromX, toX)
     if self.opts.waves then
         local n = CFG.rows
         local centre = random(1, n)
-        local kick = 40 + 160 * intensity
+        local kick = (40 + 160 * intensity) * (1 - self.steady)
         for i = 1, n do
             local d = (i - centre) / n
             self.vel[i] = self.vel[i] + kick * exp(-d * d * 8)
@@ -519,9 +522,25 @@ function Liquid:Warm(level)
     if level > self.energy then self.energy = level end
 end
 
+-- Keep the lightning at least this charged for now (0..2; it starts up above about 0.3).
+function Liquid:Storm(level)
+    if level > self.charge then self.charge = level end
+end
+
+-- How little the front moves for all the energy in the liquid, 0..1: a build-up stays lively inside while its front
+-- holds (Bars.lua).
+function Liquid:SetSteady(level)
+    self.steady = level
+end
+
+-- The idle wobble's size, px: livelier with energy, unless the front is holding steady.
+function Liquid:Wobble()
+    return self.phys.ambient * (0.6 + self.energy * (1 - self.steady))
+end
+
 -- How far slice i of the front (1 = top) stands past the liquid's edge right now, px.
 function Liquid:FrontOffset(i)
-    local wobble = self.opts.waves and self.phys.ambient * (0.6 + self.energy) or 0
+    local wobble = self.opts.waves and self:Wobble() or 0
     local t = self.t
     return self.pos[i] + wobble * (sin(t * 2.3 + i * 0.6) + 0.5 * sin(t * 3.7 - i * 1.1))
 end
@@ -531,7 +550,7 @@ function Liquid:Ripple(intensity)
     if not self.opts.waves then return end
     local n = CFG.rows
     local centre = random(1, n)
-    local kick = 40 + 160 * intensity
+    local kick = (40 + 160 * intensity) * (1 - self.steady)
     for i = 1, n do
         local d = (i - centre) / n
         self.vel[i] = self.vel[i] + kick * exp(-d * d * 8)
@@ -839,7 +858,7 @@ end
 function Liquid:Simulate(dt)
     local pos, vel, n, phys = self.pos, self.vel, CFG.rows, self.phys
     local lean, shape = self.lean, self.leanShape
-    local k, d, c, limit = phys.stiffness, phys.damping, phys.coupling, phys.amplitude * 1.2
+    local k, d, c, limit = phys.stiffness, phys.damping + STEADY_DAMPING * self.steady, phys.coupling, phys.amplitude * 1.2
     local s = CFG.step
 
     self.acc = min(self.acc + dt, s * 8)
@@ -930,7 +949,7 @@ function Liquid:Draw(dt)
     local parent, w, h, amp = self.parent, self.width, self.height, self.phys.amplitude
     local edge, energy, t = self.edge, self.energy, self.t
     local opts, theme = self.opts, self.theme
-    local wobble = opts.waves and self.phys.ambient * (0.6 + energy) or 0
+    local wobble = opts.waves and self:Wobble() or 0
     -- The body stops behind the deepest dent Simulate and the wobble allow, so no slice of the
     -- front ever falls behind it and flattens into the body's straight end.
     local base = max(0, edge - amp * 1.2 - wobble * 1.5 - 0.5)

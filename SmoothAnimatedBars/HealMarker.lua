@@ -121,7 +121,7 @@ end
 -- total, list (as Heals.Player's), visible = function() whether to show }.
 local function New(spec)
     local bar = spec.bar
-    local w, h = bar:GetWidth(), bar:GetHeight()
+    local w, h = ns.Bars.Size(bar, 1, 1)
     local m = { spec = spec, bar = bar, value = 0, since = REFRESH_EVERY, feed = 0, width = w, height = h,
                 fresh = true, liquids = {} }
 
@@ -423,7 +423,7 @@ local function Update(m, dt)
     m.since = m.since + dt
     if m.since >= REFRESH_EVERY then
         m.since = 0
-        local w, h = m.bar:GetWidth(), m.bar:GetHeight()
+        local w, h = ns.Bars.Size(m.bar, m.width, m.height)
         if (w ~= m.width or h ~= m.height) and w >= 1 and h >= 1 then
             m.width, m.height = w, h
             for _, d in ipairs(m.liquids) do

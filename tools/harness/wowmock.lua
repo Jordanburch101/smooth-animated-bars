@@ -94,6 +94,7 @@ function Region:SetParent(p)
     self.parent = p
 end
 function Region:GetParent() return self.parent end
+function Region:GetName() return self.name end
 function Region:GetChildren()
     local out = {}
     for _, f in ipairs(__frames) do
@@ -251,7 +252,7 @@ function CreateFrame(frameType, name, parent, template)
     assert(template == nil or ROW_TEMPLATES[template] or TEMPLATES[template], "unknown template " .. tostring(template))
     local f = NewRegion("Frame", parent, "BACKGROUND", 0)
     __frames[#__frames + 1] = f
-    if name then _G[name] = f end
+    if name then _G[name], f.name = f, name end
     if frameType == "StatusBar" then __makeStatusBar(f) end
     if ROW_TEMPLATES[template] then
         f.rowTemplate, f.Init, f.Release = template, RowTemplate.Init, RowTemplate.Release
@@ -287,7 +288,24 @@ function UnitName(unit)
     if unit == "target" and __target then return __target.name end
 end
 function GetRealmName() return __player.realm end
-function UnitClass() return "Paladin", __player.class end
+-- Other units than the player: the target is __target, the rest __units[unit] (focus, targettarget, pet...). Each
+-- has its class (__secret() for one kept secret), reaction and isOtherPlayer.
+__units = {}
+local function other(unit)
+    if unit == "target" then return __target end
+    return __units[unit]
+end
+function UnitClass(unit)
+    if unit == "player" then return "Paladin", __player.class end
+    local u = other(unit)
+    return u and "Other", u and u.class
+end
+function UnitIsPlayer(unit)
+    if unit == "player" then return true end
+    local u = other(unit)
+    return u ~= nil and u.isOtherPlayer or false
+end
+function UnitReaction(unit) local u = other(unit); return u and u.reaction or nil end
 function UnitFactionGroup() return __player.faction end
 RAID_CLASS_COLORS = {
     PALADIN = { r = 0.96, g = 0.55, b = 0.73 }, MAGE = { r = 0.25, g = 0.78, b = 0.92 },
@@ -453,6 +471,27 @@ do
     end
 end
 TargetFrame = UnitFrame("TargetFrame", "TargetFrameContent", "TargetFrameContentMain")
+FocusFrame = UnitFrame("FocusFrame", "TargetFrameContent", "TargetFrameContentMain")
+-- The targets of target (TargetFrameMixin:CreateTargetofTarget): .HealthBar 70x11 and .ManaBar 78x7 under Camelot,
+-- each with its mask on the bar.
+local function TargetOfTarget(name, owner)
+    local f = CreateFrame("Button", name, owner)
+    f.HealthBar = NewStatusBar(name .. ".HealthBar", f, 70, 11)
+    f.ManaBar = NewStatusBar(name .. ".ManaBar", f, 78, 7)
+    f.HealthBar.HealthBarMask = f.HealthBar:CreateMaskTexture()
+    f.ManaBar.ManaBarMask = f.ManaBar:CreateMaskTexture()
+    owner.totFrame = f
+    return f
+end
+TargetFrameToT = TargetOfTarget("TargetFrameToT", TargetFrame)
+FocusFrameToT = TargetOfTarget("FocusFrameToT", FocusFrame)
+-- The pet's frame (PetFrame.xml): named bars, and masks named after them.
+PetFrame = CreateFrame("Button", "PetFrame", UIParent)
+PetFrameHealthBar = NewStatusBar("PetFrameHealthBar", PetFrame, 70, 11)
+PetFrameManaBar = NewStatusBar("PetFrameManaBar", PetFrame, 77, 7)
+PetFrameHealthBarMask = PetFrameHealthBar:CreateMaskTexture()
+PetFrameManaBarMask = PetFrameManaBar:CreateMaskTexture()
+PetFrame.healthbar, PetFrame.manabar = PetFrameHealthBar, PetFrameManaBar
 -- The target's portrait, on the frame's container (TargetFrame.xml).
 TargetFrame.TargetFrameContainer = CreateFrame("Frame", nil, TargetFrame)
 TargetFrame.TargetFrameContainer.Portrait = TargetFrame.TargetFrameContainer:CreateTexture(nil, "BACKGROUND")
@@ -491,7 +530,10 @@ __spells = {}
 C_Spell = {
     GetSpellName = function(id) return __spells[id] and __spells[id][1] end,
     GetSpellDescription = function(id) return __spells[id] and __spells[id][2] end,
+    -- What each spell costs right now: __spellCosts[id] = { { type = 0, name = "MANA", cost = 65 } }, or nil if free.
+    GetSpellPowerCost = function(id) return __spellCosts[id] end,
 }
+__spellCosts = {}
 -- The player's auras by spell ID: __playerAuras[id] = { expirationTime = ... }. Forever may keep auras secret
 -- (SecretWhenUnitAuraRestricted), so they are secret unless __aurasReadable is set.
 __playerAuras, __aurasReadable = {}, false
@@ -554,6 +596,8 @@ Initializer.__index = Initializer
 function Initializer:GetTemplate() return self.template end
 function Initializer:InitFrame(frame) if frame.Init then frame:Init(self) end end
 function Initializer:Resetter(frame) if frame.Release then frame:Release(self) end end
+-- SettingsListElementInitializer:Indent: the row's label moves in, as for a setting under another.
+function Initializer:Indent() self.data.indent = 30 end
 local function NewInitializer(template, kind, data)
     return setmetatable({ template = template, kind = kind, data = data }, Initializer)
 end
@@ -663,7 +707,7 @@ function __settingsRows()
             local d = init.data
             local getOptions = type(d.options) == "function" and d.options or nil
             out[#out + 1] = {
-                kind = init.kind, key = d.setting and d.setting.key, name = d.name, frame = r,
+                kind = init.kind, key = d.setting and d.setting.key, name = d.name, frame = r, indent = d.indent,
                 onClick = d.buttonClick, getOptions = getOptions, options = getOptions and getOptions(),
             }
         end

@@ -13,6 +13,7 @@ Dots.lua
 Marker.lua
 Heals.lua
 HealMarker.lua
+ManaRule.lua
 SmoothAnimatedBars.lua
 Options.lua
 Preview.lua

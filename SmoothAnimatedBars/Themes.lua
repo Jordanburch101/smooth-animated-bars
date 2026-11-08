@@ -14,7 +14,7 @@
 --   burst     = { texture, blend, mode = "throw" | "attract", buoyancy, drag, spin, twinkle, wander, orient }
 --   ambient   = { { area, rate, energyRate, texture, blend, size, life, vx, vy, buoyancy, drag,
 --                   spin, twinkle, wander, orient, grow, alpha, from, to }, ... }  continuous particles
---   Resolve(self)          -> theme   pick colours once the player is known (class, faction)
+--   Resolve(self, unit, preview) -> theme   pick colours once the unit is known (class, faction); nil for none
 --   Colors(self, t, frac)  -> fillA, fillB, accent   animate colours every frame
 --   Animate(self, liquid, t, dt)   stir the liquid every frame (liquid:Warm, :Ripple); state goes on liquid
 
@@ -100,16 +100,59 @@ Themes.Register("luxthos", {
 -- Smart themes
 --------------------------------------------------------------------------------
 
+local HOSTILE, NEUTRAL, FRIENDLY = { 0.90, 0.15, 0.10 }, { 0.95, 0.80, 0.20 }, { 0.20, 0.85, 0.25 }
+
+local function IsSecret(v)
+    return issecretvalue and issecretvalue(v)
+end
+
+-- A unit's class colour, or nil if the client will not say.
+local function ClassOf(unit)
+    local ok, _, class = pcall(UnitClass, unit)
+    if not ok or IsSecret(class) then return nil end
+    local colors = CUSTOM_CLASS_COLORS or RAID_CLASS_COLORS
+    local cc = class and colors and colors[class]
+    if not cc then return nil end
+    local c = { cc.r, cc.g, cc.b }
+    if c[1] + c[2] + c[3] > 2.6 then c = Scale(c, 0.8) end -- priests: silver rather than white
+    return c
+end
+
+-- A unit's colour by how it stands with the player, or nil if the client will not say.
+local function ReactionOf(unit)
+    local ok, reaction = pcall(UnitReaction, unit, "player")
+    if not ok or IsSecret(reaction) or not reaction then return nil end
+    if reaction <= 3 then return HOSTILE end
+    return reaction == 4 and NEUTRAL or FRIENDLY
+end
+
+-- The colour Class Color gives a bar of this unit, or nil if the client will not say: the player's own class (on
+-- the pet's bars too), another player's class (target, focus, target of target), and for a mob what the
+-- mobClassColor setting asks for (nil for "game"). A preview's target stands for a
+-- hostile mob, whose class it does not have, so there it shows the player's class in place of the mob's.
+function Themes.UnitColor(unit, preview)
+    if not unit or unit == "player" or unit == "pet" then return ClassOf("player") end
+    local mobs = ns.Core.Get("mobClassColor")
+    if preview then
+        if mobs == "game" then return nil end
+        if mobs == "reaction" then return HOSTILE end
+        return ClassOf("player")
+    end
+    local ok, isPlayer = pcall(UnitIsPlayer, unit)
+    if not ok or IsSecret(isPlayer) then return nil end
+    if isPlayer or mobs == "class" then return ClassOf(unit) end
+    if mobs == "game" then return nil end
+    if mobs == "own" then return ClassOf("player") end
+    return ReactionOf(unit)
+end
+
 Themes.Register("class", {
     name = "Class Color",
-    Resolve = function(self)
-        local _, class = UnitClass("player")
-        local colors = CUSTOM_CLASS_COLORS or RAID_CLASS_COLORS
-        local cc = class and colors and colors[class]
-        if not cc then return self end
-        local c = { cc.r, cc.g, cc.b }
-        if c[1] + c[2] + c[3] > 2.6 then c = Scale(c, 0.8) end -- priests: silver rather than white
-        return FromColor(c, self)
+    Resolve = function(self, unit, preview)
+        local c = Themes.UnitColor(unit, preview)
+        if c then return FromColor(c, self) end
+        if unit and unit ~= "player" and unit ~= "pet" then return nil end -- the bar's own colour
+        return self
     end,
 })
 

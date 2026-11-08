@@ -21,26 +21,32 @@ local PAD, PAD_LEFT, SPACING = 10, 25, 9
 local ROW_H, SECTION_H = 26, 45
 
 local category, canvas, content, db, defaults
-local rows = {} -- { frame, initializer, height }, in page order
+local rows = {} -- { frame, initializer, height, shown }, in page order
 local registered = {}
+local LayoutRows
 
 local function Register(key, name)
     local default = defaults[key]
     local setting = Settings.RegisterAddOnSetting(category, ADDON_NAME .. "_" .. key, key, db, type(default), name, default)
     setting:SetValueChangedCallback(function(_, value)
         ns.Core.OnSettingChanged(key, value)
+        -- A row that shows only with some settings comes and goes with them.
+        if content then LayoutRows() end
     end)
     registered[key] = setting
     return setting
 end
 
 -- A row: a frame of ours made from the initializer's template. The template's code finds its
--- initializer through GetElementData, as it does in the game's list.
-local function Row(initializer, height)
+-- initializer through GetElementData, as it does in the game's list. opts.indent indents its label as the game's
+-- list does a setting that belongs to the one above; opts.shown, a function, shows it only while it is true.
+local function Row(initializer, height, opts)
+    opts = opts or {}
+    if opts.indent and initializer.Indent then initializer:Indent() end
     local frame = CreateFrame("Frame", nil, content, initializer:GetTemplate())
     frame.GetElementData = function() return initializer end
     initializer:InitFrame(frame)
-    rows[#rows + 1] = { frame = frame, initializer = initializer, height = height or ROW_H }
+    rows[#rows + 1] = { frame = frame, initializer = initializer, height = height or ROW_H, shown = opts.shown }
 end
 
 local function Header(text)
@@ -51,8 +57,8 @@ local function Checkbox(key, name, tooltip)
     Row(Settings.CreateCheckboxInitializer(Register(key, name), nil, tooltip))
 end
 
-local function Dropdown(key, name, tooltip, getOptions)
-    Row(Settings.CreateDropdownInitializer(Register(key, name), getOptions, tooltip))
+local function Dropdown(key, name, tooltip, getOptions, opts)
+    Row(Settings.CreateDropdownInitializer(Register(key, name), getOptions, tooltip), nil, opts)
 end
 
 -- The fifth argument is whether the row adds search tags; the game asserts it is given, and a
@@ -68,6 +74,28 @@ local function ColorOptions()
     for _, key in ipairs(ns.Themes.order) do
         container:Add(key, ns.Themes.list[key].name)
     end
+    return container:GetData()
+end
+
+-- The same for another frame's bar, which can also follow the player's or the target's: label names whose.
+local function SameAsOptions(label)
+    return function()
+        local container = Settings.CreateControlTextContainer()
+        container:Add("same", label)
+        container:Add("game", "Game Colour")
+        for _, key in ipairs(ns.Themes.order) do
+            container:Add(key, ns.Themes.list[key].name)
+        end
+        return container:GetData()
+    end
+end
+
+local function MobOptions()
+    local container = Settings.CreateControlTextContainer()
+    container:Add("reaction", "Reaction")
+    container:Add("game", "Game Colour")
+    container:Add("class", "Mob's Class")
+    container:Add("own", "Your Class")
     return container:GetData()
 end
 
@@ -117,17 +145,22 @@ local function BuildPage(title)
             row.initializer:Resetter(row.frame)
             row.initializer:InitFrame(row.frame)
         end
+        LayoutRows()
     end)
 end
 
-local function LayoutRows()
+function LayoutRows()
     local y = PAD
     for _, row in ipairs(rows) do
-        row.frame:ClearAllPoints()
-        row.frame:SetPoint("TOPLEFT", content, "TOPLEFT", PAD_LEFT, -y)
-        row.frame:SetPoint("TOPRIGHT", content, "TOPRIGHT", 0, -y)
-        row.frame:SetHeight(row.height)
-        y = y + row.height + SPACING
+        local shown = not row.shown or row.shown()
+        row.frame:SetShown(shown)
+        if shown then
+            row.frame:ClearAllPoints()
+            row.frame:SetPoint("TOPLEFT", content, "TOPLEFT", PAD_LEFT, -y)
+            row.frame:SetPoint("TOPRIGHT", content, "TOPRIGHT", 0, -y)
+            row.frame:SetHeight(row.height)
+            y = y + row.height + SPACING
+        end
     end
     content:SetHeight(y - SPACING + PAD)
 end
@@ -143,18 +176,38 @@ function Options.Register(savedDB, defaultValues)
     BuildPage(title)
     category = Settings.RegisterCanvasLayoutCategory(canvas, title)
 
-    Header("Bars")
-    Checkbox("playerHealth", "Player Health", "Liquid in your health bar.")
-    Checkbox("playerPower", "Player Power", "Liquid in your mana, rage, energy or focus bar.")
-    Checkbox("targetHealth", "Target Health", "Liquid in your target's health bar.")
-    Checkbox("targetPower", "Target Power", "Liquid in your target's power bar.")
-
-    Header("Colours")
-    Dropdown("healthColor", "Health Colour",
-        "Game Colour keeps health green. A theme brings its own colours and particles.", ColorOptions)
-    Dropdown("powerColor", "Power Colour",
-        "Game Colour follows the power type: blue mana, red rage, yellow energy. A theme brings its own colours and particles.",
-        ColorOptions)
+    -- One section per frame: each bar on or off, and while it is on, its colour under it.
+    local function On(key) return function() return db[key] end end
+    local function Frame(title, prefix, healthColor, powerColor, sameAs, extra)
+        Header(title)
+        Checkbox(prefix .. "Health", "Health", "Liquid in " .. extra.whose .. " health bar.")
+        Dropdown(healthColor, "Colour", extra.health, sameAs or ColorOptions,
+            { indent = true, shown = On(prefix .. "Health") })
+        Checkbox(prefix .. "Power", "Power", "Liquid in " .. extra.whose .. " power bar.")
+        Dropdown(powerColor, "Colour", extra.power, sameAs or ColorOptions,
+            { indent = true, shown = On(prefix .. "Power") })
+    end
+    local SAME_TARGET = "Same as Target follows your target's colour, which can itself follow yours."
+    Frame("Player", "player", "healthColor", "powerColor", nil, { whose = "your",
+        health = "Game Colour keeps health green. A theme brings its own colours and particles. Class Color shows yours.",
+        power = "Game Colour follows the power type: blue mana, red rage, yellow energy. A theme brings its own colours "
+            .. "and particles." })
+    Frame("Target", "target", "targetHealthColor", "targetPowerColor", SameAsOptions("Same as Yours"), {
+        whose = "your target's",
+        health = "Same as Yours follows your own health colour. Class Color shows a targeted player's class.",
+        power = "Same as Yours follows your own power colour. Class Color shows a targeted player's class." })
+    Dropdown("mobClassColor", "Class Color on Mobs",
+        "What Class Color shows when your target, focus or target of target is a mob. Reaction: red if hostile, yellow "
+        .. "if neutral, green if friendly. Game Colour: the bar's own colour, so only players show a class. Mob's "
+        .. "Class: the class the game gives it, which most mobs do not show. Your Class: your own.",
+        MobOptions, { indent = true, shown = ns.Core.TargetUsesClass })
+    Frame("Pet", "pet", "petHealthColor", "petPowerColor", SameAsOptions("Same as Yours"), { whose = "your pet's",
+        health = "Same as Yours follows your own health colour; with Class Color your pet takes your class.",
+        power = "Same as Yours follows your own power colour." })
+    Frame("Focus", "focus", "focusHealthColor", "focusPowerColor", SameAsOptions("Same as Target"), {
+        whose = "your focus's", health = SAME_TARGET, power = SAME_TARGET })
+    Frame("Target of Target", "tot", "totHealthColor", "totPowerColor", SameAsOptions("Same as Target"), {
+        whose = "your target's target's and your focus's target's", health = SAME_TARGET, power = SAME_TARGET })
 
     Header("Effects")
     Checkbox("waves", "Liquid Waves", "Wobbling liquid front that ripples when the bar changes.")
@@ -176,6 +229,11 @@ function Options.Register(savedDB, defaultValues)
         "The health your own heals over time, bandages and heals you are casting on yourself will still bring back "
         .. "shows ahead of your health as a liquid of its own: Holy gold for priest and paladin heals, spring green "
         .. "for druid and shaman heals and for bandages. Food and drink show too, ahead of your health and your mana.")
+
+    Header("Mana")
+    Checkbox("manaBuild", "Mana Regen Build-Up",
+        "After a spell that costs mana, your mana stops regenerating from Spirit for five seconds. Your mana bar builds "
+        .. "up through that wait and lets go in a burst of stars as regeneration returns.")
 
     Header("Setup")
     Button("Setup Wizard", "Open", function() ns.Wizard.Open() end,

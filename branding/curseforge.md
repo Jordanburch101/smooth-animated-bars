@@ -8,14 +8,15 @@ Your frames stay the game's own. Only the fill changes, so nothing moves: log in
 
 ## Features
 
-*   **Liquid in all four bars:** your health and power, and your target's.
+*   **Liquid in every bar** of your frame, your target's, your pet's, your focus's and your targets of target.
 *   **Every power type:** mana, rage, energy and focus, each in its own colour, as the game shows it.
 *   **Moves with the fight:** the liquid eases to wherever the game's bar is, and stirs with every hit, heal, cast and tick.
 *   **Your heals on the way:** your own heals over time, bandages and the heal you are casting on yourself show ahead of your health as far as they will still bring it, and pour into it.
 *   **Food and drink:** what you are eating and drinking shows ahead of your health and mana, and food with a buff builds up to a burst of stars when you become well fed.
 *   **Your DoTs on the target (optional):** liquid in your DoTs' own colours eats into your target's health as far as they will still burn it, and the game's skull shows on its portrait when they will finish it.
-*   **25 themes:** keep the game's colours, or pick Class Color, Fire, Frost, Arcane, Shadow, Void and more, many with particles of their own. Health and power each get their own choice.
+*   **25 themes:** keep the game's colours, or pick Class Color, Fire, Frost, Arcane, Shadow, Void and more, many with particles of their own. Health and power each get their own choice, for you and for your target.
 *   **Your call on every effect:** waves, swirl, bubbles, sparkles, theme particles and lightning can each be switched off, and so can each bar.
+*   **Mana regen build-up:** your mana bar builds up through the five seconds after a spell, and lets go in a burst of stars as your mana starts to regenerate again.
 *   **A quick setup** the first time you log in, with preview frames that show each choice as you pick it.
 
 ![A mage's mana dropping in big bites with each Fireball, and the kobold's health with it](https://raw.githubusercontent.com/Jordanburch101/smooth-animated-bars/refs/heads/main/branding/gallery/mage.webp)
@@ -74,34 +75,49 @@ Turn it on in the setup or under Damage Over Time in the settings. The health yo
 *   **When no health liquid is left,** your DoTs will kill it, and the game's own skull (the one it shows for a target far above your level) comes up on its portrait.
 *   **It goes by your spells' tooltips,** as WoW Forever keeps each hit's damage hidden from addons. A DoT runs down tick by tick for its whole duration, and one that is dodged, parried, missed or resisted as you cast it is left out.
 
+## Mana regen build-up
+
+![A mage's mana bar after a Fireball: motes gather into the front of the blue liquid, which turns pale while lightning starts up, then a burst of stars as the mana starts to flow back](https://raw.githubusercontent.com/Jordanburch101/smooth-animated-bars/refs/heads/main/branding/gallery/mana.webp)
+
+_Mana: the bar builds up through the five seconds after a spell, and lets go as your mana starts to come back._
+
+On by default, under Mana in the settings. After a spell that costs mana, your mana stops regenerating from Spirit for five seconds, and your mana bar shows that wait:
+
+*   **It builds up:** motes gather into the front of the liquid, which turns pale and pulses faster while lightning starts up. The front itself holds still, so you can still read your mana.
+*   **It lets go** in a burst of stars and a flash as regeneration returns.
+*   **Another spell that costs mana starts the wait again.** Spells that cost none, like Shoot, do not.
+*   **It goes by your casts,** as WoW Forever keeps your mana hidden from addons. The burst still plays if your mana is already full, and Meditation and mp5 gear keep some mana coming back during the wait.
+
 ## Make it yours
 
 ![The player frame's health in eight colours: Game Colour, Class Color, Fire, Frost, Arcane, Fel, Cosmic and Void](https://raw.githubusercontent.com/Jordanburch101/smooth-animated-bars/refs/heads/main/branding/gallery/themes.png)
 
 Open the settings with `/sab`, or from **Options > AddOns > Smooth Animated Bars**:
 
-*   **Bars:** Player Health, Player Power, Target Health and Target Power, each on or off.
-*   **Colours:** Health Colour and Power Colour, the game's own or any theme.
+*   **Player, Target, Pet, Focus and Target of Target:** each frame's Health and Power, on or off, and while one is on, its colour: the game's own, any theme, or Same as Yours or Same as Target.
+*   **Class Color** shows each unit's own, and you choose what it shows on mobs: Reaction, Game Colour, Mob's Class or Your Class.
 *   **Effects:** Liquid Waves, Magic Swirl, Bubbles, Sparkles, Theme Particles and Lightning.
 *   **Damage Over Time:** DoT Marker and Kill Icon.
 *   **Healing:** Heal Marker, for your heals, bandages, food and drink.
-*   **Setup Wizard:** run the four-step setup again.
+*   **Mana:** Mana Regen Build-Up.
+*   **Setup Wizard:** run the five-step setup again.
 
 ## Commands
 
 | Command | |
 | --- | --- |
 | `/sab` | Open the settings |
-| `/sab on` / `/sab off` | Liquid in all four bars, or back to the game's own bars |
+| `/sab on` / `/sab off` | Liquid in all the bars, or back to the game's own bars |
 | `/sab setup` | Open the setup again |
 | `/sab debug` | What each bar is doing, if something looks wrong |
 | `/sab dots` | Your DoTs on the target, and what the DoT tracking saw lately |
 | `/sab heals` | Your heals, food and drink on the way to you, and what the tracking saw lately |
+| `/sab mana` | The wait before your mana regenerates, and what it saw lately |
 
 ## Good to know
 
 *   **WoW Forever only.** It draws on Forever's own player and target frames.
-*   **Player and target frames.** Party, focus and target-of-target frames keep the game's bars.
+*   **Player, target, pet, focus and target-of-target frames.** Party frames keep the game's bars.
 *   **Always matches the game.** WoW Forever keeps health and power hidden from addons, so the game itself places the liquid on its own bar. That is also why a hit and someone else's heal both just stir the liquid.
 *   **English spell text.** The DoT and heal tracking read your spells' tooltips in English, so on other client languages they may not pick up your spells.
 *   **Light on your game.** Once the bars settle, the liquid drops to a low update rate.

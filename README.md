@@ -11,12 +11,12 @@ short setup on the first login lets you choose the look, or skip it.
 
 ## What you get
 
-- **Liquid in all four bars:** your health and power, and your target's.
+- **Liquid in every bar** of your frame, your target's, your pet's, your focus's and your targets of target.
 - **Every power type:** mana, rage, energy and focus, each in its own colour, as the game shows it.
 - **Moves with the fight:** the liquid eases to wherever the game's bar is, and stirs with every hit, heal,
   cast and tick.
 - **25 themes:** keep the game's colours, or pick Class Color, Fire, Frost, Arcane, Shadow, Void and more, many with
-  particles of their own. Health and power each get their own choice.
+  particles of their own. Health and power each get their own choice, for you and for your target.
 - **Your call on every effect:** waves, swirl, bubbles, sparkles, theme particles and lightning can each be
   switched off, and so can each bar.
 - **Your DoTs on the target (optional):** liquid in your DoTs' own colours eats into your target's health as
@@ -25,6 +25,8 @@ short setup on the first login lets you choose the look, or skip it.
   ahead of your health as far as they will still bring it, and pour into it.
 - **Food and drink:** what you are eating and drinking shows ahead of your health and mana, and food with a buff
   builds up to a burst of stars when you become well fed.
+- **Mana regen build-up:** your mana bar builds up through the five seconds after a spell, and lets go in a burst
+  of stars as your mana starts to regenerate again.
 - **A quick setup** the first time you log in, with preview frames that show each choice as you pick it.
 
 <p align="center"><img src="https://raw.githubusercontent.com/Jordanburch101/smooth-animated-bars/refs/heads/main/branding/gallery/mage.webp" alt="A mage's mana dropping in big bites with each Fireball, and the kobold's health with it"></p>
@@ -99,22 +101,46 @@ It reads English spell text, so on other client languages it may not pick up you
   have eaten long enough to become well fed. Slow stars keep rising after that, so you know you can get up.
 - **Moving or casting anything else** stands you up and ends them.
 
+## Mana regen build-up
+
+<p align="center"><img src="https://raw.githubusercontent.com/Jordanburch101/smooth-animated-bars/refs/heads/main/branding/gallery/mana.webp" alt="A mage's mana bar after a Fireball: motes gather into the front of the blue liquid, which turns pale while lightning starts up, then a burst of stars as the mana starts to flow back"></p>
+<p align="center"><em>Mana: the bar builds up through the five seconds after a spell, and lets go as your mana starts to come back.</em></p>
+
+On by default, under Mana in the settings. After a spell that costs mana, your mana stops regenerating from Spirit
+for five seconds, and your mana bar shows that wait:
+
+- **It builds up:** motes gather into the front of the liquid, which turns pale and pulses faster while lightning
+  starts up. The front itself holds still, so you can still read your mana.
+- **It lets go** in a burst of stars and a flash as regeneration returns.
+- **Another spell that costs mana starts the wait again.** Spells that cost none, like Shoot, do not.
+- **It goes by your casts.** WoW Forever keeps your mana hidden from addons, so the wait is timed from each spell
+  that costs mana. The burst still plays if your mana is already full, and Meditation and mp5 gear keep some mana
+  coming back during the wait.
+- **While you drink,** the drink takes over the bar. In a druid's Bear or Cat Form, nothing shows until the mana
+  bar is back.
+
 ## Make it yours
 
 <p align="center"><img src="https://raw.githubusercontent.com/Jordanburch101/smooth-animated-bars/refs/heads/main/branding/gallery/themes.png" alt="The player frame's health in eight colours: Game Colour, Class Color, Fire, Frost, Arcane, Fel, Cosmic and Void" width="760"></p>
 
 Open the settings with `/sab`, or from Options > AddOns > Smooth Animated Bars:
 
-- **Bars:** Player Health, Player Power, Target Health and Target Power, each on or off.
-- **Colours:** Health Colour and Power Colour. Game Colour keeps green health and the game's power colours
-  (blue mana, red rage, yellow energy); any theme brings its own colours and particles.
+- **Player, Target, Pet, Focus and Target of Target:** each frame's Health and Power, on or off, and while one is
+  on, its colour. Game Colour keeps green health and the game's power colours (blue mana, red rage, yellow
+  energy); any theme brings its own colours and particles. Same as Yours (target, pet) and Same as Target
+  (focus, target of target) follow those, and are where they start.
+- **Class Color** shows each unit's own: yours on your bars and your pet's, another player's on theirs. While
+  your target's, focus's or target of target's bars show it, Class Color on Mobs says what it shows on a mob:
+  Reaction (red if hostile, yellow if neutral, green if friendly), Game Colour (so only players show a class),
+  Mob's Class or Your Class.
 - **Effects:** Liquid Waves, Magic Swirl, Bubbles, Sparkles, Theme Particles and Lightning.
 - **Damage Over Time:** DoT Marker and Kill Icon.
 - **Healing:** Heal Marker, for your heals, bandages, food and drink.
-- **Setup Wizard:** run the four-step setup again.
+- **Mana:** Mana Regen Build-Up.
+- **Setup Wizard:** run the five-step setup again.
 
 The setup asks which bars you want (player and target, just yours, or just health), picks the colours from a
-few favourites, how lively the liquid should be (everything, gentle, or still), and whether to mark your DoTs
+few favourites, then your target's, how lively the liquid should be (everything, gentle, or still), and whether to mark your DoTs
 (marker and skull, just the marker, or off). Skip puts everything back as it was.
 
 ## Commands
@@ -122,16 +148,18 @@ few favourites, how lively the liquid should be (everything, gentle, or still), 
 | Command | |
 |---|---|
 | `/sab` | Open the settings |
-| `/sab on` / `/sab off` | Liquid in all four bars, or back to the game's own bars |
+| `/sab on` / `/sab off` | Liquid in all the bars, or back to the game's own bars |
 | `/sab setup` | Open the setup again |
 | `/sab debug` | What each bar is doing, if something looks wrong |
 | `/sab dots` | Your DoTs on the target, and what the DoT tracking saw lately |
 | `/sab heals` | Your heals, food and drink on the way to you, and what the tracking saw lately |
+| `/sab mana` | The wait before your mana regenerates, and what it saw lately |
 
 ## Good to know
 
 - **WoW Forever only.** It draws on Forever's own player and target frames.
-- **Player and target frames.** Party, focus and target-of-target frames keep the game's bars.
+- **Player, target, pet, focus and target-of-target frames.** Party frames keep the game's bars. A target of
+  target's liquid follows its bar but is not stirred by changes, as the game sends no events for it.
 - **Always matches the game.** WoW Forever keeps health and power hidden from addons, so the addon never knows
   how full a bar is: the game itself places the liquid on its own bar. That is why it always matches the game
   exactly, and also why a hit and someone else's heal both just stir the liquid rather than each getting an

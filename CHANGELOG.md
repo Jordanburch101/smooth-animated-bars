@@ -7,6 +7,23 @@ Sections are `### New` and `### Fixed`; skip one that would be empty.
 ## 1.4.0
 
 ### New
+- Liquid in the pet, focus and target-of-target frames too.
+- The settings have a section for each frame: Player, Target, Pet, Focus
+  and Target of Target. Each bar is on or off, and while it is on, its
+  colour shows under it. The target and pet start on Same as Yours, the
+  focus and targets of target on Same as Target. The setup has a new step
+  for your target's colours.
+- Class Color now follows each unit: a targeted player shows their class
+  instead of yours. Class Color on Mobs says what it shows on a mob:
+  Reaction (red, yellow or green, the default), Game Colour so only
+  players show a class, the class the game gives the mob, or your own class.
+- Mana regen build-up: after a spell that costs mana, your mana stops
+  regenerating from Spirit for five seconds. Your mana bar now shows that
+  wait: motes gather into the front of the liquid, which turns pale and
+  pulses faster while lightning starts up, then it lets go in a burst of
+  stars as regeneration returns. Another spell that costs mana starts the
+  wait again, and spells that cost none, like Shoot, do not. On by default,
+  under Mana in the settings; `/sab mana` shows what it saw.
 - Fire looks like fire now rather than lava: flame tongues lick up through
   the bar from a hot base into a smoky top, the whole fire flickers, and
   real sparks fly off it, swaying as they rise and cooling from white-gold to
@@ -16,6 +33,11 @@ Sections are `### New` and `### Fixed`; skip one that would be empty.
   inside that waxes and wanes. Shadow DoTs on your target (Corruption,
   Shadow Word: Pain and the like) now show as Shadow rather than Void.
   Void is still there to pick.
+
+### Fixed
+- An error that turned the target's health liquid and the DoT marker off
+  ("attempt to compare local 'w' (a secret number value)"): when the game
+  keeps a bar's size from addons, the liquid now keeps the size it last knew.
 
 ## 1.3.0
 

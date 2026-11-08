@@ -22,7 +22,7 @@ for players; `docs/DEVELOPMENT.md` covers the layout and tools; this file holds 
 - **Visual changes:** render a preview (`tools/harness/preview.py`) and look at it. Rebuild the gallery
   (`tools/harness/gallery.py`) when the liquid's look changes, and look at it before committing.
 - **Gallery:** `branding/gallery/` holds the README's images: animated WebP for each scenario (`hero`,
-  `mage`, `rogue`, `warlock` and `rend` with the DoT marker, `priest` with the heal marker, `druid` with both, and `eating`, a meal up to its buff) and PNG stills (`frames.png`, `themes.png`), at full quality (`K = 3.0`, 20 fps). No GIFs.
+  `mage`, `rogue`, `warlock` and `rend` with the DoT marker, `priest` with the heal marker, `druid` with both, `eating`, a meal up to its buff, and `mana`, the build-up to mana regenerating) and PNG stills (`frames.png`, `themes.png`), at full quality (`K = 3.0`, 20 fps). No GIFs.
   A full run takes about a quarter of an hour, so run it in the background.
 - **Frame art:** `branding/art/` is Forever's own unit frame art, captured in game with `/sab capture` and
   cut out by `tools/capture_art.py`. It is only for the gallery and is never packaged. The layout numbers
@@ -111,6 +111,18 @@ Facts found while building this, which the code relies on and which are not obvi
   looked right in game. `Marker.lua` uses the same sublevels and has no seam.
 - **Regeneration:** on Forever energy and mana refill continuously rather than in 2-second ticks, so the gallery's
   scenarios draw them that way (`gallery.py`, `regen`).
+- **The five-second rule** (`ManaRule.lua`): mana is secret, so the wait is timed from `UNIT_SPELLCAST_SUCCEEDED`
+  and `C_Spell.GetSpellPowerCost`, read at `UNIT_SPELLCAST_SENT`. In game the build-up ran on spells that cost mana,
+  but what Forever answers for a free cast (Clearcasting) and when a channel's wait should start are not confirmed;
+  `/sab mana` lists what it saw. A ripple's kick reaches the small bars' wave limit even at a quarter of its strength,
+  so the build-up turns kicks off entirely (`Liquid:SetSteady`) rather than scaling them down.
+- **Class Color by unit** (`Themes.UnitColor`): Forever's docs mark `UnitClass` `SecretWhenUnitIdentityRestricted`, so
+  a target's class is read under `pcall` with a secret check, and a bar that gets no answer takes the game's colour.
+  Not yet tried in game on other players or in instances.
+- **Small frames** (`Bars.lua`, `SPOTS` with `frame`): the pet's bars are globals (`PetFrameHealthBar`) with masks
+  named after them; the focus is the target's template; each target of target is `TargetFrameToT`/`FocusFrameToT`
+  (`.HealthBar`, `.ManaBar`, masks on the bar). No unit events fire for `targettarget`/`focustarget`, so their
+  liquid is refreshed on `UNIT_TARGET` and never stirred. Not yet seen in game.
 - **Toc changes** (a new file) need a full game restart; `/reload` does not pick them up.
 - **Capture:** `/sab capture` uses `Screenshot()` and the `screenshotFormat` CVar (TGA, put back after).
   The screenshot is the full render resolution (an ultrawide 3440x1440 here), and the red "?" target

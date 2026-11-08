@@ -2,7 +2,7 @@
 
 Usage: python gallery.py <addon dir> [out dir] [scenario ...]
 Default out dir: branding/gallery. Writes each scenario as an animated WebP (hero is the warrior, then
-mage, rogue, then warlock and rend, whose targets carry the DoT marker, priest, with the heal marker, druid, with both, and eating, a meal up to its buff), frames.png (a still of the warrior) and themes.png (the player frame in a few themes).
+mage, rogue, then warlock and rend, whose targets carry the DoT marker, priest, with the heal marker, druid, with both, eating, a meal up to its buff, and mana, the build-up to mana regenerating), frames.png (a still of the warrior) and themes.png (the player frame in a few themes).
 A full run takes about a quarter of an hour.
 
 The frame art comes from branding/art, which tools/capture_art.py cuts out of the screenshots /sab
@@ -152,6 +152,14 @@ SCENARIOS = {
         script=[(0.0, 0.20, 0.70, 1.0, 1.0), (3.5, 0.32, 0.70, 1.0, 1.0), (6.5, 0.44, 0.70, 1.0, 1.0),
                 (9.5, 0.56, 0.70, 1.0, 1.0), (12.5, 0.68, 0.70, 1.0, 1.0)],
         events=[(0.5, "__healCast(433, 'Cast-1')"), (13.8, "__fire('PLAYER_STARTED_MOVING')")]),
+    # The wait before mana regenerates, on the player frame alone: one spell and the whole wait, up to the burst as
+    # regeneration returns, mana flowing back for a while, then two spells close together, the second starting the
+    # wait again. The regen pays for what is spent over the loop, so it joins up.
+    "mana": dict(
+        player="Mailbox Hootsman", level="12", power="MANA", target="", target_level="", solo=True, portrait="mage",
+        maxes=(232, 420, 198, 320), loop=17.5, regen=0.10 * 3 / 5.5, power_start=0.72, rule_wait=5.0,
+        spends=[(1.0, 0.10), (9.0, 0.10), (11.0, 0.10)],
+        script=[(0.0, 1.0, 0.72, 1.0, 1.0)]),
 }
 
 
@@ -162,12 +170,30 @@ def power_at(sc, t):
     if spends is None:
         spends = [(b[0], a[2] - b[2]) for a, b in zip(script, script[1:]) if b[2] < a[2]]
     power, last = sc.get("power_start", script[0][2]), 0.0
+    wait, spent = sc.get("rule_wait", 0.0), False
+
+    def gained(frm, to):
+        # With rule_wait, nothing comes back for that long after a spend.
+        return sc["regen"] * max(0.0, to - (frm + wait if spent else frm))
+
     for when, spend in spends:
         if when > t:
             break
-        power = max(0.0, min(1.0, power + sc["regen"] * (when - last)) - spend)
-        last = when
-    return min(1.0, power + sc["regen"] * (t - last))
+        power = max(0.0, min(1.0, power + gained(last, when)) - spend)
+        last, spent = when, True
+    return min(1.0, power + gained(last, t))
+
+
+def rule_setup():
+    """Lua for a scenario showing the wait before mana regenerates: a spell that costs mana, each spend a cast of it."""
+    return """
+    __spells[133] = { 'Fireball', 'Hurls a fiery ball.' }
+    __spellCosts[133] = { { type = 0, name = 'MANA', cost = 42 } }
+    function __spend(guid)
+        __fire('UNIT_SPELLCAST_SENT', 'player', 'Kobold', guid, 133)
+        __fire('UNIT_SPELLCAST_SUCCEEDED', 'player', guid, 133)
+    end
+"""
 
 
 def heals_setup(cls, spells):
@@ -505,7 +531,11 @@ def scenario(art, key):
     dots = dots_setup(sc["target"], sc["spells"]) if "spells" in sc else ""
     if "heals" in sc:
         dots += heals_setup(sc["cls"], sc["heals"])
-    session = start({}, sc["power"], dots, sc.get("events", ()))
+    events = sc.get("events", ())
+    if "rule_wait" in sc:
+        dots += rule_setup()
+        events = [(when, f"__spend('Cast-{i}')") for i, (when, _) in enumerate(sc["spends"])]
+    session = start({}, sc["power"], dots, events)
     portrait = portrait_for(art, sc.get("portrait", key))
     pad, gap = round(24 * K), round(30 * K)
     solo = sc.get("solo")  # the player frame alone

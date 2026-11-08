@@ -50,6 +50,24 @@ local FLASH_SECONDS = 1.2      -- the bar's flash of the incoming colour at the 
 local SATED_RATE = 3           -- stars per second once the buff is reached, until the meal ends
 local STAR = { texture = "Star", blend = "ADD", buoyancy = 30, drag = 1.6, spin = { -2, 2 } }
 
+-- The wait before mana regenerates (ManaRule.lua): the liquid gathers energy, motes pulled into its front, which holds
+-- still, turns pale and pulses faster while lightning starts up. It lets go in stars and a flash, less than a meal's
+-- release, which stays the big one.
+local BUILD_ENERGY = 1.2
+local BUILD_RATE = 34               -- motes per second at the top of the build-up
+local BUILD_GATHER = { texture = "Mote", blend = "ADD", mode = "attract", drag = 1.8 }
+local BUILD_BEAT = { 0.7, 0.16 }    -- seconds between the pale front's pulses, from slowest to fastest
+local BUILD_PULSE = 0.3             -- how much of its paleness each pulse takes away and gives back
+local BUILD_STORM_FROM = 0.6        -- how far through the wait the lightning starts up
+local BUILD_STORM = 1.4             -- its charge at the end of the wait
+local BUILD_TINT = 0.55             -- how far the front turns pale at the top of the build-up
+local BUILD_PALE = 0.5              -- how far that pale colour is from the liquid's tip toward white
+local BUILD_STARS = 30
+local BUILD_SPLASH = 0.85
+local BUILD_FLASH_SECONDS = 0.9
+local BUILD_STEADY_IN = 0.15        -- the front is holding still this far through the wait
+local BUILD_STEADY_SECONDS = 2.5    -- and eases off over this after it
+
 local HEALTH_COLOR = { 0.10, 0.90, 0.10 }
 -- PowerBarColor's values, for when the client has no PowerBarColor.
 local POWER_COLORS = {
@@ -63,6 +81,14 @@ local function Secret(...)
         if issecretvalue((select(i, ...))) then return true end
     end
     return false
+end
+
+-- A region's width and height, or the fallbacks while the client keeps them secret: seen in game on the target's
+-- health bar, whose size then cannot be compared.
+local function Size(region, w0, h0)
+    local w, h = region:GetWidth(), region:GetHeight()
+    if Secret(w, h) then return w0, h0 end
+    return w, h
 end
 
 -- A child of a game frame by its parentKey path, or nil.
@@ -92,13 +118,49 @@ local SPOTS = {
     { key = "targetPower", unit = "target", kind = "power", find = function()
         return Path(TargetFrame, "manabar") or Path(TargetFrame, "TargetFrameContent", "TargetFrameContentMain", "ManaBar")
     end },
+    -- The small frames (frame: whose colour settings they take): the pet's (PetFrame.xml, named bars), the focus
+    -- (the target's template) and the two targets of target (TargetFrameMixin:CreateTargetofTarget), which share
+    -- their settings. They are optional: a client without one is not reported.
+    { key = "petHealth", frame = "pet", optional = true, unit = "pet", kind = "health", find = function()
+        return rawget(_G, "PetFrameHealthBar") or Path(rawget(_G, "PetFrame"), "healthbar")
+    end },
+    { key = "petPower", frame = "pet", optional = true, unit = "pet", kind = "power", find = function()
+        return rawget(_G, "PetFrameManaBar") or Path(rawget(_G, "PetFrame"), "manabar")
+    end },
+    { key = "totHealth", frame = "tot", optional = true, unit = "targettarget", kind = "health", find = function()
+        return Path(rawget(_G, "TargetFrameToT"), "HealthBar") or Path(TargetFrame, "totFrame", "HealthBar")
+    end },
+    { key = "totPower", frame = "tot", optional = true, unit = "targettarget", kind = "power", find = function()
+        return Path(rawget(_G, "TargetFrameToT"), "ManaBar") or Path(TargetFrame, "totFrame", "ManaBar")
+    end },
+    { key = "focusHealth", frame = "focus", optional = true, unit = "focus", kind = "health", find = function()
+        local f = rawget(_G, "FocusFrame")
+        return Path(f, "healthbar")
+            or Path(f, "TargetFrameContent", "TargetFrameContentMain", "HealthBarsContainer", "HealthBar")
+    end },
+    { key = "focusPower", frame = "focus", optional = true, unit = "focus", kind = "power", find = function()
+        local f = rawget(_G, "FocusFrame")
+        return Path(f, "manabar") or Path(f, "TargetFrameContent", "TargetFrameContentMain", "ManaBar")
+    end },
+    { key = "totHealth", frame = "tot", optional = true, unit = "focustarget", kind = "health", find = function()
+        return Path(rawget(_G, "FocusFrameToT"), "HealthBar") or Path(rawget(_G, "FocusFrame"), "totFrame", "HealthBar")
+    end },
+    { key = "totPower", frame = "tot", optional = true, unit = "focustarget", kind = "power", find = function()
+        return Path(rawget(_G, "FocusFrameToT"), "ManaBar") or Path(rawget(_G, "FocusFrame"), "totFrame", "ManaBar")
+    end },
 }
 
--- The mask that shapes a bar: on the bar (target health, both mana bars) or on the container
--- around it (player health).
+-- Whether a spot is switched on.
+local function Wanted(spot)
+    return ns.Core.Get(spot.key) and true or false
+end
+
+-- The mask that shapes a bar: on the bar (target health, both mana bars), on the container around it (player
+-- health), or named after the bar (the pet's, PetFrameHealthBarMask).
 local function BarMask(bar, kind)
     local key = kind == "health" and "HealthBarMask" or "ManaBarMask"
-    local mask = Path(bar, key) or Path(bar:GetParent(), key)
+    local name = bar.GetName and bar:GetName()
+    local mask = Path(bar, key) or Path(bar:GetParent(), key) or (name and rawget(_G, name .. "Mask"))
     if type(mask) == "table" and mask.GetObjectType and mask:GetObjectType() == "MaskTexture" then return mask end
 end
 
@@ -153,16 +215,32 @@ local function ThemeFor(b, choice)
         theme = Themes.FromColor(GameColor(b), Themes.Get(Themes.default))
     else
         theme = Themes.Get(choice)
-        if theme.Resolve then theme = theme:Resolve() end -- class and faction colours
+        if theme.Resolve then -- class and faction colours
+            theme = theme:Resolve(b and b.unit, b and b.spot.preview)
+                or Themes.FromColor(GameColor(b), Themes.Get(Themes.default))
+        end
     end
     return setmetatable({ physics = SmallPhysics(theme.physics) }, { __index = theme })
 end
 
+-- A bar's colour choice: its frame's, which can be to follow the player's (target, pet) or the target's (focus,
+-- targets of target). A preview's bars are the player's or the target's.
+local function ChoiceFor(b)
+    return ns.Core.ColorChoice(b.spot.frame or (b.unit == "target" and "target" or "player"), b.kind)
+end
+
 local function ApplyColor(b, force)
-    local choice = ns.Core.Get(b.kind == "health" and "healthColor" or "powerColor")
+    local choice = ChoiceFor(b)
     local _, token = GameColor(b)
-    -- Power colours change with the power type only when the bar takes the game's colour.
-    local key = choice == "game" and (choice .. ":" .. token) or choice
+    -- Power colours change with the power type only when the bar takes the game's colour, and Class Color with the
+    -- unit's colour, falling back on the game's.
+    local key = choice
+    if choice == "game" then
+        key = "game:" .. token
+    elseif choice == "class" then
+        local c = ns.Themes.UnitColor(b.unit, b.spot.preview)
+        key = c and string.format("class:%.3f,%.3f,%.3f", c[1], c[2], c[3]) or ("class:none:" .. token)
+    end
     if key == b.colorKey and not force then return end
     b.colorKey = key
     b.liquid:SetTheme(ThemeFor(b, choice))
@@ -218,7 +296,7 @@ local function AtParentLevel(frame, parent)
 end
 
 local function NewBar(spot, bar)
-    local w, h = bar:GetWidth(), bar:GetHeight()
+    local w, h = Size(bar, 1, 1)
     local b = { spot = spot, unit = spot.unit, kind = spot.kind, bar = bar, width = w, height = h, live = false,
                 idle = 0, feed = 0, stirAt = 0 }
 
@@ -329,6 +407,73 @@ local function Inflow(b, dt, w, h)
     end
 end
 
+-- Whether the bar is showing mana. A druid's forms put rage or energy on it.
+local function OnMana(b)
+    local _, token = UnitPowerType(b.unit)
+    return Secret(token) or token == "MANA"
+end
+
+-- The pale colours the front turns toward as it builds up, a theme for Liquid:SetInflow, made from the liquid's own.
+local function BuildTint(b)
+    local theme = b.liquid.theme
+    if b.tintFor ~= theme then
+        local t, k = theme.tip, BUILD_PALE
+        local pale = { t[1] + (1 - t[1]) * k, t[2] + (1 - t[2]) * k, t[3] + (1 - t[3]) * k }
+        b.tintFor, b.tint = theme, { tip = pale, glow = pale, fillB = pale }
+    end
+    return b.tint
+end
+
+local function BuildUp(b, dt, w, h)
+    if not b.waited then return end
+    local progress = b.waitProgress
+    -- What is pouring in takes the bar over, as does a power other than mana.
+    if progress and (b.inflow or not OnMana(b)) then progress = nil end
+
+    local steady = math.max(progress and min(1, progress / BUILD_STEADY_IN) or 0,
+        (b.buildSteady or 0) - dt / BUILD_STEADY_SECONDS)
+    if steady ~= (b.buildSteady or 0) then
+        b.buildSteady = steady
+        b.liquid:SetSteady(steady)
+    end
+
+    local mix = 0
+    if progress then
+        local charge = progress * progress
+        local liquid = b.liquid
+        -- The front pulses paler, faster toward the end.
+        local beat = BUILD_BEAT[1] + (BUILD_BEAT[2] - BUILD_BEAT[1]) * charge
+        b.buildPhase = ((b.buildPhase or 0) + dt / beat) % 1
+        mix = BUILD_TINT * charge * (1 - BUILD_PULSE * (0.5 + 0.5 * math.cos(b.buildPhase * 2 * math.pi)))
+        liquid:Warm(BUILD_ENERGY * charge)
+        if progress > BUILD_STORM_FROM then
+            liquid:Storm(BUILD_STORM * (progress - BUILD_STORM_FROM) / (1 - BUILD_STORM_FROM))
+        end
+        -- Motes from around the front, pulled into it from further off as it builds.
+        local theme = liquid.theme
+        b.buildAcc = (b.buildAcc or 0) + dt * BUILD_RATE * charge
+        while b.buildAcc >= 1 do
+            b.buildAcc = b.buildAcc - 1
+            local a, d = Rand(0, 2 * math.pi), Rand(18, 26 + 24 * charge)
+            liquid:EmitMote(w + math.cos(a) * d, h / 2 + math.sin(a) * d * 0.6, -math.sin(a) * 30, math.cos(a) * 30,
+                Rand(0.8, 1.2), Rand(6, 10) + charge * 5, theme.splashFrom, theme.splashTo, BUILD_GATHER)
+        end
+    end
+
+    -- The front's colour: pale as it builds up, then the release's flash fading. Whatever pours in has the tint.
+    if b.inflow then
+        b.buildMix, b.buildFlash = 0, 0
+    else
+        b.buildFlash = math.max(0, (b.buildFlash or 0) - dt / BUILD_FLASH_SECONDS)
+        mix = math.max(mix, b.buildFlash)
+        local was = b.buildMix or 0
+        if math.abs(mix - was) > 0.02 or (mix == 0 and was > 0) then
+            b.buildMix = mix
+            b.liquid:SetInflow(mix > 0 and BuildTint(b) or nil, mix)
+        end
+    end
+end
+
 local function UpdateBar(b, dt)
     local bar = b.bar
     if not bar:IsVisible() then return end
@@ -341,7 +486,7 @@ local function UpdateBar(b, dt)
         Feed(b, true)
     end
 
-    local w, h = bar:GetWidth(), bar:GetHeight()
+    local w, h = Size(bar, b.width, b.height)
     if w < 1 or h < 1 then return end
     if w ~= b.width or h ~= b.height then
         b.width, b.height = w, h
@@ -350,6 +495,7 @@ local function UpdateBar(b, dt)
     end
 
     Inflow(b, dt, w, h)
+    BuildUp(b, dt, w, h)
 
     -- Once settled only the idle wobble remains, so it drops to IDLE_FPS.
     if b.liquid:IsQuiet() then
@@ -386,15 +532,20 @@ end
 
 local STIR_EVENTS = { UNIT_HEALTH = "health", UNIT_MAXHEALTH = "health", UNIT_POWER_UPDATE = "power",
                       UNIT_MAXPOWER = "power" }
+-- Events that put another unit on a bar: its colour and value start afresh. No unit events come for a target of
+-- target, so those bars follow their value without being stirred.
+local NEW_UNIT = { PLAYER_TARGET_CHANGED = { target = true, targettarget = true },
+                   PLAYER_FOCUS_CHANGED = { focus = true, focustarget = true } }
+local TARGET_OF = { target = "targettarget", focus = "focustarget" }
 
 local function OnEvent(_, event, unit)
+    local fresh = NEW_UNIT[event]
+    local other = event == "UNIT_TARGET" and TARGET_OF[unit] or (event == "UNIT_PET" and unit == "player" and "pet")
     for _, b in pairs(bars) do
         if b.live then
-            if event == "PLAYER_TARGET_CHANGED" then
-                if b.unit == "target" then
-                    ApplyColor(b)
-                    Feed(b, false)
-                end
+            if (fresh and fresh[b.unit]) or (other and b.unit == other) then
+                ApplyColor(b)
+                Feed(b, false)
             elseif b.unit == unit then
                 if event == "UNIT_DISPLAYPOWER" then -- druid forms
                     if b.kind == "power" then ApplyColor(b) end
@@ -407,13 +558,13 @@ local function OnEvent(_, event, unit)
 end
 
 local EVENTS = { "PLAYER_TARGET_CHANGED", "UNIT_DISPLAYPOWER", "UNIT_HEALTH", "UNIT_MAXHEALTH", "UNIT_POWER_UPDATE",
-                 "UNIT_MAXPOWER" }
+                 "UNIT_MAXPOWER", "UNIT_TARGET", "UNIT_PET", "PLAYER_FOCUS_CHANGED" }
 
 --------------------------------------------------------------------------------
 -- API
 --------------------------------------------------------------------------------
 
--- The game's bar for a spot's on/off setting ("playerHealth"...), or nil if it is not there.
+-- The player's or the target's bar for its on/off setting ("playerHealth"...), or nil if it is not there.
 function Bars.Find(key)
     for _, spot in ipairs(SPOTS) do
         if spot.key == key then return spot.find() end
@@ -425,14 +576,14 @@ end
 function Bars.Apply()
     local live, missing = 0, 0
     for _, spot in ipairs(SPOTS) do
-        local want = ns.Core.Get(spot.key) and true or false
+        local want = Wanted(spot)
         local b = bars[spot]
         if want and not b then
             local bar = spot.find()
             if type(bar) == "table" and bar.GetStatusBarTexture and bar.GetValue then
                 b = NewBar(spot, bar)
                 bars[spot] = b
-            else
+            elseif not spot.optional then
                 missing = missing + 1
             end
         end
@@ -547,6 +698,36 @@ function Bars.Release(bar)
     b.liquid:Splash(0.8, 0, w)
 end
 
+-- The wait before mana regenerates: progress 0..1, or nil when it is called off.
+function Bars.Wait(bar, progress)
+    local b = StateFor(bar)
+    if not b then return end
+    b.waitProgress = progress
+    if progress then b.waited = true end
+end
+
+-- The wait ran its course: the build-up lets go.
+function Bars.WaitOver(bar)
+    local b = StateFor(bar)
+    if not b then return end
+    b.waitProgress = nil
+    if not b.live or b.inflow or not OnMana(b) then return end
+    local w, h, liquid = b.width, b.height, b.liquid
+    local theme = liquid.theme
+    b.buildFlash, b.buildPhase, b.buildAcc = 1, 0, 0
+    -- Stars thrown out from the front in every direction, faster than a meal's, which rise along the bar.
+    for _ = 1, BUILD_STARS do
+        local a, speed = Rand(0, 2 * math.pi), Rand(30, 130)
+        liquid:EmitMote(w - Rand(0, 10), Rand(0, h), math.cos(a) * speed, math.sin(a) * speed * 0.7 + 15,
+            Rand(0.7, 1.3), Rand(9, 16), theme.tip, theme.splashTo, STAR)
+    end
+    liquid:Splash(BUILD_SPLASH, w - 8, w)
+    liquid:Warm(BUILD_ENERGY)
+end
+
+-- A region's width and height, or the fallbacks while the client keeps them secret (for the markers).
+Bars.Size = Size
+
 -- The Liquid on a bar, if it has one (the heal marker's seam follows its front; also for the tests).
 function Bars.Liquid(bar)
     local b = StateFor(bar)
@@ -583,7 +764,7 @@ function Bars.Debug()
         local b = bars[spot]
         local label = spot.unit .. " " .. spot.kind
         if not b then
-            out[#out + 1] = label .. ": " .. (ns.Core.Get(spot.key) and "not found" or "off")
+            out[#out + 1] = label .. ": " .. (Wanted(spot) and "not found" or "off")
         else
             local bar = b.bar
             local fill = bar:GetStatusBarTexture()

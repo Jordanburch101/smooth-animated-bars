@@ -14,7 +14,7 @@ explains the details.
 
 | Folder | What it is |
 |---|---|
-| `SmoothAnimatedBars/` | The addon. `Bars.lua` puts the liquid on the unit frames, `Liquid.lua` draws it, `Themes.lua` holds the themes, `Dots.lua` tracks the player's DoTs (ported from DoesItDie) and `Marker.lua` marks them on the target, `Heals.lua` tracks the player's heals on themselves and `HealMarker.lua` marks them on the player's health, `Options.lua` the settings page, `Wizard.lua` the setup and `Preview.lua` its preview frames, `Capture.lua` the gallery's art capture |
+| `SmoothAnimatedBars/` | The addon. `Bars.lua` puts the liquid on the unit frames, `Liquid.lua` draws it, `Themes.lua` holds the themes, `Dots.lua` tracks the player's DoTs (ported from DoesItDie) and `Marker.lua` marks them on the target, `Heals.lua` tracks the player's heals on themselves and `HealMarker.lua` marks them on the player's health, `ManaRule.lua` times the wait before mana regenerates, which `Bars.lua` draws, `Options.lua` the settings page, `Wizard.lua` the setup and `Preview.lua` its preview frames, `Capture.lua` the gallery's art capture |
 | `tools/make_media.py` | Generates the textures in `SmoothAnimatedBars/Media/` |
 | `tools/harness/` | A mock of the Forever client's API that runs the addon outside the game: tests, previews and the gallery |
 | `tools/capture_art.py` | Cuts Forever's frame art out of the screenshots `/sab capture` takes |
@@ -50,7 +50,7 @@ Capture again only if the game's frame art changes. The mage, rogue and warlock 
 characters' portraits: capture on each, then `capture_art.py --portrait mage --pair 2`, `--portrait rogue
 --pair 1` and `--portrait warlock --pair N` (the newest pair is the last capture; until a warlock portrait is
 captured, the warlock uses the capturing character's; `rend` is the warrior again). `gallery.py` takes scenario
-names to render only some: `hero`, `mage`, `rogue`, `warlock`, `rend`, `priest`, `druid`, `eating`, `themes`. `eating` is the player frame alone, a meal up to its buff, with the druid's portrait. The druid
+names to render only some: `hero`, `mage`, `rogue`, `warlock`, `rend`, `priest`, `druid`, `eating`, `mana`, `themes`. `eating` is the player frame alone, a meal up to its buff, with the druid's portrait. `mana` is the player frame alone, the build-up to mana regenerating, with the mage's portrait. The druid
 carries both markers (Moonfire on the target, Rejuvenation and Healing Touch on itself) and has its own
 portrait (`--portrait druid`). The priest's
 health carries the heal marker (Holy, then a bandage's Nature), its casts going through the addon's own heal

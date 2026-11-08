@@ -1,4 +1,4 @@
--- First-time setup in four short steps: which bars, their colours, how lively they are and whether to mark
+-- First-time setup in five short steps: which bars, their colours, the target's, how lively they are and whether to mark
 -- the player's DoTs on the target (Marker.lua). Each pick
 -- is applied at once, on the real frames and on the preview player and target frames at the top of
 -- the window (Preview.lua); Skip (or closing the window) puts the settings back as they were, Finish
@@ -13,20 +13,34 @@ local _, ns = ...
 local Wizard = {}
 ns.Wizard = Wizard
 
-local W, H = 620, 430
+local W, H = 620, 450
 local GOLD = { 1, 0.82, 0 }
 local EDGE = { 0.32, 0.30, 0.36 }
 
+-- Each pick sets every frame's bars: the pet goes with the player, the focus and targets of target with the target.
+local function BarSet(mine, others, power)
+    local set = {}
+    for _, frame in ipairs({ "player", "pet" }) do
+        set[frame .. "Health"], set[frame .. "Power"] = mine, mine and power
+    end
+    for _, frame in ipairs({ "target", "focus", "tot" }) do
+        set[frame .. "Health"], set[frame .. "Power"] = others, others and power
+    end
+    return set
+end
 local BARS = {
-    { key = "all", label = "Player and target", desc = "Health and power on your frame and your target's.",
-      set = { playerHealth = true, playerPower = true, targetHealth = true, targetPower = true } },
-    { key = "mine", label = "Just mine", desc = "Your health and power. Your target's stay the game's.",
-      set = { playerHealth = true, playerPower = true, targetHealth = false, targetPower = false } },
-    { key = "health", label = "Just health", desc = "Health on both frames. Power bars stay the game's.",
-      set = { playerHealth = true, playerPower = false, targetHealth = true, targetPower = false } },
+    { key = "all", label = "Every frame", desc = "Health and power on yours, your target's, pet's and focus's.",
+      set = BarSet(true, true, true) },
+    { key = "mine", label = "Just mine", desc = "Your health and power, and your pet's. Your target's stay the game's.",
+      set = BarSet(true, false, true) },
+    { key = "health", label = "Just health", desc = "Health on every frame. Power bars stay the game's.",
+      set = BarSet(true, true, false) },
 }
 -- A few favourites; every theme is in the settings.
 local COLORS = { "game", "class", "fire", "frost", "arcane", "void" }
+local TARGET_COLORS = { "same", "game", "class", "fire", "frost", "void" }
+local MOBS = { { key = "reaction", label = "Reaction" }, { key = "game", label = "Game Colour" },
+               { key = "class", label = "Mob's Class" }, { key = "own", label = "Your Class" } }
 local EFFECTS = {
     { key = "full", label = "Everything", desc = "Waves, swirl, bubbles, sparkles, theme particles and lightning.",
       set = { waves = true, swirl = true, bubbles = true, sparkles = true, ambient = true, lightning = true } },
@@ -43,11 +57,12 @@ local DOTS = {
     { key = "off", label = "Off", desc = "For classes without damage over time.",
       set = { dots = false } },
 }
-local PAGES = { "bars", "colors", "effects", "dots" }
+local PAGES = { "bars", "colors", "targetColors", "effects", "dots" }
 
 local frame, ui, page, saved, closing
 
 local function ColorName(key)
+    if key == "same" then return "Same as Yours" end
     return key == "game" and "Game Colour" or ns.Themes.list[key].name
 end
 
@@ -180,6 +195,29 @@ function BUILD.colors(p)
     end
 end
 
+function BUILD.targetColors(p)
+    Heading(p, "Your target's colours", "Class Color follows a targeted player's class.")
+    -- Cards three to a line, or all on one with narrow (the Mobs row, four short names).
+    local function Row(label, key, y, list, narrow)
+        local text = Font(p, "GameFontNormal", label, "LEFT")
+        text:SetPoint("TOPLEFT", 0, y)
+        ui.cards[key] = {}
+        for i, item in ipairs(list) do
+            local value = item.key or item
+            local per, w = narrow and #list or 3, narrow and 115 or 150
+            local col, line = (i - 1) % per, math.floor((i - 1) / per)
+            local c = Card(p, w, 30, item.label or ColorName(item), nil, function() Set({ [key] = value }) end)
+            c:SetPoint("TOPLEFT", 60 + col * (w + (narrow and 7 or 10)), y + 6 - line * 36)
+            ui.cards[key][value] = c
+        end
+        return text
+    end
+    Row("Health", "targetHealthColor", -46, TARGET_COLORS)
+    Row("Power", "targetPowerColor", -116, TARGET_COLORS)
+    -- What Class Color shows on mobs, only while a target's bar shows it.
+    ui.mobLabel = Row("Mobs", "mobClassColor", -186, MOBS, true)
+end
+
 function BUILD.effects(p)
     Heading(p, "How lively?", "Each effect can be turned on or off in the settings later.")
     ui.cards.effects = Cards(p, EFFECTS, -46)
@@ -204,9 +242,16 @@ function Refresh()
     local picked = {
         bars = Matching(BARS), effects = Matching(EFFECTS), dots = Matching(DOTS),
         healthColor = ns.Core.Get("healthColor"), powerColor = ns.Core.Get("powerColor"),
+        targetHealthColor = ns.Core.Get("targetHealthColor"), targetPowerColor = ns.Core.Get("targetPowerColor"),
+        mobClassColor = ns.Core.Get("mobClassColor"),
     }
     for field, cards in pairs(ui.cards) do
         for key, c in pairs(cards) do c:SetSelected(picked[field] == key) end
+    end
+    if ui.mobLabel then
+        local shown = ns.Core.TargetUsesClass()
+        ui.mobLabel:SetShown(shown)
+        for _, c in pairs(ui.cards.mobClassColor) do c:SetShown(shown) end
     end
     local index = IndexOf(PAGES, page)
     ui.back:SetEnabled(index > 1)

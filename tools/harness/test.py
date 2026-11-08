@@ -179,7 +179,7 @@ end)()""")
 gone = [m for m in missing.split(",") if m and not os.path.exists(os.path.join(media, m + ".tga"))]
 check(not gone, f"every texture the liquid uses is in Media/ {gone}")
 lua.execute("SlashCmdList.SMOOTHANIMATEDBARS('debug')")
-dbg = [m for m in chat(lua) if "value secret" in m]
+dbg = [m for m in chat(lua) if "value secret" in m and ("|r player " in m or "|r target " in m)]
 check(len(dbg) == 4 and all("live yes" in m and "mask yes" in m and "error" not in m for m in dbg),
       f"/sab debug reports each bar ({len(dbg)} lines)")
 check(not any("Error in" in m for m in chat(lua)), "no errors")
@@ -188,8 +188,11 @@ print("== settings")
 rows = lua.eval("__settingsRows()")
 rows = [rows[i] for i in range(1, len(rows) + 1)]
 keys = [r.key for r in rows if r.key]
-check(keys == ["playerHealth", "playerPower", "targetHealth", "targetPower", "healthColor", "powerColor",
-               "waves", "swirl", "bubbles", "sparkles", "ambient", "lightning", "dots", "dotKillIcon", "heals"],
+check(keys == ["playerHealth", "healthColor", "playerPower", "powerColor", "targetHealth", "targetHealthColor",
+               "targetPower", "targetPowerColor", "mobClassColor", "petHealth", "petHealthColor", "petPower",
+               "petPowerColor", "focusHealth", "focusHealthColor", "focusPower", "focusPowerColor", "totHealth",
+               "totHealthColor", "totPower", "totPowerColor",
+               "waves", "swirl", "bubbles", "sparkles", "ambient", "lightning", "dots", "dotKillIcon", "heals", "manaBuild"],
       f"settings page rows: {keys}")
 check(not lua.eval("__sharedListTainted"), "nothing added to the game's shared settings list (Forever: Social blocked)")
 options = [o for o in rows if o.key == "healthColor"][0].options
@@ -234,6 +237,171 @@ check(lua.eval("__openedCategory") is None, "not opened in combat")
 lua.execute("__combat = false; __fire('PLAYER_REGEN_ENABLED')")
 check(lua.eval("__openedCategory") == "Smooth Animated Bars", "opened once combat ends")
 
+print("== target colours")
+tc = session()
+tc.execute("""
+    __player.class = 'PALADIN'
+    __settings.healthColor:SetValue('class')
+    function __aim(t) __target = t; __fire('PLAYER_TARGET_CHANGED') end
+""")
+run(tc, 0.2)
+check(tc.eval("SmoothAnimatedBarsDB.targetHealthColor") == "same" and tc.eval("SmoothAnimatedBarsDB.mobClassColor") == "reaction",
+      "the target follows the player's choice by default, and mobs show their reaction")
+
+
+def mob_row(lua):
+    rows = lua.eval("__settingsRows()")
+    return [rows[i] for i in range(1, len(rows) + 1) if rows[i].key == "mobClassColor"][0]
+
+
+check(mob_row(tc).frame.shown and mob_row(tc).indent, "Class Color on Mobs shows, indented, while the target follows Class Color")
+tc.execute("__aim({ guid = 'Player-1', name = 'Friend', isOtherPlayer = true, class = 'MAGE' })")
+run(tc, 0.2)
+r, g, b = tc.eval("__tint(TargetFrame.healthbar)")
+check(b > 0.8 and r < 0.5, f"Class Color: a targeted mage's health is a mage's blue ({r:.2f}, {g:.2f}, {b:.2f})")
+r, g, b = tc.eval("__tint(PlayerFrame.healthbar)")
+check(r > 0.8 and b > 0.5, f"and the player's own stays the player's ({r:.2f}, {g:.2f}, {b:.2f})")
+tc.execute("__aim({ guid = 'Player-2', name = 'Other', isOtherPlayer = true, class = 'DRUID' })")
+run(tc, 0.2)
+r, g, b = tc.eval("__tint(TargetFrame.healthbar)")
+check(r > 0.8 and b < 0.3, f"a new target recolours the bar ({r:.2f}, {g:.2f}, {b:.2f})")
+tc.execute("__aim({ guid = 'Creature-1', name = 'Boar', class = 'MAGE', reaction = 2 })")
+run(tc, 0.2)
+r, g, b = tc.eval("__tint(TargetFrame.healthbar)")
+check(r > 0.7 and g < 0.4, f"a hostile mob by reaction: red ({r:.2f}, {g:.2f}, {b:.2f})")
+tc.execute("__aim({ guid = 'Creature-2', name = 'Guard', reaction = 5 })")
+run(tc, 0.2)
+r, g, b = tc.eval("__tint(TargetFrame.healthbar)")
+check(g > 0.7 and r < 0.5, f"a friendly one: green ({r:.2f}, {g:.2f}, {b:.2f})")
+tc.execute("__aim({ guid = 'Creature-1', name = 'Boar', class = 'MAGE', reaction = 2 }); __settings.mobClassColor:SetValue('class')")
+run(tc, 0.2)
+r, g, b = tc.eval("__tint(TargetFrame.healthbar)")
+check(b > 0.8 and r < 0.5, f"Mob's Class: the class the game gives it ({r:.2f}, {g:.2f}, {b:.2f})")
+tc.execute("__settings.mobClassColor:SetValue('game')")
+run(tc, 0.2)
+r, g, b = tc.eval("__tint(TargetFrame.healthbar)")
+check(g > 0.7 and r < 0.4, f"Game Colour: a mob keeps the game's green ({r:.2f}, {g:.2f}, {b:.2f})")
+tc.execute("__aim({ guid = 'Player-1', name = 'Friend', isOtherPlayer = true, class = 'MAGE' })")
+run(tc, 0.2)
+r, g, b = tc.eval("__tint(TargetFrame.healthbar)")
+check(b > 0.8 and r < 0.5, f"while a player still shows their class ({r:.2f}, {g:.2f}, {b:.2f})")
+tc.execute("__aim({ guid = 'Creature-1', name = 'Boar', class = 'MAGE', reaction = 2 })")
+tc.execute("__settings.mobClassColor:SetValue('own')")
+run(tc, 0.2)
+r, g, b = tc.eval("__tint(TargetFrame.healthbar)")
+check(r > 0.8 and b > 0.5, f"Your Class: the player's own ({r:.2f}, {g:.2f}, {b:.2f})")
+tc.execute("__settings.targetHealthColor:SetValue('fire')")
+run(tc, 0.2)
+r, g, b = tc.eval("__tint(TargetFrame.healthbar)")
+pr, pg, pb = tc.eval("__tint(PlayerFrame.healthbar)")
+check(r > 0.8 and b < 0.3 and pb > 0.5, f"the target's health has its own choice, without touching the player's ({r:.2f}, {g:.2f}, {b:.2f})")
+check(not mob_row(tc).frame.shown, "with no Class Color on the target, Class Color on Mobs is hidden")
+tc.execute("__player.power = 0; __fire('UNIT_DISPLAYPOWER', 'target')")
+run(tc, 0.2)
+mr_, mg_, mb_ = tc.eval("__tint(TargetFrame.manabar)")
+check(mb_ > 0.5, "and its power keeps its own")
+tc.execute("__settings.targetHealthColor:SetValue('class'); __settings.mobClassColor:SetValue('reaction')")
+check(mob_row(tc).frame.shown, "and back with it")
+tc.execute("__aim({ guid = 'Player-3', name = 'Hidden', isOtherPlayer = true, class = __secret() })")
+run(tc, 0.2)
+r, g, b = tc.eval("__tint(TargetFrame.healthbar)")
+check(g > 0.7 and r < 0.4 and not any("Error" in m for m in chat(tc)),
+      f"a class kept secret: the game's colour, no error ({r:.2f}, {g:.2f}, {b:.2f})")
+lua5 = session("{ setupDone = true, targetHealthColor = 'gone', mobClassColor = 'gone' }")
+check(lua5.eval("SmoothAnimatedBarsDB.targetHealthColor") == "same" and lua5.eval("SmoothAnimatedBarsDB.mobClassColor") == "reaction",
+      "unknown saved choices fall back")
+
+print("== pet, focus and target of target")
+sf = session()
+run(sf, 0.3)
+small = {"PetFrameHealthBar": "pet health", "PetFrameManaBar": "pet power", "TargetFrameToT.HealthBar": "target of target health",
+         "TargetFrameToT.ManaBar": "target of target power", "FocusFrame.healthbar": "focus health",
+         "FocusFrame.manabar": "focus power", "FocusFrameToT.HealthBar": "focus's target health",
+         "FocusFrameToT.ManaBar": "focus's target power"}
+for path in small:
+    sf.execute(f"local b = {path}; b:SetMinMaxValues(0, __secret()); b:SetValue(__secret())")
+run(sf, 0.3)
+live = [name for path, name in small.items() if sf.eval(f"(select(2, __liquid({path})))") > 0]
+check(len(live) == 8, f"liquid in all eight small bars, on their secret values ({live})")
+check(all(sf.eval(f"(select(4, __liquid({path})))") > 0 for path in small),
+      "each cut by its own mask: the pet's named after its bar, the others on the bar")
+check(sf.eval("PetFrameHealthBar.fill.alpha") == 0 and sf.eval("TargetFrameToT.HealthBar.fill.alpha") == 0,
+      "the game's fill hidden under it")
+check(sf.eval("__ns.Bars.Find('playerHealth') == PlayerFrame.healthbar")
+      and sf.eval("__ns.Bars.Find('targetPower') == TargetFrame.manabar"), "the player's and target's bars are still the ones found")
+
+
+def row(lua, key):
+    rows = lua.eval("__settingsRows()")
+    return [rows[i] for i in range(1, len(rows) + 1) if rows[i].key == key][0]
+
+
+check(row(sf, "petHealthColor").frame.shown and row(sf, "petHealthColor").indent,
+      "settings: each bar's colour shows indented under it while the bar is on")
+sf.execute("__settings.petHealth:SetValue(false)")
+run(sf, 0.2)
+check(sf.eval("(select(2, __liquid(PetFrameHealthBar)))") == 0 and sf.eval("PetFrameHealthBar.fill.alpha") == 1
+      and sf.eval("(select(2, __liquid(PetFrameManaBar)))") > 0 and sf.eval("(select(2, __liquid(PlayerFrame.healthbar)))") > 0,
+      "Pet Health off: the pet's health bar is the game's again, its power and yours stay")
+check(not row(sf, "petHealthColor").frame.shown and row(sf, "petPowerColor").frame.shown, "and its colour option goes")
+sf.execute("__settings.petHealth:SetValue(true); __settings.totPower:SetValue(false)")
+run(sf, 0.2)
+check(sf.eval("(select(2, __liquid(TargetFrameToT.ManaBar)))") == 0 and sf.eval("(select(2, __liquid(FocusFrameToT.ManaBar)))") == 0
+      and sf.eval("(select(2, __liquid(TargetFrameToT.HealthBar)))") > 0 and sf.eval("(select(2, __liquid(FocusFrame.manabar)))") > 0,
+      "Target of Target Power off: both targets of target's power, not their health or the focus's")
+sf.execute("__settings.totPower:SetValue(true)")
+sf.execute("""
+    __player.class = 'PALADIN'
+    __settings.healthColor:SetValue('class')
+    __units.targettarget = { isOtherPlayer = true, class = 'MAGE' }
+    __units.focus = { class = 'MAGE', reaction = 2 }
+    __fire('UNIT_TARGET', 'target'); __fire('PLAYER_FOCUS_CHANGED')
+""")
+run(sf, 0.3)
+r, g, b = sf.eval("__tint(TargetFrameToT.HealthBar)")
+check(b > 0.8 and r < 0.5, f"Same as Target, the target following yours, Class Color: the target's target shows its class ({r:.2f}, {g:.2f}, {b:.2f})")
+r, g, b = sf.eval("__tint(FocusFrame.healthbar)")
+check(r > 0.7 and g < 0.4, f"a hostile mob as focus, by reaction ({r:.2f}, {g:.2f}, {b:.2f})")
+r, g, b = sf.eval("__tint(PetFrameHealthBar)")
+check(r > 0.8 and b > 0.5, f"the pet, Same as Yours, takes your class colour ({r:.2f}, {g:.2f}, {b:.2f})")
+sf.execute("__units.targettarget = { reaction = 5 }; __fire('UNIT_TARGET', 'target')")
+run(sf, 0.3)
+r, g, b = sf.eval("__tint(TargetFrameToT.HealthBar)")
+check(g > 0.7 and r < 0.5, f"the target changing its target recolours it: a friendly mob ({r:.2f}, {g:.2f}, {b:.2f})")
+sf.execute("__settings.targetHealthColor:SetValue('fire')")
+run(sf, 0.2)
+r, g, b = sf.eval("__tint(FocusFrame.healthbar)")
+pr, pg, pb = sf.eval("__tint(PetFrameHealthBar)")
+check(r > 0.8 and b < 0.3 and pb > 0.5, "the focus follows the target's Fire; the pet keeps yours")
+sf.execute("__settings.focusHealthColor:SetValue('frost'); __settings.petHealthColor:SetValue('fire')")
+run(sf, 0.2)
+r, g, b = sf.eval("__tint(FocusFrame.healthbar)")
+tr, tg, tb = sf.eval("__tint(TargetFrameToT.HealthBar)")
+pr, pg, pb = sf.eval("__tint(PetFrameHealthBar)")
+hr, hg, hb = sf.eval("__tint(PlayerFrame.healthbar)")
+check(b > 0.8 and tr > 0.8 and tb < 0.3 and pr > 0.8 and pb < 0.3 and hb > 0.5,
+      "each frame's own colour: the focus Frost, the target of target still the target's Fire, the pet Fire, you yours")
+before = sf.eval("__motes(PetFrameHealthBar)")
+sf.execute("__fire('UNIT_HEALTH', 'pet')")
+run(sf, 0.05)
+check(sf.eval("__motes(PetFrameHealthBar)") > before, "a change to the pet's health stirs its liquid")
+check(not any("Error" in m for m in chat(sf)), "no errors")
+
+print("== a bar whose size is kept secret")
+ss = session("{ setupDone = true, dots = true }")
+ss.execute("__target = { guid = 'Creature-0-1-2-3-299-0001', name = 'Mottled Boar' }; __fire('PLAYER_TARGET_CHANGED')")
+run(ss, 0.5)
+ss.execute("""
+    for _, b in ipairs({ TargetFrame.healthbar, PlayerFrame.healthbar }) do b.w, b.h = __secret(), __secret() end
+""")
+run(ss, 1)
+check(not any("Error" in m for m in chat(ss)), "the client keeping the bars' size secret (seen in game): no error")
+check(ss.eval("(select(2, __liquid(TargetFrame.healthbar)))") > 0 and ss.eval("(select(2, __liquid(PlayerFrame.healthbar)))") > 0,
+      "the liquid carries on at the size it last knew")
+ss.execute("TargetFrame.healthbar.w, TargetFrame.healthbar.h = 140, 20")
+run(ss, 0.5)
+check(ss.eval("__ns.Bars.Liquid(TargetFrame.healthbar).width") == 150, "and follows the size again once it can read it")
+
 print("== every theme")
 lua2 = session()
 rows2 = lua2.eval("__settingsRows()")
@@ -272,9 +440,9 @@ wz.execute("""
     function __press(name) local b = __ns.Wizard.State().ui[name]; b.scripts.OnClick(b) end
 """)
 check(wz.eval("__card('bars', 'all').radio.checked") and not wz.eval("__card('bars', 'mine').radio.checked")
-      and wz.eval("__ns.Wizard.State().ui.step.text") == "Step 1 of 4"
+      and wz.eval("__ns.Wizard.State().ui.step.text") == "Step 1 of 5"
       and not wz.eval("__ns.Wizard.State().ui.back:IsEnabled()"),
-      "starts from the current settings: all four bars picked, step 1 of 4, no Back")
+      "starts from the current settings: all four bars picked, step 1 of 5, no Back")
 wz.execute("__pick('bars', 'mine')")
 run(wz, 0.2)
 check(wz.eval("SmoothAnimatedBarsDB.targetHealth") is False
@@ -289,6 +457,18 @@ check(wz.eval("__ns.Wizard.State().page") == "colors" and wz.eval("SmoothAnimate
       and r > 0.8 and b < 0.3, f"colours: Fire on health shows at once ({r:.2f}, {g:.2f}, {b:.2f})")
 check(wz.eval("__card('powerColor', 'game').radio.checked") and not wz.eval("__card('healthColor', 'game').radio.checked"),
       "each row shows its own pick")
+wz.execute("__press('next')")
+check(wz.eval("__ns.Wizard.State().page") == "targetColors" and not wz.eval("__card('mobClassColor', 'reaction').shown"),
+      "the target's colours: its own step, the Mobs row hidden with no Class Color on the target")
+wz.execute("__pick('targetHealthColor', 'class')")
+check(not wz.eval("__card('mobClassColor', 'own').shown"),
+      "Class Color on the target's health, but its bars off (Just mine): still no Mobs row")
+wz.execute("__ns.Core.SetSetting('targetHealth', true); __pick('mobClassColor', 'own')")
+run(wz, 0.2)
+check(wz.eval("SmoothAnimatedBarsDB.targetHealthColor") == "class" and wz.eval("__card('mobClassColor', 'own').shown")
+      and wz.eval("SmoothAnimatedBarsDB.mobClassColor") == "own" and wz.eval("__card('targetPowerColor', 'same').radio.checked")
+      and wz.eval("__card('mobClassColor', 'own').radio.checked") and wz.eval("SmoothAnimatedBarsDB.healthColor") == "fire",
+      "Class Color brings the Mobs row; each row its own pick, the player's untouched")
 wz.execute("__press('next'); __pick('effects', 'still')")
 check(wz.eval("SmoothAnimatedBarsDB.waves") is False and wz.eval("SmoothAnimatedBarsDB.sparkles") is False
       and wz.eval("__ns.Wizard.State().ui.next.text") == "Next", "effects: Still turns them off")
@@ -303,6 +483,7 @@ check(wz.eval("SmoothAnimatedBarsDB.dots") is True and wz.eval("SmoothAnimatedBa
 wz.execute("__press('skip')")
 check(not wz.eval("SmoothAnimatedBarsSetup.shown") and wz.eval("SmoothAnimatedBarsDB.targetHealth") is True
       and wz.eval("SmoothAnimatedBarsDB.healthColor") == "game" and wz.eval("SmoothAnimatedBarsDB.waves") is True
+      and wz.eval("SmoothAnimatedBarsDB.targetHealthColor") == "same" and wz.eval("SmoothAnimatedBarsDB.mobClassColor") == "reaction"
       and wz.eval("SmoothAnimatedBarsDB.dots") is False and not wz.eval("__ns.Dots.IsEnabled()")
       and wz.eval("SmoothAnimatedBarsDB.setupDone") is True, "Skip puts every setting back and does not ask again")
 run(wz, 0.2)
@@ -311,7 +492,7 @@ wz.execute("__fire('PLAYER_ENTERING_WORLD', false, true)")
 run(wz, 3)
 check(not wz.eval("SmoothAnimatedBarsSetup.shown"), "not opened again on the next login")
 wz.execute("SlashCmdList.SMOOTHANIMATEDBARS('setup')")
-wz.execute("__pick('bars', 'health'); __press('next'); __pick('powerColor', 'class'); __press('next');"
+wz.execute("__pick('bars', 'health'); __press('next'); __pick('powerColor', 'class'); __press('next'); __press('next');"
            " __pick('effects', 'gentle'); __press('next'); __pick('dots', 'both'); __press('next')")
 check(not wz.eval("SmoothAnimatedBarsSetup.shown") and wz.eval("SmoothAnimatedBarsDB.playerPower") is False
       and wz.eval("SmoothAnimatedBarsDB.powerColor") == "class" and wz.eval("SmoothAnimatedBarsDB.swirl") is True
@@ -400,7 +581,7 @@ check(pm.eval("SmoothAnimatedBarsSetup.shown") and pm.eval("(select(2, __liquid(
       "a missing atlas leaves that piece out: no mask, liquid uncut, no error")
 
 print("== DoT marker")
-dm = session("{ setupDone = true, heals = false }")
+dm = session("{ setupDone = true, heals = false, manaBuild = false }")
 run(dm, 0.5)
 check(dm.eval("SmoothAnimatedBarsDB.dots") is False and not dm.eval("__ns.Dots.IsEnabled()")
       and dm.eval("(__ns.Marker.State())") is None, "off by default: no tracking, no marker built")
@@ -917,6 +1098,95 @@ held = fl.eval("(__ns.Heals.Player())")
 run(fl, 0.5)
 check(held == 193 and fl.eval("(__ns.Heals.Player())") == 0,
       "a cast that stops without landing (moved, cancelled) holds a moment for its success, then goes")
+
+print("== the wait before mana regenerates")
+check(lua.eval("SmoothAnimatedBarsDB.manaBuild") is True, "on by default")
+mr = session()
+mr.execute("""
+    __player.power = 0
+    __fire('UNIT_DISPLAYPOWER', 'player')
+    __spells[133] = { 'Fireball', 'Hurls a fiery ball.' }
+    __spellCosts[133] = { { type = 0, name = 'MANA', cost = 42 } }
+    __spells[5019] = { 'Shoot', 'Shoots a wand.' }
+    function __cast(id, guid)
+        __fire('UNIT_SPELLCAST_SENT', 'player', 'Kobold', guid, id)
+        __fire('UNIT_SPELLCAST_SUCCEEDED', 'player', guid, id)
+    end
+    function __mana() return __ns.Bars.Liquid(PlayerFrame.manabar) end
+""")
+check(mr.eval("__ns.ManaRule.Left()") is None, "no wait to begin with")
+mr.execute("__cast(5019, 'Cast-1')")
+check(mr.eval("__ns.ManaRule.Left()") is None, "a spell with no cost starts no wait")
+run(mr, 0.2)
+mr.execute("__cast(133, 'Cast-2')")
+check(abs(mr.eval("__ns.ManaRule.Left()") - 5) < 0.01, "a spell that costs mana starts the five seconds")
+run(mr, 1)
+mr.execute("__cast(133, 'Cast-3')")
+check(abs(mr.eval("__ns.ManaRule.Left()") - 5) < 0.01, "another spend starts the wait again")
+energy = mr.eval("__mana().energy")
+run(mr, 0.1)
+mr.execute("""
+    __spellCosts[133] = nil
+    __fire('UNIT_SPELLCAST_SENT', 'player', 'Kobold', 'Cast-4', 133)
+    __spellCosts[133] = { { type = 0, name = 'MANA', cost = 42 } }
+    __fire('UNIT_SPELLCAST_SUCCEEDED', 'player', 'Cast-4', 133)
+""")
+check(any("FREE Fireball" in m for m in mr.eval("__ns.ManaRule.Debug(40)").values()),
+      "a cast free when sent (Clearcasting) is free, whatever the spell costs when it succeeds")
+run(mr, 2)
+# Mana can still trickle in during the wait (Meditation, mp5), and each change stirs the bar.
+for _ in range(6):
+    mr.execute("__fire('UNIT_POWER_UPDATE', 'player')")
+    run(mr, 0.4)
+moved = mr.eval("""(function()
+    local most, m = 0, __mana()
+    for i = 1, #m.pos do most = math.max(most, math.abs(m:FrontOffset(i))) end
+    return most
+end)()""")
+check(moved < 0.6, f"the front holds still through the build-up, even stirred ({moved:.2f} px)")
+energy = mr.eval("__mana().energy")
+check(energy > 0.8, f"the liquid builds up ({energy:.2f})")
+check(mr.eval("__mana().charge") > 1, "lightning starting up")
+run(mr, 0.6)
+check(mr.eval("__ns.ManaRule.Left()") is None and mr.eval("__motes(PlayerFrame.manabar)") >= 30, "and lets go in stars")
+check(mr.eval("__mana().inflowTheme ~= nil"), "with a flash of its front")
+run(mr, 2)
+check(mr.eval("__mana().inflowTheme") is None, "which fades, leaving the front its own colours")
+run(mr, 1)
+check(mr.eval("__mana().steady") == 0, "and the front moves freely again")
+check(not any("Error in" in m for m in chat(mr)), "no errors")
+
+mr.execute("""
+    __spellCosts[133] = { { type = __secret(), name = __secret(), cost = __secret() } }
+    __cast(133, 'Cast-5')
+""")
+check(mr.eval("__ns.ManaRule.Left()") is not None, "a secret cost counts as a spend")
+mr.execute("__spellCosts[133] = { { type = 0, name = 'MANA', cost = __secret() } }; __cast(133, 'Cast-5b')")
+check(mr.eval("__ns.ManaRule.Left()") is not None and not any("Error" in m for m in chat(mr)),
+      "a secret amount of mana too, without an error")
+
+mr.execute("__player.power = 1; __spellCosts[133] = { { type = 0, name = 'MANA', cost = 42 } }; __cast(133, 'Cast-6')")
+run(mr, 3)
+check(mr.eval("__mana().steady") == 0 and mr.eval("__mana().inflowTheme") is None,
+      "nothing shows while the bar is on another power (a druid's forms)")
+mr.execute("__player.power = 0")
+run(mr, 0.5)
+check(mr.eval("__mana().steady") == 1, "it shows again back on mana")
+mr.execute("SlashCmdList.SMOOTHANIMATEDBARS('mana')")
+check(any("mana build-up: on" in m for m in chat(mr)) and any("SPEND Fireball" in m for m in chat(mr)),
+      "/sab mana reports the wait and what it saw")
+
+mr.execute("__settings.manaBuild:SetValue(false)")
+check(mr.eval("__ns.ManaRule.Left()") is None, "off: the wait is called off")
+mr.execute("__cast(133, 'Cast-7')")
+check(mr.eval("__ns.ManaRule.Left()") is None, "and casts start none")
+run(mr, 3)
+check(mr.eval("__mana().steady") == 0, "the front moves freely again")
+mr.execute("__settings.manaBuild:SetValue(true); __cast(133, 'Cast-8')")
+check(mr.eval("__ns.ManaRule.Left()") is not None, "on again")
+mr.execute("__fire('PLAYER_DEAD')")
+check(mr.eval("__ns.ManaRule.Left()") is None, "dying ends the wait")
+check(not any("Error" in m for m in chat(mr)), "no errors")
 
 print("== /sab capture (gallery art)")
 cap = session()
