@@ -2,7 +2,8 @@
 
 # Smooth Animated Bars
 
-Liquid health and power bars for your player and target frames in **WoW Forever**. The liquid from
+Liquid health and power bars for your unit frames in **WoW Forever**: yours, your target's, your pet's, your
+focus's and your targets of target. The liquid from
 [Smooth Experience Bar](https://www.curseforge.com/wow/addons/smooth-experience-bar) — waves, a swirl of magic,
 bubbles, sparkles and lightning — now fills the bars you watch all fight long.
 
@@ -16,7 +17,8 @@ short setup on the first login lets you choose the look, or skip it.
 - **Moves with the fight:** the liquid eases to wherever the game's bar is, and stirs with every hit, heal,
   cast and tick.
 - **25 themes:** keep the game's colours, or pick Class Color, Fire, Frost, Arcane, Shadow, Void and more, many with
-  particles of their own. Health and power each get their own choice, for you and for your target.
+  particles of their own. Each frame's health and power get their own choice, and Class Color shows each
+  player's own class.
 - **Your call on every effect:** waves, swirl, bubbles, sparkles, theme particles and lightning can each be
   switched off, and so can each bar.
 - **Your DoTs on the target (optional):** liquid in your DoTs' own colours eats into your target's health as
@@ -27,7 +29,8 @@ short setup on the first login lets you choose the look, or skip it.
   builds up to a burst of stars when you become well fed.
 - **Mana regen build-up:** your mana bar builds up through the five seconds after a spell, and lets go in a burst
   of stars as your mana starts to regenerate again.
-- **A quick setup** the first time you log in, with preview frames that show each choice as you pick it.
+- **A quick setup** the first time you log in, with preview frames that show each choice as you pick it, and
+  the settings a right-click away on your frames.
 
 <p align="center"><img src="https://raw.githubusercontent.com/Jordanburch101/smooth-animated-bars/refs/heads/main/branding/gallery/mage.webp" alt="A mage's mana dropping in big bites with each Fireball, and the kobold's health with it"></p>
 <p align="center"><em>Mage: every Fireball takes a bite out of your mana, and out of the kobold.</em></p>
@@ -145,9 +148,9 @@ your target's, pet's or focus's), or from Options > AddOns > Smooth Animated Bar
 - **Mana:** Mana Regen Build-Up.
 - **Setup Wizard:** run the five-step setup again.
 
-The setup asks which bars you want (player and target, just yours, or just health), picks the colours from a
-few favourites, then your target's, how lively the liquid should be (everything, gentle, or still), and whether to mark your DoTs
-(marker and skull, just the marker, or off). Skip puts everything back as it was.
+The setup asks which bars you want (every frame, just yours and your pet's, or just health), picks your colours
+from a few favourites, then your target's, how lively the liquid should be (everything, gentle, or still), and
+whether to mark your DoTs (marker and skull, just the marker, or off). Skip puts everything back as it was.
 
 ## Commands
 
@@ -163,7 +166,7 @@ few favourites, then your target's, how lively the liquid should be (everything,
 
 ## Good to know
 
-- **WoW Forever only.** It draws on Forever's own player and target frames.
+- **WoW Forever only.** It draws on Forever's own unit frames.
 - **Player, target, pet, focus and target-of-target frames.** Party frames keep the game's bars. A target of
   target's liquid follows its bar but is not stirred by changes, as the game sends no events for it.
 - **Always matches the game.** WoW Forever keeps health and power hidden from addons, so the addon never knows
@@ -186,8 +189,8 @@ Install it from CurseForge, or download the zip from the
 - **The DoT tracking** is ported from DoesItDie by Joe Greive (MIT licence), which worked out how to follow
   your DoTs on WoW Forever, where the combat log is closed to addons. The idea of marking them on the
   target's health bar is its too.
-- **The art** is the game's own: the addon's icon (Greater Nether Essence), the kill icon's skull, and the
-  unit frames in the images above, captured in game.
+- **The art** is the game's own: the addon's icon (Greater Nether Essence), the kill icon's skull, the poison
+  skulls, and the unit frames in the images above, captured in game.
 
 Smooth Animated Bars is not affiliated with or endorsed by Blizzard Entertainment. World of Warcraft and its
 art belong to Blizzard Entertainment.

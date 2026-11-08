@@ -2,7 +2,7 @@
 
 # Smooth Animated Bars
 
-**Liquid health and power bars for your player and target frames in WoW Forever.** Waves, a swirl of magic, bubbles, sparkles and lightning now fill the bars you watch all fight long, and they show what is on the way: your heals, your bandages, your food and your drink pour into your bars, and your DoTs eat into your target's.
+**Liquid health and power bars for your unit frames in WoW Forever: yours, your target's, your pet's, your focus's and your targets of target.** Waves, a swirl of magic, bubbles, sparkles and lightning now fill the bars you watch all fight long, and they show what is on the way: your heals, your bandages, your food and your drink pour into your bars, and your DoTs eat into your target's.
 
 Your frames stay the game's own. Only the fill changes, so nothing moves: log in and your bars are liquid. A short setup on your first login lets you choose the look, or skip it.
 
@@ -14,10 +14,10 @@ Your frames stay the game's own. Only the fill changes, so nothing moves: log in
 *   **Your heals on the way:** your own heals over time, bandages and the heal you are casting on yourself show ahead of your health as far as they will still bring it, and pour into it.
 *   **Food and drink:** what you are eating and drinking shows ahead of your health and mana, and food with a buff builds up to a burst of stars when you become well fed.
 *   **Your DoTs on the target (optional):** liquid in your DoTs' own colours eats into your target's health as far as they will still burn it, and the game's skull shows on its portrait when they will finish it.
-*   **25 themes:** keep the game's colours, or pick Class Color, Fire, Frost, Arcane, Shadow, Void and more, many with particles of their own. Health and power each get their own choice, for you and for your target.
+*   **25 themes:** keep the game's colours, or pick Class Color, Fire, Frost, Arcane, Shadow, Void and more, many with particles of their own. Each frame's health and power get their own choice, and Class Color shows each player's own class.
 *   **Your call on every effect:** waves, swirl, bubbles, sparkles, theme particles and lightning can each be switched off, and so can each bar.
 *   **Mana regen build-up:** your mana bar builds up through the five seconds after a spell, and lets go in a burst of stars as your mana starts to regenerate again.
-*   **A quick setup** the first time you log in, with preview frames that show each choice as you pick it.
+*   **A quick setup** the first time you log in, with preview frames that show each choice as you pick it, and the settings a right-click away on your frames.
 
 ![A mage's mana dropping in big bites with each Fireball, and the kobold's health with it](https://raw.githubusercontent.com/Jordanburch101/smooth-animated-bars/refs/heads/main/branding/gallery/mage.webp)
 
@@ -45,8 +45,6 @@ On by default, under Healing in the settings. The health your own heals will sti
 *   **Heals over time** (Renew, Rejuvenation, Regrowth) run down tick by tick for their duration.
 *   **Bandages** tick every second, throwing up green pluses as the game does over a healed character, and if damage breaks one, what it had left drops out at once.
 *   **It goes by your spells' tooltips,** as WoW Forever keeps your health and each heal's size hidden from addons. Healing past full health is cut off at the bar's end.
-*   **Nature DoTs give off the game's own poison skulls,** poisons and stings alike, in a darker green than the Plague theme: a few skulls drift up while they run, and a burst comes with each tick.
-*   **Rogue poisons** that do damage over time, like Deadly Poison, show too: the poison is noted when you put it on your weapon and seen landing by its Nature ticks on your target. It counts one stack, so with more stacks the poison deals more than it shows.
 *   **Your own heals on yourself only.** Heals from others depend on their gear, which no tooltip tells, so they keep the game's own bar. Your own heals take the place of the game's flat teal bar while they show.
 
 ## Food and drink
@@ -76,6 +74,8 @@ Turn it on in the setup or under Damage Over Time in the settings. The health yo
 *   **The health liquid's front** sits where the target's health will end once your DoTs are done.
 *   **When no health liquid is left,** your DoTs will kill it, and the game's own skull (the one it shows for a target far above your level) comes up on its portrait.
 *   **It goes by your spells' tooltips,** as WoW Forever keeps each hit's damage hidden from addons. A DoT runs down tick by tick for its whole duration, and one that is dodged, parried, missed or resisted as you cast it is left out.
+*   **Nature DoTs give off the game's own poison skulls,** poisons and stings alike, in a darker green than the Plague theme: a few skulls drift up while they run, and a burst comes with each tick.
+*   **Rogue poisons** that do damage over time, like Deadly Poison, show too: the poison is noted when you put it on your weapon and seen landing by its Nature ticks on your target. It counts one stack, so with more stacks the poison deals more than it shows.
 
 ## Mana regen build-up
 
@@ -118,7 +118,7 @@ Open the settings with `/sab`, from **Open Settings** when you right-click your 
 
 ## Good to know
 
-*   **WoW Forever only.** It draws on Forever's own player and target frames.
+*   **WoW Forever only.** It draws on Forever's own unit frames.
 *   **Player, target, pet, focus and target-of-target frames.** Party frames keep the game's bars.
 *   **Always matches the game.** WoW Forever keeps health and power hidden from addons, so the game itself places the liquid on its own bar. That is also why a hit and someone else's heal both just stir the liquid.
 *   **English spell text.** The DoT and heal tracking read your spells' tooltips in English, so on other client languages they may not pick up your spells.
@@ -129,7 +129,7 @@ Open the settings with `/sab`, from **Open Settings** when you right-click your 
 
 *   The liquid comes from [Smooth Experience Bar](https://www.curseforge.com/wow/addons/smooth-experience-bar), whose look is based on the [Luxthos Experience Bar](https://wago.io/LuxthosExperienceBar) WeakAura by Luxthos & Daemoos.
 *   The DoT tracking is ported from DoesItDie by Joe Greive (MIT licence), which worked out how to follow your DoTs on WoW Forever.
-*   The art is the game's own.
+*   The art is the game's own, the poison skulls too.
 
 Open source under the MIT licence: [source, issues and licence on GitHub](https://github.com/Jordanburch101/smooth-animated-bars).
 
