@@ -25,6 +25,8 @@ Sections are `### New` and `### Fixed`; skip one that would be empty.
   have targeted. A mob you dotted and left keeps its marker. Bleeds are a
   dark crimson there, so they show against the nameplate's own red.
   Nameplates get no kill icon or poison skulls.
+- The setup has a new last step for nameplates: enemy nameplates off, with
+  the liquid, or with your DoTs too, and friendly nameplates on or off.
 - Bleeds bleed: on your target's DoT marker, a bleed's liquid beats like a
   heart, and with every beat blood spurts from the wound in glowing bursts
   that arc up and fall back, as from a cut artery. Between beats a few drops

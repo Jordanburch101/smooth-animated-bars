@@ -1,5 +1,5 @@
--- First-time setup in five short steps: which bars, their colours, the target's, how lively they are and whether to mark
--- the player's DoTs on the target (Marker.lua). Each pick
+-- First-time setup in six short steps: which bars, their colours, the target's, how lively they are, whether to mark
+-- the player's DoTs on the target (Marker.lua) and the liquid on nameplates, enemy and friendly. Each pick
 -- is applied at once, on the real frames and on the preview player and target frames at the top of
 -- the window (Preview.lua); Skip (or closing the window) puts the settings back as they were, Finish
 -- keeps them. Opens once, on the first login with the addon,
@@ -57,7 +57,17 @@ local DOTS = {
     { key = "off", label = "Off", desc = "For classes without damage over time.",
       set = { dots = false } },
 }
-local PAGES = { "bars", "colors", "targetColors", "effects", "dots" }
+-- Enemy nameplates: a pick only names what it decides, so Off leaves the DoT choice for when they come back on.
+local PLATES = {
+    { key = "off", label = "Off", set = { plateHealth = false } },
+    { key = "liquid", label = "Liquid", set = { plateHealth = true, plateDots = false } },
+    { key = "dots", label = "With your DoTs", set = { plateHealth = true, plateDots = true } },
+}
+local FRIENDS = {
+    { key = "off", label = "Off", set = { plateFriendly = false } },
+    { key = "on", label = "On", set = { plateFriendly = true } },
+}
+local PAGES = { "bars", "colors", "targetColors", "effects", "dots", "plates" }
 
 local frame, ui, page, saved, closing
 
@@ -228,6 +238,27 @@ function BUILD.dots(p)
     ui.cards.dots = Cards(p, DOTS, -46)
 end
 
+function BUILD.plates(p)
+    Heading(p, "Nameplates too?", "The health bars over heads. They are not in the frames above: look at the mobs around you.")
+    -- Short cards on one line each, as the target colours' rows.
+    for row, spec in ipairs({ { "Enemies", "plates", PLATES }, { "Friends", "friends", FRIENDS } }) do
+        local y = -56 - (row - 1) * 46
+        Font(p, "GameFontNormal", spec[1], "LEFT"):SetPoint("TOPLEFT", 0, y)
+        ui.cards[spec[2]] = {}
+        for i, item in ipairs(spec[3]) do
+            local c = Card(p, 150, 30, item.label, nil, function() Set(item.set) end)
+            c:SetPoint("TOPLEFT", 70 + (i - 1) * 158, y + 6)
+            ui.cards[spec[2]][item.key] = c
+        end
+    end
+    local note = Font(p, "GameFontHighlightSmall", "With your DoTs: what your damage over time will still deal, on "
+        .. "every mob carrying it. Friends: other players and friendly NPCs, when the game shows their "
+        .. "nameplates. Both are off to begin with, as a crowd costs more.", "LEFT")
+    note:SetPoint("TOPLEFT", 0, -150)
+    note:SetWidth(W - 72)
+    note:SetWordWrap(true)
+end
+
 --------------------------------------------------------------------------------
 -- The window
 --------------------------------------------------------------------------------
@@ -241,6 +272,7 @@ end
 function Refresh()
     local picked = {
         bars = Matching(BARS), effects = Matching(EFFECTS), dots = Matching(DOTS),
+        plates = Matching(PLATES), friends = Matching(FRIENDS),
         healthColor = ns.Core.Get("healthColor"), powerColor = ns.Core.Get("powerColor"),
         targetHealthColor = ns.Core.Get("targetHealthColor"), targetPowerColor = ns.Core.Get("targetPowerColor"),
         mobClassColor = ns.Core.Get("mobClassColor"),

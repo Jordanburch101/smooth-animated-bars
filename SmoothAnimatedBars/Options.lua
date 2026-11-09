@@ -255,7 +255,7 @@ function Options.Register(savedDB, defaultValues)
         .. "poison skulls on nameplates."), nil, { indent = true, shown = On("plateHealth") })
     Checkbox("plateFriendly", "Friendly Nameplates",
         "Liquid in the health bars of friendly nameplates: other players and friendly NPCs, never your own. The game "
-        .. "shows them only with friendly nameplates on (Shift+V by default), and keeps them to itself in dungeons. "
+        .. "shows them only with friendly nameplates switched on in its options, and keeps them to itself in dungeons. "
         .. "At most 10 get it, apart from the enemies'.")
     Dropdown("plateFriendlyColor", "Colour",
         "Game Colour takes the nameplate's own, as the game draws it (green for friendly NPCs). Class Color shows "

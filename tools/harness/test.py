@@ -490,9 +490,9 @@ wz.execute("""
     function __press(name) local b = __ns.Wizard.State().ui[name]; b.scripts.OnClick(b) end
 """)
 check(wz.eval("__card('bars', 'all').radio.checked") and not wz.eval("__card('bars', 'mine').radio.checked")
-      and wz.eval("__ns.Wizard.State().ui.step.text") == "Step 1 of 5"
+      and wz.eval("__ns.Wizard.State().ui.step.text") == "Step 1 of 6"
       and not wz.eval("__ns.Wizard.State().ui.back:IsEnabled()"),
-      "starts from the current settings: all four bars picked, step 1 of 5, no Back")
+      "starts from the current settings: all four bars picked, step 1 of 6, no Back")
 wz.execute("__pick('bars', 'mine')")
 run(wz, 0.2)
 check(wz.eval("SmoothAnimatedBarsDB.targetHealth") is False
@@ -524,17 +524,37 @@ check(wz.eval("SmoothAnimatedBarsDB.waves") is False and wz.eval("SmoothAnimated
       and wz.eval("__ns.Wizard.State().ui.next.text") == "Next", "effects: Still turns them off")
 wz.execute("__press('next')")
 check(wz.eval("__ns.Wizard.State().page") == "dots" and wz.eval("__card('dots', 'off').radio.checked")
-      and wz.eval("__ns.Wizard.State().ui.next.text") == "Finish",
-      "DoTs: the last step, Off picked as the setting starts, says Finish")
+      and wz.eval("__ns.Wizard.State().ui.next.text") == "Next",
+      "DoTs: Off picked as the setting starts")
 wz.execute("__pick('dots', 'marker')")
 check(wz.eval("SmoothAnimatedBarsDB.dots") is True and wz.eval("SmoothAnimatedBarsDB.dotKillIcon") is False
       and wz.eval("__ns.Dots.IsEnabled()") and wz.eval("__card('dots', 'marker').radio.checked"),
       "Just the marker: tracking on at once, no skull")
+wz.execute("__press('next')")
+check(wz.eval("__ns.Wizard.State().page") == "plates" and wz.eval("__card('plates', 'off').radio.checked")
+      and wz.eval("__card('friends', 'off').radio.checked") and wz.eval("__ns.Wizard.State().ui.next.text") == "Finish"
+      and wz.eval("__ns.Wizard.State().ui.step.text") == "Step 6 of 6",
+      "Nameplates: the last step, both rows Off as the settings start, says Finish")
+wz.execute("__showPlate('nameplate1', { reaction = 2 }); __pick('plates', 'dots'); __pick('friends', 'on')")
+run(wz, 0.3)
+check(wz.eval("SmoothAnimatedBarsDB.plateHealth") is True and wz.eval("SmoothAnimatedBarsDB.plateDots") is True
+      and wz.eval("SmoothAnimatedBarsDB.plateFriendly") is True
+      and wz.eval("(select(2, __liquid(__plates.nameplate1.UnitFrame.HealthBarsContainer.healthBar)))") > 0
+      and wz.eval("__card('plates', 'dots').radio.checked") and wz.eval("__card('friends', 'on').radio.checked"),
+      "With your DoTs and friends on: applied at once, the mob's nameplate takes the liquid")
+wz.execute("__pick('plates', 'liquid')")
+check(wz.eval("SmoothAnimatedBarsDB.plateDots") is False and wz.eval("__card('plates', 'liquid').radio.checked"),
+      "Liquid alone: the DoTs on nameplates off")
+wz.execute("__pick('plates', 'off')")
+check(wz.eval("SmoothAnimatedBarsDB.plateHealth") is False and wz.eval("__card('plates', 'off').radio.checked")
+      and wz.eval("(select(2, __liquid(__plates.nameplate1.UnitFrame.HealthBarsContainer.healthBar)))") == 0,
+      "Off: the nameplate back to the game's bar")
 wz.execute("__press('skip')")
 check(not wz.eval("SmoothAnimatedBarsSetup.shown") and wz.eval("SmoothAnimatedBarsDB.targetHealth") is True
       and wz.eval("SmoothAnimatedBarsDB.healthColor") == "game" and wz.eval("SmoothAnimatedBarsDB.waves") is True
       and wz.eval("SmoothAnimatedBarsDB.targetHealthColor") == "same" and wz.eval("SmoothAnimatedBarsDB.mobClassColor") == "reaction"
       and wz.eval("SmoothAnimatedBarsDB.dots") is False and not wz.eval("__ns.Dots.IsEnabled()")
+      and wz.eval("SmoothAnimatedBarsDB.plateFriendly") is False and wz.eval("SmoothAnimatedBarsDB.plateDots") is False
       and wz.eval("SmoothAnimatedBarsDB.setupDone") is True, "Skip puts every setting back and does not ask again")
 run(wz, 0.2)
 check(wz.eval("(select(2, __liquid(TargetFrame.healthbar)))") > 0, "and the bars follow")
@@ -543,11 +563,13 @@ run(wz, 3)
 check(not wz.eval("SmoothAnimatedBarsSetup.shown"), "not opened again on the next login")
 wz.execute("SlashCmdList.SMOOTHANIMATEDBARS('setup')")
 wz.execute("__pick('bars', 'health'); __press('next'); __pick('powerColor', 'class'); __press('next'); __press('next');"
-           " __pick('effects', 'gentle'); __press('next'); __pick('dots', 'both'); __press('next')")
+           " __pick('effects', 'gentle'); __press('next'); __pick('dots', 'both'); __press('next');"
+           " __pick('plates', 'liquid'); __press('next')")
 check(not wz.eval("SmoothAnimatedBarsSetup.shown") and wz.eval("SmoothAnimatedBarsDB.playerPower") is False
       and wz.eval("SmoothAnimatedBarsDB.powerColor") == "class" and wz.eval("SmoothAnimatedBarsDB.swirl") is True
       and wz.eval("SmoothAnimatedBarsDB.bubbles") is False and wz.eval("SmoothAnimatedBarsDB.dots") is True
-      and wz.eval("SmoothAnimatedBarsDB.dotKillIcon") is True and any("All set" in m for m in chat(wz)),
+      and wz.eval("SmoothAnimatedBarsDB.dotKillIcon") is True and wz.eval("SmoothAnimatedBarsDB.plateHealth") is True
+      and any("All set" in m for m in chat(wz)),
       "/sab setup, then Finish keeps the choices")
 wz.execute("SlashCmdList.SMOOTHANIMATEDBARS('setup'); __pick('effects', 'full'); SmoothAnimatedBarsSetup:Hide()")
 check(wz.eval("SmoothAnimatedBarsDB.bubbles") is False, "closing the window (Escape) is Skip")
