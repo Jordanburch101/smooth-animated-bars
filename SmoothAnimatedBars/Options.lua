@@ -91,6 +91,11 @@ local function SameAsOptions(label)
     end
 end
 
+-- Class Color on Mobs shows under Target and again under Nameplates: one setting, one tooltip.
+local MOB_CLASS_TIP = "What Class Color shows on a mob: your target, focus or target of target, or a nameplate. "
+    .. "Reaction: red if hostile, yellow if neutral, green if friendly. Game Colour: the bar's own colour, so only "
+    .. "players show a class. Mob's Class: the class the game gives it, which most mobs do not show. Your Class: your own."
+
 local function MobOptions()
     local container = Settings.CreateControlTextContainer()
     container:Add("reaction", "Reaction")
@@ -226,11 +231,8 @@ function Options.Register(savedDB, defaultValues)
         whose = "your target's",
         health = "Same as Yours follows your own health colour. Class Color shows a targeted player's class.",
         power = "Same as Yours follows your own power colour. Class Color shows a targeted player's class." })
-    Dropdown("mobClassColor", "Class Color on Mobs",
-        "What Class Color shows when your target, focus or target of target is a mob. Reaction: red if hostile, yellow "
-        .. "if neutral, green if friendly. Game Colour: the bar's own colour, so only players show a class. Mob's "
-        .. "Class: the class the game gives it, which most mobs do not show. Your Class: your own.",
-        MobOptions, { indent = true, shown = ns.Core.TargetUsesClass })
+    Dropdown("mobClassColor", "Class Color on Mobs", MOB_CLASS_TIP, MobOptions,
+        { indent = true, shown = ns.Core.TargetUsesClass })
     Frame("Pet", "pet", "petHealthColor", "petPowerColor", SameAsOptions("Same as Yours"), { whose = "your pet's",
         health = "Same as Yours follows your own health colour; with Class Color your pet takes your class.",
         power = "Same as Yours follows your own power colour." })
@@ -251,6 +253,17 @@ function Options.Register(savedDB, defaultValues)
         "The DoT marker on enemy nameplates: on every mob carrying your damage-over-time spells, not just your "
         .. "target, the health they will still burn away turns into a liquid of their own colour. No kill icon or "
         .. "poison skulls on nameplates."), nil, { indent = true, shown = On("plateHealth") })
+    Checkbox("plateFriendly", "Friendly Nameplates",
+        "Liquid in the health bars of friendly nameplates: other players and friendly NPCs, never your own. The game "
+        .. "shows them only with friendly nameplates on (Shift+V by default), and keeps them to itself in dungeons. "
+        .. "At most 10 get it, apart from the enemies'.")
+    Dropdown("plateFriendlyColor", "Colour",
+        "Game Colour takes the nameplate's own, as the game draws it (green for friendly NPCs). Class Color shows "
+        .. "other players' classes where the game tells it. Same as Enemy Nameplates follows that colour.",
+        SameAsOptions("Same as Enemy Nameplates"), { indent = true, shown = On("plateFriendly") })
+    -- Class Color on Mobs again, the same setting as under Target, shown while a nameplate colour is Class Color.
+    Row(Settings.CreateDropdownInitializer(registered.mobClassColor, MobOptions, MOB_CLASS_TIP), nil,
+        { indent = true, shown = ns.Core.PlatesUseClass })
 
     Header("Effects")
     Checkbox("waves", "Liquid Waves", "Wobbling liquid front that ripples when the bar changes.")

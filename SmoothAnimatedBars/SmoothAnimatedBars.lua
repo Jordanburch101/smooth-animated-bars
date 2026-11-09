@@ -21,6 +21,8 @@ local DEFAULTS = {
     totPower     = true,
     -- Enemy nameplates' health (Bars.lua), off until it has been tried in a crowd
     plateHealth  = false,
+    -- Friendly nameplates' health, the same way (outside instances: the game keeps those there to itself)
+    plateFriendly = false,
     -- The DoT marker on enemy nameplates (Marker.lua), with plateHealth
     plateDots    = false,
     -- Colours: "game" for the bar's own colour, or a theme key (Themes.lua)
@@ -37,6 +39,8 @@ local DEFAULTS = {
     totHealthColor    = "same",
     totPowerColor     = "same",
     plateHealthColor  = "same",
+    -- Friendly nameplates: their own colour by default, or "same" for the enemy plates'
+    plateFriendlyColor = "game",
     -- What Class Color gives a mob: "reaction", "game" (the bar's own colour), "class" (its own) or "own" (the player's)
     mobClassColor = "reaction",
     -- Effects, read live by the liquid
@@ -77,8 +81,10 @@ local COLOR_KEYS = {
     focus  = { health = "focusHealthColor", power = "focusPowerColor" },
     tot    = { health = "totHealthColor", power = "totPowerColor" },
     plate  = { health = "plateHealthColor" },
+    friend = { health = "plateFriendlyColor" },
 }
-local FOLLOWS = { target = "player", pet = "player", focus = "target", tot = "target", plate = "target" }
+local FOLLOWS = { target = "player", pet = "player", focus = "target", tot = "target", plate = "target",
+                  friend = "plate" }
 
 -- The colour a frame's bar of this kind ("health" or "power") shows: "game" or a theme key, "same" followed through.
 function Core.ColorChoice(frame, kind)
@@ -89,15 +95,28 @@ end
 
 -- Whether a bar of the target, the focus or a target of target shows Class Color: only then does what Class Color
 -- shows on mobs matter.
-function Core.TargetUsesClass()
-    for _, frame in ipairs({ "target", "focus", "tot", "plate" }) do
+-- The on/off setting of a frame's bar of this kind: friendly nameplates have one setting of their own.
+local function FrameOn(frame, kind)
+    if frame == "friend" then return kind == "health" and Core.Get("plateFriendly") end
+    return Core.Get(frame .. (kind == "health" and "Health" or "Power"))
+end
+
+local function UsesClass(frames)
+    for _, frame in ipairs(frames) do
         for kind in pairs(COLOR_KEYS[frame]) do
-            if Core.Get(frame .. (kind == "health" and "Health" or "Power")) and Core.ColorChoice(frame, kind) == "class" then
-                return true
-            end
+            if FrameOn(frame, kind) and Core.ColorChoice(frame, kind) == "class" then return true end
         end
     end
     return false
+end
+
+function Core.TargetUsesClass()
+    return UsesClass({ "target", "focus", "tot" })
+end
+
+-- The same for the enemy and friendly nameplates, whose mobs follow Class Color on Mobs too.
+function Core.PlatesUseClass()
+    return UsesClass({ "plate", "friend" })
 end
 
 local BAR_KEYS = { "playerHealth", "playerPower", "targetHealth", "targetPower", "petHealth", "petPower", "focusHealth",
@@ -121,6 +140,7 @@ local SETTING_APPLY = {
     manaBuild   = function() ns.ManaRule.Apply() end,
     plateHealth = function() ApplyBars(false); ns.Marker.Apply() end,
     plateDots   = function() ns.Marker.Apply() end,
+    plateFriendly = function() ApplyBars(false) end,
 }
 for _, key in ipairs(BAR_KEYS) do SETTING_APPLY[key] = function() ApplyBars(true) end end
 for frame, keys in pairs(COLOR_KEYS) do

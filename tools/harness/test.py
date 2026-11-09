@@ -191,7 +191,7 @@ keys = [r.key for r in rows if r.key]
 check(keys == ["playerHealth", "healthColor", "playerPower", "powerColor", "targetHealth", "targetHealthColor",
                "targetPower", "targetPowerColor", "mobClassColor", "petHealth", "petHealthColor", "petPower",
                "petPowerColor", "focusHealth", "focusHealthColor", "focusPower", "focusPowerColor", "totHealth",
-               "totHealthColor", "totPower", "totPowerColor", "plateHealth", "plateHealthColor", "plateDots",
+               "totHealthColor", "totPower", "totPowerColor", "plateHealth", "plateHealthColor", "plateDots", "plateFriendly", "plateFriendlyColor", "mobClassColor",
                "waves", "swirl", "bubbles", "sparkles", "ambient", "lightning", "dots", "dotKillIcon", "heals", "manaBuild"],
       f"settings page rows: {keys}")
 check(not lua.eval("__sharedListTainted"), "nothing added to the game's shared settings list (Forever: Social blocked)")
@@ -1581,7 +1581,7 @@ check(any("enemy nameplates: on, 15 with the liquid" in m for m in chat(np)), "/
 run(np, 11)
 np.execute("__chat = {}; SlashCmdList.SMOOTHANIMATEDBARS('perf')")
 perf = chat(np)
-check(any("unit frames: 12 liquids" in m for m in perf) and any("enemy nameplates: 15 liquids" in m for m in perf)
+check(any("unit frames: 12 liquids" in m for m in perf) and any("nameplates: 15 liquids" in m for m in perf)
       and any("per nameplate" in m for m in perf) and any("addon memory" in m for m in perf),
       "/sab perf times the unit frames and the plates apart: " + " | ".join(perf))
 np.execute("__combat = true; SlashCmdList.SMOOTHANIMATEDBARS('perf 26 Mobs Pulled'); __combat = false")
@@ -1730,6 +1730,94 @@ check(pd.eval("(function() local _, _, m = __ns.Marker.State(); "
 pd.execute("SlashCmdList.SMOOTHANIMATEDBARS('dots')")
 check(any("DoT marker on nameplates: off" in m for m in chat(pd)), "/sab dots reports the plates' marker")
 check(not any("Error in" in m for m in chat(pd)), "no errors")
+
+print("== friendly nameplates")
+fp = session("{ setupDone = true, heals = false, manaBuild = false, plateHealth = true }")
+fp.execute("""
+    function __pbar(token) return __plates[token].UnitFrame.HealthBarsContainer.healthBar end
+    function __shown(token) return (select(2, __liquid(__pbar(token)))) > 0 end
+    __showPlate('nameplate1', { reaction = 2 })
+    __showPlate('nameplate2', { friendly = true, reaction = 5, color = { 0.1, 0.9, 0.1 } })
+""")
+run(fp, 0.3)
+check(fp.eval("__shown('nameplate1')") and not fp.eval("__shown('nameplate2')")
+      and fp.eval("__pbar('nameplate2').fill.alpha") == 1, "off by default: enemies only, friends keep the game's bar")
+fp.execute("__settings.plateFriendly:SetValue(true)")
+run(fp, 0.3)
+check(fp.eval("__shown('nameplate2')") and fp.eval("__pbar('nameplate2').fill.alpha") == 0,
+      "turned on: a friendly plate already showing gets the liquid")
+r, g, b = fp.eval("__tint(__pbar('nameplate2'))")
+check(g > 0.5 and r < 0.4, f"in the plate's own colour, green for a friendly NPC ({r:.2f}, {g:.2f}, {b:.2f})")
+fp.execute("__showPlate('nameplate3', { isOtherPlayer = true, friendly = true, reaction = 5, class = 'MAGE', color = { 0.1, 0.9, 0.1 } })")
+run(fp, 0.3)
+check(fp.eval("__shown('nameplate3')"), "another player's plate gets it too")
+fp.execute("__settings.plateHealthColor:SetValue('fire')")
+run(fp, 0.7)
+r, g, b = fp.eval("__tint(__pbar('nameplate2'))")
+r1, g1, b1 = fp.eval("__tint(__pbar('nameplate1'))")
+check(g > 0.5 and r < 0.4 and r1 > 0.6, f"friends keep their own colour while the enemies take Fire ({r:.2f}, {g:.2f}, {b:.2f})")
+fp.execute("__settings.plateFriendlyColor:SetValue('same')")
+run(fp, 0.7)
+r, g, b = fp.eval("__tint(__pbar('nameplate2'))")
+check(abs(r - r1) < 0.05 and abs(g - g1) < 0.05, f"Same as Enemy Nameplates: Fire too ({r:.2f}, {g:.2f}, {b:.2f})")
+def mob_rows(lua):
+    rows = lua.eval("__settingsRows()")
+    return [rows[i] for i in range(1, len(rows) + 1) if rows[i].key == "mobClassColor"]
+
+
+check(not any(r.frame.shown for r in mob_rows(fp)), "no nameplate or target on Class Color: Class Color on Mobs hidden")
+fp.execute("__settings.plateFriendlyColor:SetValue('class')")
+run(fp, 0.7)
+under_target, under_plates = mob_rows(fp)
+check(under_plates.frame.shown and under_plates.indent and not under_target.frame.shown,
+      "friendly nameplates on Class Color: Class Color on Mobs shows under Nameplates, not under Target")
+check(fp.eval("""(function()
+    local found = {}
+    for _, r in ipairs(__settingsRows()) do
+        if r.key == "mobClassColor" then found[#found + 1] = r.frame.initializer.data.setting end
+    end
+    return #found == 2 and found[1] == found[2]
+end)()"""), "both rows are the same setting")
+r, g, b = fp.eval("__tint(__pbar('nameplate3'))")
+check(b > 0.6 and r < 0.5, f"Class Color: another player in their class colour, a mage blue ({r:.2f}, {g:.2f}, {b:.2f})")
+r, g, b = fp.eval("__tint(__pbar('nameplate2'))")
+check(g > 0.5 and r < 0.4, f"and a friendly NPC by its reaction, green ({r:.2f}, {g:.2f}, {b:.2f})")
+fp.execute("__settings.plateFriendlyColor:SetValue('game'); __settings.plateHealthColor:SetValue('class')")
+run(fp, 0.3)
+check(mob_rows(fp)[1].frame.shown, "enemy nameplates on Class Color show it under Nameplates too")
+fp.execute("__settings.plateHealthColor:SetValue('same')")
+run(fp, 0.7)
+fp.execute("__showPlate('nameplate4', { friendly = true, reaction = 5 }, { forbidden = true })")
+run(fp, 1.5)
+check(not any("Error in" in m for m in chat(fp)), "a forbidden friendly plate (in an instance) is passed over without an error")
+fp.execute("__settings.plateDots:SetValue(true); __settings.plateHealth:SetValue(false)")
+run(fp, 0.3)
+check(not fp.eval("__shown('nameplate1')") and fp.eval("__pbar('nameplate1').fill.alpha") == 1
+      and fp.eval("__shown('nameplate2')") and fp.eval("__shown('nameplate3')"),
+      "enemies off, friends on: each side on its own")
+check(fp.eval("next(__ns.Bars.Plates()) == nil"), "the DoT marker is offered enemy plates only")
+fp.execute("__settings.plateHealth:SetValue(true)")
+fp.execute("for i = 10, 30 do __showPlate('nameplate' .. i, { friendly = true, isOtherPlayer = true, reaction = 5 }) end")
+fp.execute("for i = 40, 44 do __showPlate('nameplate' .. i, { reaction = 2 }) end")
+run(fp, 0.3)
+counts = fp.eval("""(function()
+    local friends, enemies = 0, 0
+    for token, base in pairs(__plates) do
+        local bar = base.UnitFrame and base.UnitFrame.HealthBarsContainer.healthBar
+        if bar and select(2, __liquid(bar)) > 0 then
+            if __units[token].friendly then friends = friends + 1 else enemies = enemies + 1 end
+        end
+    end
+    return friends .. "/" .. enemies
+end)()""")
+check(counts == "10/6", f"a city's crowd of friends: 10 of them get it, and the enemies keep their own slots ({counts})")
+fp.execute("SlashCmdList.SMOOTHANIMATEDBARS('debug')")
+check(any("friendly: on, 10 (at most 10)" in m for m in chat(fp)), "/sab debug counts each side")
+fp.execute("__settings.plateFriendly:SetValue(false)")
+run(fp, 0.3)
+check(not fp.eval("__shown('nameplate2')") and fp.eval("__pbar('nameplate2').fill.alpha") == 1
+      and fp.eval("__shown('nameplate40')"), "friends off again: their bars go back to the game's, the enemies keep theirs")
+check(not any("Error in" in m for m in chat(fp)), "no errors")
 
 if failures:
     print(f"\n{len(failures)} check(s) failed:")

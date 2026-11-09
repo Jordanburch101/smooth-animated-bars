@@ -145,7 +145,15 @@ Facts found while building this, which the code relies on and which are not obvi
   liquid is built once per bar and follows its unit, waits for the unit frame, and gives the game's fill back on
   removal before the bar is reused. The bar has no mask, so the clip frame is the bar itself. Forbidden plates
   (`FORBIDDEN_NAME_PLATE_*`, friendly plates in instances) are never handed to addons. At most `MAX_PLATES` (15)
-  have the liquid, idling at 20 fps. `/sab perf` times the updates with `debugprofilestop`, unit frames and plates
+  have the liquid, idling at 20 fps. Friendly plates (`plateFriendly`) are a side of their own (`Side`: by
+  `UnitCanAttack`, never the player's own plate, nothing when the answer is secret) with their own cap
+  (`MAX_FRIENDLY`, 10), so a city cannot take the enemies' slots; the DoT marker gets enemy plates only. Not yet
+  seen in game: friendly plates, and what colour Forever gives other players' plates. On a plate (10 px, half a
+  unit frame bar) the swirl texture (64 px a repeat) shows as a thin slice, so veins and lightning show less than on
+  the unit frames. Drawing them at half size and brighter, with more lightning, was tried in game and the plain look
+  was preferred, so plates draw the liquid exactly as the unit frames do. The game darkens every plate but the target's
+  (`deselectedOverlay`, the bar's OVERLAY layer, likely over the liquid as the text is; not checked); that is
+  the game's frame, so it stays. `/sab perf` times the updates with `debugprofilestop`, unit frames and plates
   apart; the mock's numbers are mostly the mock's own cost, so only the game's say anything. Addons cannot write
   files, so each `/sab perf` is kept in `SmoothAnimatedBarsDB.perfLog` (last 50), which the client writes on
   `/reload`; `tools/perf_report.py` turns the newest saved file under Forever's WTF folder into

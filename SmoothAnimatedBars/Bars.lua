@@ -36,6 +36,7 @@ local SPILL = 16         -- how far motes can fly above, below and past the end 
 -- Enemy nameplates (the plateHealth setting). There can be a crowd of them, so they idle slower, and past MAX_PLATES
 -- the rest keep the game's own fill until a plate with the liquid goes.
 local MAX_PLATES = 15
+local MAX_FRIENDLY = 10           -- friendly plates apart, so a city full of players cannot take the enemies' slots
 local PLATE_IDLE_FPS = 20
 local PLATE_W, PLATE_H = 110, 10  -- a plate's bar, until the client says (its size can be secret)
 local PLATE_COLOR_EVERY = 0.5     -- seconds between looks at a plate's own colour (it greys once tapped)
@@ -555,8 +556,9 @@ end
 -- Nameplates
 --------------------------------------------------------------------------------
 
+-- Enemy plates (plateHealth) and friendly ones (plateFriendly), each switched on by itself.
 local function PlatesWanted()
-    return ns.Core.Get("plateHealth") and true or false
+    return (ns.Core.Get("plateHealth") or ns.Core.Get("plateFriendly")) and true or false
 end
 
 local function Count(t)
@@ -577,10 +579,34 @@ local function PlateBar(token)
     if type(bar) == "table" and bar.GetStatusBarTexture and bar.GetValue then return bar end
 end
 
--- Only plates the player can attack get the liquid. An answer the client keeps secret counts as no.
+-- Whether the player can attack the unit: true, false, or nil when the client will not say.
 local function IsEnemy(token)
     local ok, can = pcall(UnitCanAttack, "player", token)
-    return ok and not Secret(can) and can == true
+    if not ok or Secret(can) then return nil end
+    return can == true
+end
+
+-- Which liquid a plate gets: "enemy", "friend", or nil for none (that side switched off, the player's own plate, or
+-- a unit the client will not say about).
+local function Side(token)
+    local ok, me = pcall(UnitIsUnit, token, "player")
+    if ok and not Secret(me) and me then return nil end
+    local enemy = IsEnemy(token)
+    if enemy == nil then return nil end
+    if enemy then return ns.Core.Get("plateHealth") and "enemy" or nil end
+    return ns.Core.Get("plateFriendly") and "friend" or nil
+end
+
+-- How many plates of a side have the liquid, and how many may.
+local function CountSide(side)
+    local n = 0
+    for _, b in pairs(plateOf) do
+        if b.side == side then n = n + 1 end
+    end
+    return n
+end
+local function Cap(side)
+    return side == "enemy" and MAX_PLATES or MAX_FRIENDLY
 end
 
 local function DetachPlate(token)
@@ -600,22 +626,23 @@ local function DetachPlate(token)
     end
 end
 
--- Put the liquid on a plate. True when done or not wanted (a friend, the player's own plate), false to try again later.
+-- Put the liquid on a plate. True when done or not wanted (a side switched off, the player's own plate), false to try
+-- again later.
 local function AttachPlate(token)
-    if not IsEnemy(token) then return true end
+    local side = Side(token)
+    if not side then return true end
     local bar = PlateBar(token)
     if not bar then return false end
     local b = plates[bar]
     -- The bar may still be on the books for a token whose removal came after its next use.
     if b and b.token and b.token ~= token and plateOf[b.token] == b then plateOf[b.token] = nil end
+    if not plateOf[token] and CountSide(side) >= Cap(side) then return false end
     if not b then
-        if Count(plateOf) >= MAX_PLATES then return false end
         b = NewBar({ key = "plateHealth", frame = "plate", unit = token, kind = "health", plate = true }, bar)
         plates[bar] = b
-    elseif not plateOf[token] and Count(plateOf) >= MAX_PLATES then
-        return false
     end
-    b.token, b.unit, b.spot.unit = token, token, token
+    b.token, b.unit, b.spot.unit, b.side = token, token, token, side
+    b.spot.frame = side == "friend" and "friend" or "plate" -- whose colour setting it takes
     b.err, b.colorIn = nil, PLATE_COLOR_EVERY
     plateOf[token] = b
     ApplyColor(b, true)
@@ -629,7 +656,7 @@ local function TryPending()
     for token, at in pairs(pending) do
         if AttachPlate(token) then
             pending[token] = nil
-        elseif now - at > PLATE_WAIT and Count(plateOf) < MAX_PLATES then
+        elseif now - at > PLATE_WAIT and not PlateBar(token) then
             pending[token] = nil -- no unit frame came: a forbidden plate, or gone again
         end
     end
@@ -649,6 +676,10 @@ end
 
 local function ApplyPlates()
     if PlatesWanted() then
+        -- A side just switched off lets its plates go.
+        for token, b in pairs(plateOf) do
+            if Side(token) ~= b.side then DetachPlate(token) end
+        end
         ScanPlates()
         TryPending()
     else
@@ -858,7 +889,7 @@ end
 function Bars.Plates()
     local out = {}
     for token, b in pairs(plateOf) do
-        if b.live and not b.err then out[token] = b.bar end
+        if b.live and not b.err and b.side == "enemy" then out[token] = b.bar end
     end
     return out
 end
@@ -1007,8 +1038,9 @@ function Bars.Debug()
                 b.err and (", error: " .. b.err) or "")
         end
     end
-    out[#out + 1] = string.format("enemy nameplates: %s, %d with the liquid (at most %d), %d built, %d waiting",
-        PlatesWanted() and "on" or "off", Count(plateOf), MAX_PLATES, Count(plates), Count(pending))
+    out[#out + 1] = string.format("enemy nameplates: %s, %d with the liquid (at most %d); friendly: %s, %d (at most %d); "
+        .. "%d built, %d waiting", ns.Core.Get("plateHealth") and "on" or "off", CountSide("enemy"), MAX_PLATES,
+        ns.Core.Get("plateFriendly") and "on" or "off", CountSide("friend"), MAX_FRIENDLY, Count(plates), Count(pending))
     return out
 end
 
@@ -1040,7 +1072,7 @@ function Bars.Perf()
     end
     out[#out + 1] = string.format("Over the last %d s (%d frames):", #perf.done, frames)
     out[#out + 1] = Line("unit frames", unitMs, units)
-    out[#out + 1] = Line("enemy nameplates", plateMs, platesLive)
+    out[#out + 1] = Line("nameplates", plateMs, platesLive)
     if platesLive > 0 then
         out[#out + 1] = string.format("  that is %.3f ms a frame per nameplate", plateMs / frames / platesLive)
     end
