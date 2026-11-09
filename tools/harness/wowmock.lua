@@ -448,6 +448,11 @@ function StatusBar:GetMinMaxValues() return self.min, self.max end
 function StatusBar:SetValue(v, interpolation) self.value, self.interpolation = v, interpolation end
 function StatusBar:GetValue() return self.value end
 function StatusBar:GetStatusBarTexture() return self.fill end
+function StatusBar:SetStatusBarColor(r, g, b) self.barColor = { r, g, b } end
+function StatusBar:GetStatusBarColor()
+    local c = self.barColor or { 1, 1, 1 }
+    return c[1], c[2], c[3], 1
+end
 function StatusBar:SetReverseFill(v) self.reverse = v end
 function StatusBar:SetStatusBarTexture(t)
     assert(type(t) == "table" and t.kind == "Texture", "SetStatusBarTexture takes a texture here")
@@ -519,15 +524,26 @@ TargetFrame.TargetFrameContainer.Portrait = TargetFrame.TargetFrameContainer:Cre
 
 -- The target: nil for none, else { guid, name, dead }. Its health is secret like the player's.
 __target = nil
+-- A nameplate's unit (__units.nameplateN, set by __showPlate) exists, has its guid and can be dead like the target.
+local function plateUnit(unit)
+    return type(unit) == "string" and unit:match("^nameplate%d+$") and __units[unit] or nil
+end
 function UnitExists(unit)
     if unit == "player" then return true end
+    if plateUnit(unit) then return true end
     return unit == "target" and __target ~= nil
 end
 function UnitGUID(unit)
     if unit == "player" then return "Player-1-00000001" end
     if unit == "target" and __target then return __target.guid end
+    local u = plateUnit(unit)
+    if u then return u.guid end
 end
-function UnitIsDead(unit) return unit == "target" and __target ~= nil and __target.dead or false end
+function UnitIsDead(unit)
+    local u = plateUnit(unit)
+    if u then return u.dead or false end
+    return unit == "target" and __target ~= nil and __target.dead or false
+end
 function UnitIsDeadOrGhost(unit)
     if unit == "player" then return __player.dead or false end
     return UnitIsDead(unit)
@@ -542,8 +558,13 @@ function UnitCanAssist(_, unit)
     if unit == "player" then return true end
     return unit == "target" and __target ~= nil and (__target.friendly or __target.isPlayer) or false
 end
-function UnitCanAttack(_, unit) return unit == "target" and __target ~= nil and not __target.friendly
-    and not __target.isPlayer end
+function UnitCanAttack(_, unit)
+    if type(unit) == "string" and unit:match("^nameplate%d+$") then
+        local u = __units[unit]
+        return u ~= nil and not u.friendly and not u.isPlayer
+    end
+    return unit == "target" and __target ~= nil and not __target.friendly and not __target.isPlayer
+end
 function GetComboPoints() return 0 end
 -- Wall-clock seconds, as the client's time(): moves with the mock's clock.
 __epoch = 1800000000
@@ -765,6 +786,84 @@ function __settingsRows()
         end
     end
     return out
+end
+
+-- Nameplates (Blizzard_NamePlates, forever branch): each token's plate base frame gets a unit frame from the game's
+-- pool when the plate shows (NamePlateBaseMixin:AcquireUnitFrame) and gives it back when it goes, so one health bar
+-- shows mob after mob. The health bar is UnitFrame.HealthBarsContainer.healthBar, with no mask. Forbidden plates
+-- (friendly plates in instances) are not handed to addons at all.
+__plates, __platePool = {}, {}
+local plateBases = {}
+local function NewPlateUnitFrame()
+    local uf = CreateFrame("Button", nil, UIParent)
+    uf.HealthBarsContainer = CreateFrame("Frame", nil, uf)
+    uf.HealthBarsContainer.healthBar = NewStatusBar("NamePlate.healthBar", uf.HealthBarsContainer, 110, 10)
+    return uf
+end
+-- __showPlate(token, unit, opts): the unit goes into __units[token] ({ friendly, isOtherPlayer, color, reaction });
+-- opts.forbidden makes the plate forbidden; opts.late hands out its unit frame only after NAME_PLATE_UNIT_ADDED.
+function __showPlate(token, unit, opts)
+    opts = opts or {}
+    __units[token] = unit
+    local base = plateBases[token] or CreateFrame("Frame", nil, UIParent)
+    plateBases[token] = base
+    base.forbidden = opts.forbidden
+    local function acquire()
+        local uf = table.remove(__platePool) or NewPlateUnitFrame()
+        uf:SetParent(base)
+        uf:Show()
+        base.UnitFrame, base.unitToken = uf, token
+        local hb = uf.HealthBarsContainer.healthBar
+        hb:SetMinMaxValues(0, __secret())
+        hb:SetValue(__secret())
+        local c = unit.color or { 0.9, 0.1, 0.1 }
+        hb:SetStatusBarColor(c[1], c[2], c[3])
+    end
+    __plates[token] = base
+    if not opts.late then acquire() end
+    __fire("NAME_PLATE_UNIT_ADDED", token)
+    if opts.late then acquire() end
+    return base
+end
+function __hidePlate(token)
+    local base = __plates[token]
+    __fire("NAME_PLATE_UNIT_REMOVED", token)
+    if base.UnitFrame then
+        base.UnitFrame:Hide()
+        table.insert(__platePool, base.UnitFrame)
+        base.UnitFrame = nil
+    end
+    base.unitToken, __plates[token], __units[token] = nil, nil, nil
+end
+C_NamePlate = {
+    GetNamePlateForUnit = function(token)
+        assert(type(token) == "string", "GetNamePlateForUnit needs a unit token")
+        local base = __plates[token]
+        if base and not base.forbidden then return base end
+    end,
+    GetNamePlates = function()
+        local out = {}
+        for _, base in pairs(__plates) do
+            if not base.forbidden then out[#out + 1] = base end
+        end
+        return out
+    end,
+}
+
+-- Where the player is: __zone, and __instance as GetInstanceInfo's type ("none", "party", "raid"...).
+__zone, __instance = "Elwynn Forest", "none"
+function GetRealZoneText() return __zone end
+function GetInstanceInfo() return __zone, __instance end
+date = os.date
+
+-- The client's millisecond timer, its frame rate and the addon's memory.
+function debugprofilestop() return os.clock() * 1000 end
+__fps = 60
+function GetFramerate() return __fps end
+function UpdateAddOnMemoryUsage() end
+function GetAddOnMemoryUsage(name)
+    assert(type(name) == "string" or type(name) == "number", "GetAddOnMemoryUsage needs an addon")
+    return collectgarbage("count")
 end
 
 __markCFunctions()

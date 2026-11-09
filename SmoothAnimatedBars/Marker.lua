@@ -142,6 +142,7 @@ end
 
 -- Sends count skulls up off liquid d of marker m: bursts follow the Sparkles setting, the steady ones Ambient.
 local function EmitSkulls(m, d, count, steady)
+    if m.spec.plate then return end -- model frames are too heavy for a crowd of nameplates
     local pool = SkullPool()
     if not pool or not ns.Core.Get(steady and "ambient" or "sparkles") then return end
     local host = m.spec.iconHost
@@ -222,10 +223,26 @@ local function ClearSkulls(m)
     end
 end
 
--- A DoT liquid's theme by key: the unit frames' version of the theme (Bars.Theme), with its look's changes.
-local function DotTheme(key)
+-- On an enemy nameplate the health is the plate's own red, which Blood's red all but matches (seen in game: a bleed
+-- did not show), so a bleed there is a dark crimson. Lighter blood, toward white, looked pink in game; dark keeps it
+-- blood and stands apart by brightness. Its front stays bright, so the edge where it meets the health shows.
+local PLATE_LOOKS = {
+    blood = { colors = {
+        fillA = { 0.25, 0.00, 0.03 }, fillB = { 0.55, 0.02, 0.06 }, tip = { 1.00, 0.55, 0.55 }, glow = { 0.80, 0.15, 0.15 },
+        swirlA = { 0.85, 0.25, 0.25 }, swirlB = { 0.70, 0.10, 0.18 },
+    } },
+}
+
+-- A DoT liquid's theme by key: the unit frames' version of the theme (Bars.Theme), with its look's changes, and on a
+-- nameplate (plate) its plate look's.
+local function DotTheme(key, plate)
     local base = ns.Bars.Theme(key)
     local look = LookFor(key)
+    local plateLook = plate and PLATE_LOOKS[key]
+    if plateLook then
+        base = setmetatable({}, { __index = base })
+        for field, value in pairs(plateLook.colors) do base[field] = value end
+    end
     if not look then return base end
     local t = setmetatable({}, { __index = base })
     for field, value in pairs(look) do
@@ -280,10 +297,12 @@ end
 
 -- spec: { bar = the health bar, mask = its mask or nil, iconHost = the frame the kill icon belongs to,
 -- portrait = the region it sits on, source = function() returning max, health, total, list (max and health
--- may be secret; list as Dots.Target's), visible = function() whether the target is there }.
+-- may be secret; list as Dots.Target's), visible = function() whether the target is there, plate = true on an
+-- enemy nameplate: no kill icon, no skulls, clipped to the bar }.
 local function New(spec)
     local bar = spec.bar
     local w, h = ns.Bars.Size(bar, 1, 1)
+    local spill = spec.plate and 0 or SPILL
     local m = { spec = spec, bar = bar, value = 0, since = REFRESH_EVERY, feed = 0, pulse = 0,
                 width = w, height = h, fresh = true, liquids = {} }
 
@@ -295,8 +314,8 @@ local function New(spec)
     -- From the bar's left edge, with room for the motes above, below and past the end (as Bars.lua's clip).
     m.clip = CreateFrame("Frame", nil, bar)
     AtParentLevel(m.clip, bar)
-    m.clip:SetPoint("TOPLEFT", bar, "TOPLEFT", 0, SPILL)
-    m.clip:SetPoint("BOTTOMRIGHT", bar, "BOTTOMRIGHT", SPILL, -SPILL)
+    m.clip:SetPoint("TOPLEFT", bar, "TOPLEFT", 0, spill)
+    m.clip:SetPoint("BOTTOMRIGHT", bar, "BOTTOMRIGHT", spill, -spill)
     m.clip:SetClipsChildren(true)
     m.clip:Hide()
 
@@ -353,7 +372,7 @@ local function New(spec)
     m.killBar = HiddenBar(m.window)
     m.killBar:SetPoint("RIGHT", m.window, "RIGHT")
     m.icon = m.killBar:CreateTexture(nil, "OVERLAY")
-    m.hasIcon = Marker.KillIcon(m.icon)
+    m.hasIcon = not spec.plate and Marker.KillIcon(m.icon)
     m.icon:SetPoint("RIGHT", m.killBar:GetStatusBarTexture(), "RIGHT")
     local iw, ih = m.icon:GetSize()
     m.window:SetSize(iw, ih)
@@ -442,6 +461,8 @@ local function Refresh(m)
     if not spec.visible() then return false end
     local max, health, total, list = spec.source()
     if not list or #list == 0 or total <= 0 then return false end
+    -- Dots.lua says "applied" only for the target; on a nameplate a DoT landing shows as more damage to come.
+    if spec.plate and not m.fresh and total > m.value + 0.5 then landed = true end
 
     local groups = Groups(list)
     local running = 0
@@ -451,7 +472,7 @@ local function Refresh(m)
             local key = SCHOOL_THEMES[g.school] or DEFAULT_THEME
             if key ~= d.themeKey then
                 d.themeKey = key
-                d.liquid:SetTheme(DotTheme(key))
+                d.liquid:SetTheme(DotTheme(key, spec.plate))
             end
             -- A tick (less to come) ripples its liquid.
             if not landed and running + g.damage < d.value - 0.5 and d.pool:IsShown() then
@@ -607,9 +628,71 @@ local function TargetSource()
     return max, UnitHealth("target"), total, list
 end
 
+--------------------------------------------------------------------------------
+-- Enemy nameplates (the plateDots setting, with plateHealth)
+--------------------------------------------------------------------------------
+-- The game hands each plate's health bar from mob to mob (Bars.lua), so a marker is built per bar, the first time
+-- the mob on it carries the player's DoTs, and follows whichever mob the bar shows. Dots.lua keeps DoTs per mob, so
+-- a mob dotted and then left keeps its marker on its plate.
+
+local plateMarkers = {} -- plate health bar -> marker
+local platesLive = false
+local plateErr          -- an error in matching markers to plates turns them off until a reload
+local plateSince = REFRESH_EVERY
+
+local function PlatesWanted()
+    return ns.Core.Get("plateDots") and ns.Core.Get("plateHealth") and true or false
+end
+
+local function PlateThere(spec)
+    local token = spec.token
+    if not token or not UnitExists(token) then return false end
+    local ok, dead = pcall(UnitIsDead, token)
+    return not (ok and not Secret(dead) and dead)
+end
+
+local function NewPlateMarker(bar)
+    local spec = { bar = bar, iconHost = bar, plate = true }
+    spec.visible = function() return PlateThere(spec) end
+    spec.source = function()
+        local total, list = ns.Dots.Unit(spec.token)
+        local _, max = bar:GetMinMaxValues()
+        return max, UnitHealth(spec.token), total, list
+    end
+    local m = New(spec)
+    plateMarkers[bar] = m
+    return m
+end
+
+-- Matches the markers to the plates showing the liquid, every REFRESH_EVERY.
+local function SyncPlates(dt)
+    plateSince = plateSince + dt
+    if plateSince < REFRESH_EVERY then return end
+    plateSince = 0
+    local live = platesLive and ns.Bars.Plates() or {}
+    local tokenOn = {}
+    for token, bar in pairs(live) do tokenOn[bar] = token end
+    for bar, m in pairs(plateMarkers) do
+        local token = tokenOn[bar]
+        if token ~= m.spec.token then
+            Hide(m) -- another mob on this bar now, or none
+            m.spec.token, m.value = token, 0
+        end
+        m.live = token ~= nil
+    end
+    for token, bar in pairs(live) do
+        if not plateMarkers[bar] and ns.Dots.Unit(token) > 0 then
+            local m = NewPlateMarker(bar)
+            m.spec.token, m.live = token, true
+            m.since = REFRESH_EVERY
+        end
+    end
+end
+
 local function Each(fn)
     if target then fn(target) end
     for _, m in ipairs(previews) do fn(m) end
+    for _, m in pairs(plateMarkers) do fn(m) end
 end
 
 -- An error in a marker is reported once and that marker stays hidden; the liquid carries on.
@@ -623,13 +706,22 @@ local function OnUpdate(_, elapsed)
         skulls = false
         ns.Core.Print("Error in the DoT marker's skulls, which are off until a reload: " .. tostring(errSkulls))
     end
+    if platesLive and not plateErr then
+        local ok, err = pcall(SyncPlates, dt)
+        if not ok then
+            plateErr = tostring(err)
+            for _, m in pairs(plateMarkers) do m.live = false; pcall(Hide, m) end
+            ns.Core.Print("Error in the DoT marker on nameplates, which is off until a reload: " .. plateErr)
+        end
+    end
     Each(function(m)
         if m.live and not m.err then
             local ok, err = pcall(Update, m, dt)
             if not ok then
                 m.err = tostring(err)
                 pcall(Hide, m)
-                ns.Core.Print("Error in the DoT marker, which is off until a reload: " .. m.err)
+                ns.Core.Print("Error in the DoT marker" .. (m.spec.plate and " on a nameplate" or "")
+                    .. ", which is off until a reload: " .. m.err)
             end
         end
     end)
@@ -649,7 +741,8 @@ end
 -- After the dots or dotKillIcon setting changes, and at login.
 function Marker.Apply()
     local want = ns.Core.Get("dots") and true or false
-    stepAside = want and OtherAddOn()
+    local wantPlates = PlatesWanted()
+    stepAside = (want or wantPlates) and OtherAddOn()
     if stepAside and not told then
         told = true
         ns.Core.Print("DoesItDie is loaded and draws its own DoT marker, so this one stays off. "
@@ -663,12 +756,19 @@ function Marker.Apply()
                            source = TargetSource, visible = TargetThere })
         end
     end
-    ns.Dots.Enable(live)
+    platesLive = wantPlates and not stepAside
+    ns.Dots.Enable(live or platesLive)
     if target then
         target.live = live
         if not live then Hide(target) end
     end
-    local any = live and target
+    if not platesLive then
+        for _, m in pairs(plateMarkers) do
+            m.live, m.spec.token = false, nil
+            Hide(m)
+        end
+    end
+    local any = (live and target) or platesLive
     for _, m in ipairs(previews) do
         m.live = want
         if not want then Hide(m) end
@@ -715,14 +815,25 @@ end)
 
 -- For the tests: the target frame's marker (nil until built) and the previews'.
 function Marker.State()
-    return target, previews
+    return target, previews, plateMarkers
 end
 
 -- For /sab dots.
+local function PlateDebug()
+    if not PlatesWanted() then return "DoT marker on nameplates: off (Your DoTs on Nameplates, with Enemy Nameplates)" end
+    local built, showing = 0, 0
+    for _, m in pairs(plateMarkers) do
+        built = built + 1
+        if m.live and m.clip:IsShown() then showing = showing + 1 end
+    end
+    return string.format("DoT marker on nameplates: %s, showing on %d, built %d%s", platesLive and "on" or "off",
+        showing, built, plateErr and (", error: " .. plateErr) or "")
+end
+
 function Marker.Debug()
-    if not ns.Core.Get("dots") then return { "DoT marker: off (DoT Marker in the settings)" } end
     if stepAside then return { "DoT marker: off while DoesItDie is loaded" } end
-    if not target then return { "DoT marker: the target frame's health bar was not found" } end
+    if not ns.Core.Get("dots") then return { "DoT marker: off (DoT Marker in the settings)", PlateDebug() } end
+    if not target then return { "DoT marker: the target frame's health bar was not found", PlateDebug() } end
     local shown = {}
     for _, d in ipairs(target.liquids) do
         if d.pool:IsShown() then shown[#shown + 1] = d.themeKey or DEFAULT_THEME end
@@ -731,5 +842,5 @@ function Marker.Debug()
         target.clip:IsShown() and "showing" or "hidden", #shown > 0 and table.concat(shown, " then ") or "none",
         target.under and " under the health liquid" or " over the game's fill", target.spec.mask and "yes" or "no",
         not target.hasIcon and "missing (no atlas)" or ns.Core.Get("dotKillIcon") and "on" or "off",
-        target.err and (", error: " .. target.err) or "") }
+        target.err and (", error: " .. target.err) or ""), PlateDebug() }
 end

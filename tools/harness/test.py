@@ -191,7 +191,7 @@ keys = [r.key for r in rows if r.key]
 check(keys == ["playerHealth", "healthColor", "playerPower", "powerColor", "targetHealth", "targetHealthColor",
                "targetPower", "targetPowerColor", "mobClassColor", "petHealth", "petHealthColor", "petPower",
                "petPowerColor", "focusHealth", "focusHealthColor", "focusPower", "focusPowerColor", "totHealth",
-               "totHealthColor", "totPower", "totPowerColor",
+               "totHealthColor", "totPower", "totPowerColor", "plateHealth", "plateHealthColor", "plateDots",
                "waves", "swirl", "bubbles", "sparkles", "ambient", "lightning", "dots", "dotKillIcon", "heals", "manaBuild"],
       f"settings page rows: {keys}")
 check(not lua.eval("__sharedListTainted"), "nothing added to the game's shared settings list (Forever: Social blocked)")
@@ -1492,6 +1492,244 @@ check(not cap.eval(f"{grid}.shown") and cap.eval("__cvars.screenshotFormat") == 
       and any("capture_art.py" in m for m in chat(cap)), "then it hides, puts the screenshot format back and says what next")
 cap.execute("__fire('SCREENSHOT_SUCCEEDED')")
 check(cap.eval("__screenshots") == 2, "a later screenshot of the player's own is left alone")
+
+print("== enemy nameplates")
+
+
+def plate_bar(token):
+    return f"__plates['{token}'].UnitFrame.HealthBarsContainer.healthBar"
+
+
+np = session()
+np.execute("__showPlate('nameplate1', { reaction = 2 })")
+run(np, 0.3)
+check(np.eval("(select(2, __liquid(" + plate_bar("nameplate1") + ")))") == 0
+      and np.eval(plate_bar("nameplate1") + ".fill.alpha") == 1, "off by default: a plate keeps the game's own fill")
+np.execute("__settings.plateHealth:SetValue(true)")
+run(np, 0.3)
+n, shown, alpha, masked, free = np.eval("__liquid(" + plate_bar("nameplate1") + ")")
+check(shown > 0 and alpha == 0, f"turned on: a plate already showing gets the liquid, game fill hidden ({shown}/{n})")
+check(masked == 0, "a plate's bar has no mask, nothing is masked")
+check(np.eval("""(function()
+    local bar = """ + plate_bar("nameplate1") + """
+    local _, clip = __ours(bar)
+    local tl, br = clip.points.TOPLEFT, clip.points.BOTTOMRIGHT
+    return clip.clipsChildren and tl.rel == bar and tl.x == 0 and tl.y == 0 and br.x == 0 and br.y == 0
+end)()"""), "its clip frame is the bar itself, so the waves stop at the bar's end")
+r, g, b = np.eval("__tint(" + plate_bar("nameplate1") + ")")
+check(r > 0.5 and g < 0.4, f"follows the target's colour, which follows the player's game colour: the plate's own red "
+      f"({r:.2f}, {g:.2f}, {b:.2f})")
+np.execute(plate_bar("nameplate1") + ":SetStatusBarColor(0.5, 0.5, 0.5)")
+run(np, 0.7)
+r, g, b = np.eval("__tint(" + plate_bar("nameplate1") + ")")
+check(abs(r - g) < 0.1 and abs(g - b) < 0.1, f"a tapped mob's grey plate turns the liquid grey ({r:.2f}, {g:.2f}, {b:.2f})")
+run(np, 3)
+np.execute("__fire('UNIT_HEALTH', 'nameplate1')")
+run(np, 0.1)
+check(np.eval("(select(2, __liquid(" + plate_bar("nameplate1") + ")))") > 0, "a health change on the plate keeps it going")
+np.execute("__showPlate('nameplate2', { friendly = true, reaction = 5 })")
+run(np, 0.2)
+check(np.eval("(select(2, __liquid(" + plate_bar("nameplate2") + ")))") == 0
+      and np.eval(plate_bar("nameplate2") + ".fill.alpha") == 1, "a friendly plate is left alone")
+np.execute("__showPlate('nameplate3', { reaction = 2 }, { forbidden = true })")
+run(np, 1.5)
+check(not any("Error in" in m for m in chat(np)), "a forbidden plate (friendly, in an instance) is passed over without an error")
+np.execute("__showPlate('nameplate4', { reaction = 2 }, { late = true })")
+run(np, 0.1)
+check(np.eval("(select(2, __liquid(" + plate_bar("nameplate4") + ")))") > 0,
+      "a plate that gets its unit frame after the event still gets the liquid")
+np.execute("__bar1 = " + plate_bar("nameplate1") + "; __hidePlate('nameplate1')")
+bar1 = np.eval("__bar1")
+run(np, 0.1)
+check(bar1.fill.alpha == 1 and not np.eval("(function(b) local _, clip = __ours(b); return clip.shown end)")(bar1),
+      "a plate that goes gives its bar back the game's fill before the game reuses it")
+np.execute("__showPlate('nameplate5', { friendly = true, reaction = 5 })")
+run(np, 0.2)
+check(np.eval(plate_bar("nameplate5") + " == __bar1") and bar1.fill.alpha == 1,
+      "the game hands that bar to a friendly unit: it keeps the game's fill")
+np.execute("__hidePlate('nameplate5'); __showPlate('nameplate6', { reaction = 2 })")
+run(np, 0.2)
+check(np.eval(plate_bar("nameplate6") + " == __bar1") and np.eval("(select(2, __liquid(" + plate_bar("nameplate6") + ")))") > 0,
+      "and to an enemy again: the same liquid comes back on it")
+np.execute("for i = 7, 30 do __showPlate('nameplate' .. i, { reaction = 2 }) end")
+run(np, 0.3)
+live = np.eval("""(function()
+    local n = 0
+    for token, base in pairs(__plates) do
+        local bar = base.UnitFrame and base.UnitFrame.HealthBarsContainer.healthBar
+        if bar and select(2, __liquid(bar)) > 0 then n = n + 1 end
+    end
+    return n
+end)()""")
+check(live == 15, f"a crowd of 26 enemies: the liquid on 15 of them, the rest keep the game's fill ({live})")
+np.execute("__hidePlate('nameplate6')")
+run(np, 0.1)
+live2 = np.eval("""(function()
+    local n = 0
+    for token, base in pairs(__plates) do
+        local bar = base.UnitFrame and base.UnitFrame.HealthBarsContainer.healthBar
+        if bar and select(2, __liquid(bar)) > 0 then n = n + 1 end
+    end
+    return n
+end)()""")
+check(live2 == 15, f"one of them goes: a waiting plate takes its place ({live2})")
+np.execute("__units.nameplate7.friendly = true; __fire('UNIT_FACTION', 'nameplate7')")
+run(np, 0.1)
+check(np.eval(plate_bar("nameplate7") + ".fill.alpha") == 1, "a mob turning friendly gets the game's fill back")
+np.execute("SlashCmdList.SMOOTHANIMATEDBARS('debug')")
+check(any("enemy nameplates: on, 15 with the liquid" in m for m in chat(np)), "/sab debug counts the plates")
+run(np, 11)
+np.execute("__chat = {}; SlashCmdList.SMOOTHANIMATEDBARS('perf')")
+perf = chat(np)
+check(any("unit frames: 12 liquids" in m for m in perf) and any("enemy nameplates: 15 liquids" in m for m in perf)
+      and any("per nameplate" in m for m in perf) and any("addon memory" in m for m in perf),
+      "/sab perf times the unit frames and the plates apart: " + " | ".join(perf))
+np.execute("__combat = true; SlashCmdList.SMOOTHANIMATEDBARS('perf 26 Mobs Pulled'); __combat = false")
+check(np.eval("#SmoothAnimatedBarsDB.perfLog") == 2 and np.eval("SmoothAnimatedBarsDB.perfLog[2].note") == "26 Mobs Pulled"
+      and np.eval("#SmoothAnimatedBarsDB.perfLog[2].seconds") == 10 and np.eval("SmoothAnimatedBarsDB.perfLog[2].combat")
+      and np.eval("SmoothAnimatedBarsDB.perfLog[2].zone") == "Elwynn Forest"
+      and any("/reload writes it" in m for m in chat(np)),
+      "/sab perf saves each report in the saved variables, with a note as typed, the zone and combat")
+# The client writes the saved variables as plain Lua; perf_report.py reads that back into a text report.
+saved = np.eval("""(function()
+    local function ser(v, ind)
+        if type(v) == "table" then
+            local parts = {}
+            for k, x in pairs(v) do
+                local key = type(k) == "number" and ("[" .. k .. "]") or ("[" .. string.format("%q", k) .. "]")
+                parts[#parts + 1] = ind .. "  " .. key .. " = " .. ser(x, ind .. "  ") .. ","
+            end
+            return "{\\n" .. table.concat(parts, "\\n") .. "\\n" .. ind .. "}"
+        elseif type(v) == "string" then return string.format("%q", v)
+        else return tostring(v) end
+    end
+    return "SmoothAnimatedBarsDB = " .. ser({ perfLog = SmoothAnimatedBarsDB.perfLog }, "") .. "\\n"
+end)()""")
+sys.path.insert(0, os.path.join(HERE, ".."))
+import tempfile  # noqa: E402
+import perf_report  # noqa: E402
+with tempfile.TemporaryDirectory() as tmp:
+    sv = os.path.join(tmp, "SmoothAnimatedBars.lua")
+    with open(sv, "w", encoding="utf-8") as f:
+        f.write(saved)
+    text = "\n".join(perf_report.report(perf_report.load_log(sv), sv))
+check("26 Mobs Pulled" in text and "Elwynn Forest *" in text and text.count("--- ") == 2,
+      "perf_report.py turns the saved reports into a text file: a line each, then each second")
+np.execute("SlashCmdList.SMOOTHANIMATEDBARS('perf clear')")
+check(np.eval("SmoothAnimatedBarsDB.perfLog") is None, "/sab perf clear forgets them")
+np.execute("__chat = {}; SlashCmdList.SMOOTHANIMATEDBARS('perf reset'); SlashCmdList.SMOOTHANIMATEDBARS('perf')")
+check(any("Nothing measured yet" in m for m in chat(np)) and np.eval("SmoothAnimatedBarsDB.perfLog") is None,
+      "/sab perf reset starts over, and nothing is saved until something is measured")
+np.execute("__settings.plateHealth:SetValue(false)")
+run(np, 0.2)
+check(np.eval("""(function()
+    for token, base in pairs(__plates) do
+        local bar = base.UnitFrame and base.UnitFrame.HealthBarsContainer.healthBar
+        if bar and (select(2, __liquid(bar)) > 0 or bar.fill.alpha ~= 1) then return false end
+    end
+    return true
+end)()"""), "turned off: every plate has the game's fill again")
+check(np.eval("(select(2, __liquid(PlayerFrame.healthbar)))") > 0, "and the unit frames keep theirs")
+np.execute("SlashCmdList.SMOOTHANIMATEDBARS('off')")
+run(np, 0.2)
+check(np.eval("SmoothAnimatedBarsDB.plateHealth") is False, "/sab off leaves the plate setting as it was")
+check(not any("Error in" in m for m in chat(np)), "no errors")
+
+print("== DoT marker on enemy nameplates")
+pd = session("{ setupDone = true, heals = false, manaBuild = false, plateHealth = true }")
+pd.execute("""
+    __spells[172] = { 'Corruption', 'Corrupts the target, causing 90 Shadow damage over 18 sec.' }
+    __spells[348] = { 'Immolate', 'Burns the enemy for 11 Fire damage and then an additional 20 Fire damage over 15 sec.' }
+    function __cast(id, guid)
+        __fire('UNIT_SPELLCAST_SENT', 'player', __target and __target.name or '', guid, id)
+        __fire('UNIT_SPELLCAST_SUCCEEDED', 'player', guid, id)
+    end
+    BOAR = { guid = 'Creature-0-1-2-3-299-0001', name = 'Mottled Boar', reaction = 2 }
+    WOLF = { guid = 'Creature-0-1-2-3-525-0002', name = 'Prowler', reaction = 2 }
+    __showPlate('nameplate1', BOAR)
+    __showPlate('nameplate2', WOLF)
+    function __pbar(token) return __plates[token].UnitFrame.HealthBarsContainer.healthBar end
+    function __pm(token)
+        local _, _, markers = __ns.Marker.State()
+        return markers[__pbar(token)]
+    end
+    function __aim(t) __target = t; __fire('PLAYER_TARGET_CHANGED') end
+""")
+run(pd, 0.3)
+check(not pd.eval("__ns.Dots.IsEnabled()"), "off by default: no tracking for the plates either")
+pd.execute("__settings.plateDots:SetValue(true)")
+run(pd, 0.3)
+check(pd.eval("__ns.Dots.IsEnabled()") and pd.eval("SmoothAnimatedBarsDB.dots") is False,
+      "on: tracking runs for the plates, with the target frame's marker still off")
+check(pd.eval("__pm('nameplate1')") is None, "a plate is given no marker before the mob carries your DoTs")
+pd.execute("__aim(BOAR); __cast(172, 'Cast-1')")
+run(pd, 1)
+check(pd.eval("__pm('nameplate1') ~= nil and __pm('nameplate1').clip.shown")
+      and pd.eval("__pm('nameplate1').liquids[1].themeKey") == "shadow"
+      and pd.eval("__pm('nameplate1').liquids[1].value") == 90 and pd.eval("__pm('nameplate1').liquids[1].run.value") > 85,
+      "Corruption on the boar: a Shadow liquid of 90 on its plate")
+check(pd.eval("__pm('nameplate1').clip.parent == __pbar('nameplate1')")
+      and pd.eval("__pm('nameplate1').clip.points.TOPLEFT.y") == 0
+      and pd.eval("__pm('nameplate1').clip.points.BOTTOMRIGHT.x") == 0,
+      "on the plate's bar, clipped to it")
+check(pd.eval("""(function()
+    local _, _, mover = __ours(__pbar('nameplate1'))
+    local a = mover.points.TOPRIGHT
+    return a.rel == __pm('nameplate1').endFill and a.relPoint == 'TOPLEFT'
+end)()"""), "the plate's health liquid draws back to where its health will end")
+check(not pd.eval("__pm('nameplate1').window.shown") and not pd.eval("__pm('nameplate1').hasIcon"),
+      "no kill icon on a plate")
+check(pd.eval("__pm('nameplate1').liquids[1].liquid.body.sub") == -7, "under the plate's health liquid")
+check(not pd.eval("(__ns.Marker.State())"), "the target frame's marker is not built while DoT Marker is off")
+pd.execute("__aim(WOLF); __cast(348, 'Cast-2')")
+run(pd, 1)
+check(pd.eval("__pm('nameplate1').clip.shown") and pd.eval("__pm('nameplate2').clip.shown")
+      and pd.eval("__pm('nameplate2').liquids[1].themeKey") == "fire"
+      and pd.eval("__pm('nameplate1').liquids[1].themeKey") == "shadow",
+      "Immolate on the wolf: Fire on its plate, and the boar left behind keeps its Corruption")
+pd.execute("""
+    __spells[6546] = { 'Rend', 'Wounds the target causing them to bleed for 28 damage over 12 sec.' }
+    RAT = { guid = 'Creature-0-1-2-3-77-0005', name = 'Tunnel Rat', reaction = 2 }
+    __showPlate('nameplate5', RAT)
+    __aim(RAT); __cast(6546, 'Cast-3')
+""")
+run(pd, 1)
+fill = pd.eval("__pm('nameplate5').liquids[1].liquid.theme.fillB")
+check(pd.eval("__pm('nameplate5').liquids[1].themeKey") == "blood" and fill[1] < 0.7 and fill[2] < 0.1,
+      f"a bleed on a red plate is a dark crimson, so it shows against the plate's red ({fill[1]}, {fill[2]}, {fill[3]})")
+pd.execute("__hidePlate('nameplate5')")
+run(pd, 0.3)
+pd.execute("__showPlate('nameplate3', { guid = 'Creature-0-1-2-3-99-0003', name = 'Kobold', reaction = 2 })")
+run(pd, 0.3)
+check(pd.eval("__pm('nameplate3') == nil or not __pm('nameplate3').clip.shown"), "a mob without your DoTs shows no marker")
+pd.execute("__units.nameplate2.dead = true")
+run(pd, 0.3)
+check(not pd.eval("__pm('nameplate2').clip.shown"), "a dead mob's plate: marker hidden")
+pd.execute("__bar1 = __pbar('nameplate1'); __hidePlate('nameplate1')")
+run(pd, 0.3)
+check(pd.eval("(function() local _, _, m = __ns.Marker.State(); "
+              "return not m[__bar1].clip.shown and not m[__bar1].live end)()"),
+      "the boar's plate goes: its marker hides")
+pd.execute("__showPlate('nameplate4', { guid = 'Creature-0-1-2-3-99-0004', name = 'Kobold', reaction = 2 })")
+run(pd, 0.3)
+check(pd.eval("__pbar('nameplate4') == __bar1") and not pd.eval("__pm('nameplate4').clip.shown")
+      and pd.eval("""(function()
+    local _, _, mover = __ours(__bar1)
+    return mover.points.TOPRIGHT.relPoint == 'TOPRIGHT'
+end)()"""), "the game gives that bar to an undotted mob: no marker, its health liquid on its own health's edge")
+pd.execute("__hidePlate('nameplate4'); __showPlate('nameplate1', BOAR)")
+run(pd, 0.3)
+check(pd.eval("__pm('nameplate1').clip.shown") and pd.eval("__pm('nameplate1').liquids[1].themeKey") == "shadow",
+      "the boar's plate shows again: its Corruption is still there")
+pd.execute("__settings.plateHealth:SetValue(false)")
+run(pd, 0.3)
+check(pd.eval("(function() local _, _, m = __ns.Marker.State(); "
+              "for _, x in pairs(m) do if x.clip.shown then return false end end return true end)()")
+      and not pd.eval("__ns.Dots.IsEnabled()"),
+      "Enemy Nameplates off: the plates' markers go too, and tracking stops")
+pd.execute("SlashCmdList.SMOOTHANIMATEDBARS('dots')")
+check(any("DoT marker on nameplates: off" in m for m in chat(pd)), "/sab dots reports the plates' marker")
+check(not any("Error in" in m for m in chat(pd)), "no errors")
 
 if failures:
     print(f"\n{len(failures)} check(s) failed:")

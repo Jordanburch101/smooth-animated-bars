@@ -1324,6 +1324,17 @@ function Dots.Target()
     return math.floor(total + 0.5), list
 end
 
+-- The same for the mob behind any unit token (a nameplate's), which may not be the target: DoTs are kept per mob.
+function Dots.Unit(unit)
+    housekeep(GetTime())
+    local key = unitKey(unit)
+    if not key or key == "target" then return 0, {} end -- "target" stands only for the current target
+    local list = dotBreakdown(key)
+    local total = 0
+    for _, entry in ipairs(list) do total = total + entry.damage end
+    return math.floor(total + 0.5), list
+end
+
 -- For /sab dots: the estimate on the target, then the last `n` trace lines.
 function Dots.Debug(n)
     local total, list = Dots.Target()

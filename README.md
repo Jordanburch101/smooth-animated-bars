@@ -163,6 +163,7 @@ whether to mark your DoTs (marker and skull, just the marker, or off). Skip puts
 | `/sab dots` | Your DoTs on the target, and what the DoT tracking saw lately |
 | `/sab heals` | Your heals, food and drink on the way to you, and what the tracking saw lately |
 | `/sab mana` | The wait before your mana regenerates, and what it saw lately |
+| `/sab perf` | What the liquid costs each frame, the unit frames and the nameplates apart. Add a note (`/sab perf 12 mobs`) to label it; each one is saved with your settings on `/reload` (`/sab perf reset` times afresh, `/sab perf clear` forgets the saved ones) |
 
 ## Good to know
 

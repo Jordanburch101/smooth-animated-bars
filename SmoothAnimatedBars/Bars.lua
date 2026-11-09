@@ -33,6 +33,14 @@ local STIR = 0.15        -- splash intensity of a stir
 local ROOM = 10
 local SPILL = 16         -- how far motes can fly above, below and past the end of a bar, px
 
+-- Enemy nameplates (the plateHealth setting). There can be a crowd of them, so they idle slower, and past MAX_PLATES
+-- the rest keep the game's own fill until a plate with the liquid goes.
+local MAX_PLATES = 15
+local PLATE_IDLE_FPS = 20
+local PLATE_W, PLATE_H = 110, 10  -- a plate's bar, until the client says (its size can be secret)
+local PLATE_COLOR_EVERY = 0.5     -- seconds between looks at a plate's own colour (it greys once tapped)
+local PLATE_WAIT = 1              -- how long a new plate may take to get its unit frame, seconds
+
 -- Inflow (Bars.Inflow): while something is on the way into a bar, its particles drift back from the front into
 -- the bar's liquid, and the front ripples where the two meet.
 local INFLOW_RATE = 12         -- motes per second
@@ -166,12 +174,18 @@ end
 
 local bars = {}     -- spot -> bar state, for the game's bars built so far
 local previews = {} -- bar states on the setup wizard's preview frames
+-- Nameplates: the game keeps a pool of plate unit frames and hands them from mob to mob, so a liquid is built once
+-- per plate health bar and follows whichever unit the bar shows.
+local plates = {}   -- plate health bar -> bar state
+local plateOf = {}  -- nameplate token -> bar state, while the liquid is on it
+local pending = {}  -- nameplate token -> time it was added, while waiting for its unit frame or a free slot
 local driver
 
--- Every bar state, the game's and the previews'.
+-- Every bar state, the game's, the previews' and the nameplates'.
 local function Each(fn)
     for _, b in pairs(bars) do fn(b) end
     for _, b in ipairs(previews) do fn(b) end
+    for _, b in pairs(plates) do fn(b) end
 end
 
 local INTERPOLATION = Enum and Enum.StatusBarInterpolation and Enum.StatusBarInterpolation.ExponentialEaseOut
@@ -180,9 +194,20 @@ local INTERPOLATION = Enum and Enum.StatusBarInterpolation and Enum.StatusBarInt
 -- Colours
 --------------------------------------------------------------------------------
 
--- The bar's own colour: health green, or the game's colour for the unit's power type (a preview
--- bar names its power type).
+-- A nameplate's own colour: the one the game gave its bar (red, yellow, grey once tapped), else the unit's reaction.
+local function PlateColor(b)
+    local bar = b.bar
+    if bar.GetStatusBarColor then
+        local ok, r, g, bl = pcall(bar.GetStatusBarColor, bar)
+        if ok and type(r) == "number" and not Secret(r, g, bl) then return { r, g, bl } end
+    end
+    return ns.Themes.ReactionColor(b.unit) or { 0.90, 0.15, 0.10 }
+end
+
+-- The bar's own colour: health green (a nameplate's its own), or the game's colour for the unit's power type (a
+-- preview bar names its power type).
 local function GameColor(b)
+    if b.spot.plate then return PlateColor(b), "HEALTH" end
     if b.kind == "health" then return HEALTH_COLOR, "HEALTH" end
     local index, token
     if b.spot.token then
@@ -231,10 +256,11 @@ end
 
 local function ApplyColor(b, force)
     local choice = ChoiceFor(b)
-    local _, token = GameColor(b)
+    local own, token = GameColor(b)
     -- Power colours change with the power type only when the bar takes the game's colour, and Class Color with the
-    -- unit's colour, falling back on the game's.
+    -- unit's colour, falling back on the game's. A nameplate's own colour changes with the unit (tapped, hostile).
     local key = choice
+    if b.spot.plate then token = string.format("%.3f,%.3f,%.3f", own[1], own[2], own[3]) end
     if choice == "game" then
         key = "game:" .. token
     elseif choice == "class" then
@@ -296,7 +322,7 @@ local function AtParentLevel(frame, parent)
 end
 
 local function NewBar(spot, bar)
-    local w, h = Size(bar, 1, 1)
+    local w, h = Size(bar, spot.plate and PLATE_W or 1, spot.plate and PLATE_H or 1)
     local b = { spot = spot, unit = spot.unit, kind = spot.kind, bar = bar, width = w, height = h, live = false,
                 idle = 0, feed = 0, stirAt = 0 }
 
@@ -313,8 +339,11 @@ local function NewBar(spot, bar)
 
     local clip = CreateFrame("Frame", nil, bar)
     AtParentLevel(clip, bar)
-    clip:SetPoint("TOPLEFT", bar, "TOPLEFT", 0, SPILL)
-    clip:SetPoint("BOTTOMRIGHT", bar, "BOTTOMRIGHT", SPILL, -SPILL)
+    -- A nameplate's bar has no mask, so the clip frame is the bar itself: it cuts the waves at the bar's end, and the
+    -- motes too, which would only clutter a crowd of plates.
+    local spill = spot.plate and 0 or SPILL
+    clip:SetPoint("TOPLEFT", bar, "TOPLEFT", 0, spill)
+    clip:SetPoint("BOTTOMRIGHT", bar, "BOTTOMRIGHT", spill, -spill)
     clip:SetClipsChildren(true)
     clip:Hide()
     b.clip = clip
@@ -494,13 +523,23 @@ local function UpdateBar(b, dt)
         b.liquid:SetSize(w + ROOM, h)
     end
 
-    Inflow(b, dt, w, h)
-    BuildUp(b, dt, w, h)
+    local idleFps = IDLE_FPS
+    if b.spot.plate then
+        idleFps = PLATE_IDLE_FPS
+        b.colorIn = (b.colorIn or 0) - dt
+        if b.colorIn <= 0 then
+            b.colorIn = PLATE_COLOR_EVERY
+            ApplyColor(b)
+        end
+    else
+        Inflow(b, dt, w, h)
+        BuildUp(b, dt, w, h)
+    end
 
-    -- Once settled only the idle wobble remains, so it drops to IDLE_FPS.
+    -- Once settled only the idle wobble remains, so it drops to the idle rate.
     if b.liquid:IsQuiet() then
         b.idle = b.idle + dt
-        if b.idle < 1 / IDLE_FPS then return end
+        if b.idle < 1 / idleFps then return end
         dt, b.idle = b.idle, 0
     else
         b.idle = 0
@@ -512,22 +551,167 @@ end
 -- Driver
 --------------------------------------------------------------------------------
 
+--------------------------------------------------------------------------------
+-- Nameplates
+--------------------------------------------------------------------------------
+
+local function PlatesWanted()
+    return ns.Core.Get("plateHealth") and true or false
+end
+
+local function Count(t)
+    local n = 0
+    for _ in pairs(t) do n = n + 1 end
+    return n
+end
+
+-- The health bar of a nameplate token's plate, once the game has given the plate its unit frame for that token; nil
+-- for none yet, and always for a forbidden plate (friendly plates in instances), which addons cannot get at.
+local function PlateBar(token)
+    if not (C_NamePlate and C_NamePlate.GetNamePlateForUnit) then return nil end
+    local ok, plate = pcall(C_NamePlate.GetNamePlateForUnit, token)
+    if not ok or type(plate) ~= "table" then return nil end
+    local unitFrame = plate.UnitFrame
+    if type(unitFrame) ~= "table" or plate.unitToken ~= token then return nil end
+    local bar = Path(unitFrame, "HealthBarsContainer", "healthBar") or Path(unitFrame, "healthBar")
+    if type(bar) == "table" and bar.GetStatusBarTexture and bar.GetValue then return bar end
+end
+
+-- Only plates the player can attack get the liquid. An answer the client keeps secret counts as no.
+local function IsEnemy(token)
+    local ok, can = pcall(UnitCanAttack, "player", token)
+    return ok and not Secret(can) and can == true
+end
+
+local function DetachPlate(token)
+    pending[token] = nil
+    local b = plateOf[token]
+    if not b then return end
+    plateOf[token] = nil
+    SetLive(b, false)
+    b.token = nil
+    -- A DoT marker may have moved the front back; the next mob on this bar starts at its own health.
+    if b.front then
+        b.front = nil
+        local fill = b.proxy:GetStatusBarTexture()
+        b.mover:ClearAllPoints()
+        b.mover:SetPoint("TOPRIGHT", fill, "TOPRIGHT")
+        b.mover:SetPoint("BOTTOMRIGHT", fill, "BOTTOMRIGHT")
+    end
+end
+
+-- Put the liquid on a plate. True when done or not wanted (a friend, the player's own plate), false to try again later.
+local function AttachPlate(token)
+    if not IsEnemy(token) then return true end
+    local bar = PlateBar(token)
+    if not bar then return false end
+    local b = plates[bar]
+    -- The bar may still be on the books for a token whose removal came after its next use.
+    if b and b.token and b.token ~= token and plateOf[b.token] == b then plateOf[b.token] = nil end
+    if not b then
+        if Count(plateOf) >= MAX_PLATES then return false end
+        b = NewBar({ key = "plateHealth", frame = "plate", unit = token, kind = "health", plate = true }, bar)
+        plates[bar] = b
+    elseif not plateOf[token] and Count(plateOf) >= MAX_PLATES then
+        return false
+    end
+    b.token, b.unit, b.spot.unit = token, token, token
+    b.err, b.colorIn = nil, PLATE_COLOR_EVERY
+    plateOf[token] = b
+    ApplyColor(b, true)
+    if b.live then Feed(b, false); b.liquid:Snap(b.width) else SetLive(b, true) end
+    return true
+end
+
+-- New plates wait here for their unit frame (the game may set it up after our event) or for a free slot.
+local function TryPending()
+    local now = GetTime()
+    for token, at in pairs(pending) do
+        if AttachPlate(token) then
+            pending[token] = nil
+        elseif now - at > PLATE_WAIT and Count(plateOf) < MAX_PLATES then
+            pending[token] = nil -- no unit frame came: a forbidden plate, or gone again
+        end
+    end
+end
+
+-- Every plate showing now, for turning the setting on mid-session.
+local function ScanPlates()
+    if not (C_NamePlate and C_NamePlate.GetNamePlates) then return end
+    local ok, list = pcall(C_NamePlate.GetNamePlates)
+    if not ok or type(list) ~= "table" then return end
+    local now = GetTime()
+    for _, plate in pairs(list) do
+        local token = type(plate) == "table" and plate.unitToken
+        if type(token) == "string" and not plateOf[token] then pending[token] = now end
+    end
+end
+
+local function ApplyPlates()
+    if PlatesWanted() then
+        ScanPlates()
+        TryPending()
+    else
+        for token in pairs(plateOf) do DetachPlate(token) end
+        wipe(pending)
+    end
+end
+
+--------------------------------------------------------------------------------
+-- Timing (/sab perf)
+--------------------------------------------------------------------------------
+
+-- What the liquid costs: the time our updates take each frame, kept in one-second buckets over the last PERF_SECONDS,
+-- for the unit frames (with the previews) and the nameplates apart. debugprofilestop is the client's millisecond
+-- timer. Only this file's updates are timed; the DoT and heal markers run their own.
+local PERF_SECONDS = 10
+local perf = { done = {} }
+
+local function PerfAdd(unitMs, plateMs, units, platesLive)
+    local second = math.floor(GetTime())
+    local cur = perf.cur
+    if not cur or cur.second ~= second then
+        if cur then
+            table.insert(perf.done, 1, cur)
+            perf.done[PERF_SECONDS + 1] = nil
+        end
+        cur = { second = second, frames = 0, unitMs = 0, plateMs = 0, peak = 0, units = 0, plates = 0 }
+        perf.cur = cur
+    end
+    cur.frames = cur.frames + 1
+    cur.unitMs, cur.plateMs = cur.unitMs + unitMs, cur.plateMs + plateMs
+    cur.peak = math.max(cur.peak, unitMs + plateMs)
+    cur.units, cur.plates = math.max(cur.units, units), math.max(cur.plates, platesLive)
+end
+
+local function RunBar(b, dt)
+    if not b.live or b.err then return false end
+    local ok, err = pcall(UpdateBar, b, dt)
+    if not ok then
+        b.err = tostring(err)
+        pcall(SetLive, b, false)
+        ns.Core.Print("Error in the " .. (b.spot.preview and "preview " or "") .. (b.spot.plate and "nameplate " or "")
+            .. b.unit .. " " .. b.kind .. " bar, which is back to the game's own: " .. b.err)
+        if b.token then plateOf[b.token] = nil end
+    end
+    -- Counted for /sab perf only while it shows: a hidden frame's bar (no focus, no pet) costs next to nothing.
+    return ok and b.bar:IsVisible() and true or false
+end
+
 -- An error in one bar is kept for /sab debug and reported once, and that bar goes back to the
 -- game's fill; the others carry on.
 local function OnUpdate(_, elapsed)
     local dt = min(elapsed, 0.1)
     if dt <= 0 then return end
-    Each(function(b)
-        if b.live and not b.err then
-            local ok, err = pcall(UpdateBar, b, dt)
-            if not ok then
-                b.err = tostring(err)
-                pcall(SetLive, b, false)
-                ns.Core.Print("Error in the " .. (b.spot.preview and "preview " or "") .. b.unit .. " " .. b.kind
-                    .. " bar, which is back to the game's own: " .. b.err)
-            end
-        end
-    end)
+    local clock = debugprofilestop
+    local t0 = clock and clock()
+    local units, live = 0, 0
+    for _, b in pairs(bars) do if RunBar(b, dt) then units = units + 1 end end
+    for _, b in ipairs(previews) do if RunBar(b, dt) then units = units + 1 end end
+    local t1 = clock and clock()
+    if next(pending) then TryPending() end
+    for _, b in pairs(plates) do if RunBar(b, dt) then live = live + 1 end end
+    if clock then PerfAdd(t1 - t0, clock() - t1, units, live) end
 end
 
 local STIR_EVENTS = { UNIT_HEALTH = "health", UNIT_MAXHEALTH = "health", UNIT_POWER_UPDATE = "power",
@@ -538,7 +722,32 @@ local NEW_UNIT = { PLAYER_TARGET_CHANGED = { target = true, targettarget = true 
                    PLAYER_FOCUS_CHANGED = { focus = true, focustarget = true } }
 local TARGET_OF = { target = "targettarget", focus = "focustarget" }
 
+local function OnPlateEvent(event, unit)
+    if event == "NAME_PLATE_UNIT_ADDED" then
+        if PlatesWanted() then
+            pending[unit] = GetTime()
+            TryPending()
+        end
+    elseif event == "NAME_PLATE_UNIT_REMOVED" then
+        DetachPlate(unit)
+        if next(pending) then TryPending() end -- a slot may be free now
+    elseif event == "UNIT_FACTION" then -- a mob turning hostile or friendly
+        if PlatesWanted() then
+            DetachPlate(unit)
+            pending[unit] = GetTime()
+            TryPending()
+        end
+    end
+end
+
 local function OnEvent(_, event, unit)
+    if type(unit) == "string" and unit:match("^nameplate%d+$") then
+        local pb = plateOf[unit]
+        if pb and pb.live and STIR_EVENTS[event] == "health" then Stir(pb) end
+        OnPlateEvent(event, unit)
+        -- The same unit can be the target or focus as well, which the frames' own events cover.
+        return
+    end
     local fresh = NEW_UNIT[event]
     local other = event == "UNIT_TARGET" and TARGET_OF[unit] or (event == "UNIT_PET" and unit == "player" and "pet")
     for _, b in pairs(bars) do
@@ -559,6 +768,8 @@ end
 
 local EVENTS = { "PLAYER_TARGET_CHANGED", "UNIT_DISPLAYPOWER", "UNIT_HEALTH", "UNIT_MAXHEALTH", "UNIT_POWER_UPDATE",
                  "UNIT_MAXPOWER", "UNIT_TARGET", "UNIT_PET", "PLAYER_FOCUS_CHANGED" }
+local PLATE_EVENTS = { "NAME_PLATE_UNIT_ADDED", "NAME_PLATE_UNIT_REMOVED", "UNIT_FACTION" }
+local BOTH = { UNIT_HEALTH = true, UNIT_MAXHEALTH = true } -- the frames' events that the plates use too
 
 --------------------------------------------------------------------------------
 -- API
@@ -598,16 +809,21 @@ function Bars.Apply()
         SetLive(b, ns.Core.Get(b.spot.key) and not b.err and true or false)
         if b.live then any = any + 1 end
     end
-    if any > 0 and not driver then
+    local platesOn = PlatesWanted()
+    if (any > 0 or platesOn) and not driver then
         driver = CreateFrame("Frame")
         driver:SetScript("OnUpdate", OnUpdate)
         driver:SetScript("OnEvent", OnEvent)
     end
     if driver then
-        driver:SetShown(any > 0)
+        driver:SetShown(any > 0 or platesOn)
         for _, event in ipairs(EVENTS) do
-            if live > 0 then driver:RegisterEvent(event) else driver:UnregisterEvent(event) end
+            if live > 0 or (platesOn and BOTH[event]) then driver:RegisterEvent(event) else driver:UnregisterEvent(event) end
         end
+        for _, event in ipairs(PLATE_EVENTS) do
+            if platesOn then driver:RegisterEvent(event) else driver:UnregisterEvent(event) end
+        end
+        ApplyPlates()
     end
     return live, missing
 end
@@ -635,6 +851,16 @@ local function StateFor(bar)
     for _, b in ipairs(previews) do
         if b.bar == bar then return b end
     end
+    return plates[bar]
+end
+
+-- The enemy nameplates showing the liquid: token -> their health bar (for the DoT marker on them, Marker.lua).
+function Bars.Plates()
+    local out = {}
+    for token, b in pairs(plateOf) do
+        if b.live and not b.err then out[token] = b.bar end
+    end
+    return out
 end
 
 -- Whether a bar is showing the liquid (and not the game's own fill).
@@ -781,5 +1007,69 @@ function Bars.Debug()
                 b.err and (", error: " .. b.err) or "")
         end
     end
+    out[#out + 1] = string.format("enemy nameplates: %s, %d with the liquid (at most %d), %d built, %d waiting",
+        PlatesWanted() and "on" or "off", Count(plateOf), MAX_PLATES, Count(plates), Count(pending))
     return out
+end
+
+local function Memory()
+    local update = rawget(_G, "UpdateAddOnMemoryUsage") or (C_AddOns and C_AddOns.UpdateAddOnMemoryUsage)
+    local get = rawget(_G, "GetAddOnMemoryUsage") or (C_AddOns and C_AddOns.GetAddOnMemoryUsage)
+    if not (update and get) then return nil end
+    local ok = pcall(update)
+    local ok2, kb = pcall(get, "SmoothAnimatedBars")
+    if ok and ok2 and type(kb) == "number" then return kb end
+end
+
+-- What the liquid has cost over the last few seconds, for /sab perf.
+function Bars.Perf()
+    local out = {}
+    if not debugprofilestop then return { "The client has no timer (debugprofilestop) to measure with." } end
+    local frames, unitMs, plateMs, peak, units, platesLive = 0, 0, 0, 0, 0, 0
+    for _, s in ipairs(perf.done) do
+        frames, unitMs, plateMs = frames + s.frames, unitMs + s.unitMs, plateMs + s.plateMs
+        peak, units, platesLive = math.max(peak, s.peak), math.max(units, s.units), math.max(platesLive, s.plates)
+    end
+    if frames == 0 then return { "Nothing measured yet: give it a few seconds with the liquid showing." } end
+    local fps = GetFramerate and GetFramerate() or 0
+    local budget = fps > 0 and 1000 / fps or nil
+    local function Line(label, ms, n)
+        local avg = ms / frames
+        return string.format("%s: %d liquid%s, %.3f ms a frame%s", label, n, n == 1 and "" or "s", avg,
+            budget and string.format(" (%.1f%% of the frame at %d fps)", 100 * avg / budget, fps + 0.5) or "")
+    end
+    out[#out + 1] = string.format("Over the last %d s (%d frames):", #perf.done, frames)
+    out[#out + 1] = Line("unit frames", unitMs, units)
+    out[#out + 1] = Line("enemy nameplates", plateMs, platesLive)
+    if platesLive > 0 then
+        out[#out + 1] = string.format("  that is %.3f ms a frame per nameplate", plateMs / frames / platesLive)
+    end
+    out[#out + 1] = string.format("slowest frame: %.2f ms", peak)
+    local textures = 0
+    Each(function(b) if b.live then textures = textures + #b.liquid.textures end end)
+    out[#out + 1] = string.format("textures in live liquids: %d", textures)
+    local kb = Memory()
+    if kb then out[#out + 1] = string.format("addon memory: %.0f KB", kb) end
+    out[#out + 1] = "Only the liquid's updates are timed, not the client drawing it: compare fps with the setting on and off."
+    return out
+end
+
+-- The same as Bars.Perf's lines, plus each second measured (newest first), for the saved log (/sab perf). nil when
+-- nothing has been measured.
+function Bars.PerfSnapshot()
+    if not debugprofilestop or #perf.done == 0 then return nil end
+    local seconds = {}
+    for i, s in ipairs(perf.done) do
+        seconds[i] = { frames = s.frames, unitMs = s.unitMs, plateMs = s.plateMs, peak = s.peak, units = s.units,
+                       plates = s.plates }
+    end
+    local textures = 0
+    Each(function(b) if b.live then textures = textures + #b.liquid.textures end end)
+    return { seconds = seconds, textures = textures, fps = GetFramerate and GetFramerate() or nil, memoryKB = Memory(),
+             platesOn = PlatesWanted(), maxPlates = MAX_PLATES, plateIdleFps = PLATE_IDLE_FPS }
+end
+
+-- Forget what was measured, so the next /sab perf covers only what comes after.
+function Bars.PerfReset()
+    perf.cur, perf.done = nil, {}
 end

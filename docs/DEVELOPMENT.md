@@ -36,6 +36,18 @@ tools/venv/Scripts/python tools/harness/preview.py SmoothAnimatedBars preview he
 
 `preview.py` takes any setting as `key=value`, and `power=` for the power type (0 mana, 1 rage, 3 energy).
 
+## Measuring
+
+`/sab perf [note]` in game prints what the liquid's updates cost each frame over the last 10 seconds, the unit
+frames and the enemy nameplates apart, and saves it in the saved variables. After `/reload`:
+
+```powershell
+tools/venv/Scripts/python tools/perf_report.py    # perf/perf_report.txt: a line per report, then each second
+```
+
+It reads the newest `SmoothAnimatedBars.lua` under Forever's WTF folder (`--file` for another). Only the Lua
+updates are timed, not the client drawing the textures, so compare fps with a setting on and off too.
+
 ## Gallery
 
 The gallery draws the liquid on Forever's own frame art, which lives in the game's data files. To capture

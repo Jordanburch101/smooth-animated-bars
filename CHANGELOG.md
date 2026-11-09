@@ -4,6 +4,27 @@ Player-facing notes for each release. Write for players: what they can now
 do or see, and what was broken and now works. Leave out internal changes.
 Sections are `### New` and `### Fixed`; skip one that would be empty.
 
+## 1.6.0
+
+### New
+- Enemy nameplates (trial, off until you turn it on under Nameplates in the
+  settings): the liquid in the health bars of enemy nameplates, in your
+  target's colour or the nameplate's own (grey once another player has
+  tagged the mob). In a big crowd the first 15 get it. Friendly nameplates
+  in dungeons are locked to addons, so they keep the game's bar.
+- Your DoTs on nameplates (under Enemy Nameplates, off until you turn it
+  on): every mob carrying your damage-over-time spells shows them on its
+  nameplate as the DoT marker does on your target, not just the mob you
+  have targeted. A mob you dotted and left keeps its marker. Bleeds are a
+  dark crimson there, so they show against the nameplate's own red.
+  Nameplates get no kill icon or poison skulls.
+- `/sab perf` shows what the liquid costs each frame, the unit frames and the
+  nameplates apart, so you can see what the nameplates take in a crowd.
+  Each report is kept in the addon's saved variables, with a note if you
+  add one (`/sab perf 12 mobs`), the zone and whether you were in combat.
+  `/sab perf reset` starts the timing over; `/sab perf clear` forgets the
+  saved reports.
+
 ## 1.5.0
 
 ### New

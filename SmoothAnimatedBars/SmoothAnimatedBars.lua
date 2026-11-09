@@ -19,6 +19,10 @@ local DEFAULTS = {
     focusPower   = true,
     totHealth    = true,
     totPower     = true,
+    -- Enemy nameplates' health (Bars.lua), off until it has been tried in a crowd
+    plateHealth  = false,
+    -- The DoT marker on enemy nameplates (Marker.lua), with plateHealth
+    plateDots    = false,
     -- Colours: "game" for the bar's own colour, or a theme key (Themes.lua)
     healthColor  = "game",
     powerColor   = "game",
@@ -32,6 +36,7 @@ local DEFAULTS = {
     focusPowerColor   = "same",
     totHealthColor    = "same",
     totPowerColor     = "same",
+    plateHealthColor  = "same",
     -- What Class Color gives a mob: "reaction", "game" (the bar's own colour), "class" (its own) or "own" (the player's)
     mobClassColor = "reaction",
     -- Effects, read live by the liquid
@@ -71,8 +76,9 @@ local COLOR_KEYS = {
     pet    = { health = "petHealthColor", power = "petPowerColor" },
     focus  = { health = "focusHealthColor", power = "focusPowerColor" },
     tot    = { health = "totHealthColor", power = "totPowerColor" },
+    plate  = { health = "plateHealthColor" },
 }
-local FOLLOWS = { target = "player", pet = "player", focus = "target", tot = "target" }
+local FOLLOWS = { target = "player", pet = "player", focus = "target", tot = "target", plate = "target" }
 
 -- The colour a frame's bar of this kind ("health" or "power") shows: "game" or a theme key, "same" followed through.
 function Core.ColorChoice(frame, kind)
@@ -84,8 +90,8 @@ end
 -- Whether a bar of the target, the focus or a target of target shows Class Color: only then does what Class Color
 -- shows on mobs matter.
 function Core.TargetUsesClass()
-    for _, frame in ipairs({ "target", "focus", "tot" }) do
-        for _, kind in ipairs({ "health", "power" }) do
+    for _, frame in ipairs({ "target", "focus", "tot", "plate" }) do
+        for kind in pairs(COLOR_KEYS[frame]) do
             if Core.Get(frame .. (kind == "health" and "Health" or "Power")) and Core.ColorChoice(frame, kind) == "class" then
                 return true
             end
@@ -113,6 +119,8 @@ local SETTING_APPLY = {
     dotKillIcon = function() ns.Marker.Apply() end,
     heals       = function() ns.HealMarker.Apply() end,
     manaBuild   = function() ns.ManaRule.Apply() end,
+    plateHealth = function() ApplyBars(false); ns.Marker.Apply() end,
+    plateDots   = function() ns.Marker.Apply() end,
 }
 for _, key in ipairs(BAR_KEYS) do SETTING_APPLY[key] = function() ApplyBars(true) end end
 for frame, keys in pairs(COLOR_KEYS) do
@@ -218,7 +226,36 @@ local HELP = {
     "/sab dots - your DoTs on the target, and what the tracking saw lately",
     "/sab heals - your heals on the way to you, and what the tracking saw lately",
     "/sab mana - the wait before your mana regenerates, and what it saw lately",
+    "/sab perf [note] - what the liquid costs each frame, the unit frames and the nameplates apart, saved for "
+        .. "tools/perf_report.py after /reload (perf reset: time afresh, perf clear: forget the saved ones)",
 }
+
+-- /sab perf keeps each report in the saved variables, which the client writes to disk on /reload or logout (addons
+-- cannot write files). tools/perf_report.py turns them into a text file.
+local PERF_LOG_MAX = 50
+local PERF_WORDS = { ["perf reset"] = true, ["perf clear"] = true }
+
+local function Where()
+    local ok, zone = pcall(GetRealZoneText)
+    if not ok or type(zone) ~= "string" or (issecretvalue and issecretvalue(zone)) then zone = nil end
+    local ok2, _, kind = pcall(GetInstanceInfo)
+    if not ok2 or type(kind) ~= "string" or (issecretvalue and issecretvalue(kind)) then kind = nil end
+    return zone, kind
+end
+
+local function SavePerf(note)
+    local snap = ns.Bars.PerfSnapshot()
+    if not snap then return false end
+    snap.when = date and date("%Y-%m-%d %H:%M:%S") or nil
+    snap.zone, snap.instance = Where()
+    snap.combat = InCombatLockdown() and true or false
+    snap.note = note
+    snap.version = C_AddOns and C_AddOns.GetAddOnMetadata and C_AddOns.GetAddOnMetadata(ADDON_NAME, "Version") or nil
+    db.perfLog = db.perfLog or {}
+    table.insert(db.perfLog, snap)
+    while #db.perfLog > PERF_LOG_MAX do table.remove(db.perfLog, 1) end
+    return true
+end
 
 SLASH_SMOOTHANIMATEDBARS1 = "/sab"
 SlashCmdList.SMOOTHANIMATEDBARS = function(input)
@@ -244,6 +281,19 @@ SlashCmdList.SMOOTHANIMATEDBARS = function(input)
         for _, line in ipairs(ns.Heals.Debug(15)) do Core.Print(line) end
     elseif cmd == "mana" then
         for _, line in ipairs(ns.ManaRule.Debug(15)) do Core.Print(line) end
+    elseif cmd == "perf" or cmd:match("^perf ") and not PERF_WORDS[cmd] then
+        for _, line in ipairs(ns.Bars.Perf()) do Core.Print(line) end
+        local note = strtrim(input or ""):match("^%S+%s+(.+)$") -- /sab perf <note>: what was going on
+        if SavePerf(note) then
+            Core.Print("Saved (" .. #db.perfLog .. " in the log). /reload writes it to disk; then run "
+                .. "tools/perf_report.py for a text file.")
+        end
+    elseif cmd == "perf reset" then
+        ns.Bars.PerfReset()
+        Core.Print("Timing from now on. /sab perf in a few seconds.")
+    elseif cmd == "perf clear" then
+        db.perfLog = nil
+        Core.Print("Saved timings cleared.")
     else
         for _, line in ipairs(HELP) do Core.Print(line) end
     end

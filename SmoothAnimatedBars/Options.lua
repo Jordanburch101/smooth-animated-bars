@@ -239,6 +239,19 @@ function Options.Register(savedDB, defaultValues)
     Frame("Target of Target", "tot", "totHealthColor", "totPowerColor", SameAsOptions("Same as Target"), {
         whose = "your target's target's and your focus's target's", health = SAME_TARGET, power = SAME_TARGET })
 
+    Header("Nameplates")
+    Checkbox("plateHealth", "Enemy Nameplates",
+        "Liquid in the health bars of enemy nameplates. Friendly nameplates in dungeons are locked to addons. In a "
+        .. "big crowd only the first 15 nameplates get it; /sab perf shows what it costs.")
+    Dropdown("plateHealthColor", "Colour",
+        "Same as Target follows your target's colour, which can itself follow yours. Game Colour takes the nameplate's "
+        .. "own: red, yellow, or grey once another player has tagged the mob.",
+        SameAsOptions("Same as Target"), { indent = true, shown = On("plateHealth") })
+    Row(Settings.CreateCheckboxInitializer(Register("plateDots", "Your DoTs on Nameplates"), nil,
+        "The DoT marker on enemy nameplates: on every mob carrying your damage-over-time spells, not just your "
+        .. "target, the health they will still burn away turns into a liquid of their own colour. No kill icon or "
+        .. "poison skulls on nameplates."), nil, { indent = true, shown = On("plateHealth") })
+
     Header("Effects")
     Checkbox("waves", "Liquid Waves", "Wobbling liquid front that ripples when the bar changes.")
     Checkbox("swirl", "Magic Swirl", "Glowing veins, clouds and light drifting inside the liquid.")

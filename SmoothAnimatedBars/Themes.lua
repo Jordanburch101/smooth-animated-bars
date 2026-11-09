@@ -125,6 +125,8 @@ local function ReactionOf(unit)
     if reaction <= 3 then return HOSTILE end
     return reaction == 4 and NEUTRAL or FRIENDLY
 end
+-- Red, yellow or green by how the unit stands to the player, or nil if the client will not say (nameplates, Bars.lua).
+Themes.ReactionColor = ReactionOf
 
 -- The colour Class Color gives a bar of this unit, or nil if the client will not say: the player's own class (on
 -- the pet's bars too), another player's class (target, focus, target of target), and for a mob what the

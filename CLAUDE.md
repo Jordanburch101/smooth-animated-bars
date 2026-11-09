@@ -138,6 +138,25 @@ Facts found while building this, which the code relies on and which are not obvi
   named after them; the focus is the target's template; each target of target is `TargetFrameToT`/`FocusFrameToT`
   (`.HealthBar`, `.ManaBar`, masks on the bar). No unit events fire for `targettarget`/`focustarget`, so their
   liquid is refreshed on `UNIT_TARGET` and never stirred. Not yet seen in game.
+- **Enemy nameplates** (`Bars.lua`, `plateHealth`, off by default): Forever's plates are `Blizzard_NamePlates`
+  (`forever` branch). The game pools the plates' unit frames: `NamePlateBaseMixin:AcquireUnitFrame` sets
+  `plate.UnitFrame` and `plate.unitToken` on `NAME_PLATE_UNIT_ADDED` (perhaps after our handler), and the release
+  sets `UnitFrame` to nil, so one health bar (`UnitFrame.HealthBarsContainer.healthBar`) shows mob after mob. The
+  liquid is built once per bar and follows its unit, waits for the unit frame, and gives the game's fill back on
+  removal before the bar is reused. The bar has no mask, so the clip frame is the bar itself. Forbidden plates
+  (`FORBIDDEN_NAME_PLATE_*`, friendly plates in instances) are never handed to addons. At most `MAX_PLATES` (15)
+  have the liquid, idling at 20 fps. `/sab perf` times the updates with `debugprofilestop`, unit frames and plates
+  apart; the mock's numbers are mostly the mock's own cost, so only the game's say anything. Addons cannot write
+  files, so each `/sab perf` is kept in `SmoothAnimatedBarsDB.perfLog` (last 50), which the client writes on
+  `/reload`; `tools/perf_report.py` turns the newest saved file under Forever's WTF folder into
+  `perf/perf_report.txt` (git-ignored). The DoT marker on plates (`plateDots`, needs `plateHealth`): `Dots.lua`
+  keeps DoTs per mob, so `Dots.Unit(token)` reads a plate's; `Marker.lua` builds a marker per plate bar the first
+  time its mob carries the player's DoTs (from `Bars.Plates()`), with no kill icon and no model skulls, and a DoT
+  landing there shows as more damage to come (Dots says "applied" only for the target). Seen in game: the marker
+  works on plates, but a bleed (Blood theme) did not show against a hostile plate's red, so plates take a dark
+  crimson (`PLATE_LOOKS`; lighter blood looked pink in game). Not yet seen in game:
+  the plate's size and colour (`GetStatusBarColor`) being readable, the liquid under the plate's text and
+  deselected overlay, and the cost in a crowd.
 - **Unit frame menus** (`Options.lua`, `AddToUnitMenus`): `Menu.ModifyMenu("MENU_UNIT_" .. which, ...)` adds Open
   Settings; the frames pass themselves as `contextData.ownerFrame` (Mainline `PlayerFrame.lua`, `TargetFrame.lua`,
   `PetFrame.lua`), which tells them from chat names and party frames. Seen in game, and the menus' protected actions
