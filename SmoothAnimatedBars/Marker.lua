@@ -64,7 +64,99 @@ local VENOM_FROM, VENOM_TO = { 0.80, 1.00, 0.40 }, { 0.30, 0.75, 0.10 }
 local VENOM_DARK = {
     fillA = { 0.10, 0.15, 0.02 }, fillB = { 0.48, 0.60, 0.08 }, tip = { 0.78, 0.90, 0.40 }, glow = { 0.55, 0.80, 0.15 },
 }
+-- A bleed's liquid (Physical, Blood) bleeds like a cut artery, in the same glowing particles as the other themes: its
+-- heart beats about once a second, a double pulse, and each pulse rocks the front and drives a jet of red sparks out
+-- of the wound at its front, hard as the pulse starts and dying away, the second pulse's smaller. The jets arc up and
+-- fall back under their weight. Between beats a few drops trickle off its underside, red motes sink through it, a
+-- faint red haze seeps off the wound, and a tick spatters sparks that arc up and fall back. Particles are free of the
+-- bar's mask, so they fly as far as the clip frame lets them (SPILL). Emitters marked spill only show outside the
+-- bar, so a nameplate (no SPILL) leaves them out, and the jets too. A crit on the target (Dots says "crit") tears the
+-- wound open: the liquid gushes at once, a longer, thicker and flatter jet with a spatter, and the heart beats on
+-- from there.
+-- Added light, so a particle's colour only shows bright: each starts a hot pink-red and cools to crimson, as Fire's
+-- sparks start near white.
+local BLOOD_HOT, BLOOD_DEEP = { 1.00, 0.62, 0.52 }, { 0.85, 0.06, 0.08 }
+local BEAT_EVERY, BEAT_SECOND = 1.05, 0.17 -- seconds between heartbeats, and from the first pulse to the second
+local JET = { texture = "Spark", blend = "ADD", orient = true, buoyancy = -260, drag = 0.5 }
+local JET_RATE = 70 -- sparks a second at a pulse's strongest
+-- The jets: seconds, strength (speed), density (sparks), and the angle up from straight ahead, radians. A gush flies
+-- flatter, as a steep one that fast would leave the clip frame (SPILL) and be cut off flat.
+local PULSES = {
+    { length = 0.26, strength = 1, density = 1, angle = { 0.75, 1.05 } },     -- the heartbeat's first pulse
+    { length = 0.16, strength = 0.6, density = 1, angle = { 0.75, 1.05 } },   -- and its second
+    gush = { length = 0.4, strength = 1.15, density = 2.2, angle = { 0.5, 0.75 } },
+}
+
+local function StartJet(liquid, pulse)
+    local p = PULSES[pulse]
+    liquid.jet = { age = 0, acc = 1, length = p.length, strength = p.strength, density = p.density,
+                   angle = p.angle[1] + (p.angle[2] - p.angle[1]) * math.random() }
+end
+
+-- One step of the jet: sparks thrown up and out of the front, fastest and thickest as the pulse starts.
+local function Jet(liquid, dt)
+    local j = liquid.jet
+    j.age = j.age + dt
+    local p = j.age / j.length
+    if p >= 1 then
+        liquid.jet = nil
+        return
+    end
+    local push = j.strength * (1 - p) ^ 0.6
+    j.acc = j.acc + dt * JET_RATE * j.density * (0.4 + 0.6 * push)
+    local h, edge = liquid.height, liquid.edge
+    while j.acc >= 1 do
+        j.acc = j.acc - 1
+        local speed = (45 + 75 * push) * (0.85 + 0.3 * math.random())
+        local angle = j.angle + (math.random() - 0.5) * 0.35
+        liquid:EmitMote(edge - 1, h * (0.45 + 0.3 * math.random()), math.cos(angle) * speed, math.sin(angle) * speed,
+            0.35 + 0.3 * math.random(), (9 + 6 * math.random()) * (0.6 + 0.4 * push), BLOOD_HOT, BLOOD_DEEP, JET, true)
+    end
+end
+
 local DOT_LOOKS = {
+    blood = {
+        splashFrom = BLOOD_HOT, splashTo = BLOOD_DEEP,
+        burst = { texture = "Spark", orient = true, buoyancy = -120, drag = 1.0, wander = 30 },
+        ambient = {
+            -- Drips: sparks that hang a moment under the liquid, then streak down with their tails above them.
+            { area = "drip", spill = true, rate = 2, energyRate = 6, reach = 50, texture = "Spark", orient = true,
+              size = { 12, 17 }, life = { 0.4, 0.6 }, vx = { -1, 1 }, vy = { -18, -8 }, buoyancy = -200, drag = 0.2,
+              from = BLOOD_HOT, to = BLOOD_DEEP },
+            -- Glowing motes sinking slowly through the liquid and going out.
+            { area = "liquid", rate = 3, energyRate = 6, texture = "Mote", size = { 5, 9 }, life = { 0.8, 1.5 },
+              vx = { -2, 2 }, vy = { -5, -2 }, buoyancy = -2, drag = 0.8, twinkle = 2,
+              from = { 1.00, 0.78, 0.68 }, to = { 0.90, 0.10, 0.12 } },
+            -- A red haze seeping off the wound, kept low (SPILL).
+            { area = "vapour", spill = true, rate = 0.8, energyRate = 1.5, texture = "Glow", size = { 10, 16 },
+              life = { 1.0, 1.6 }, vx = { -4, 2 }, vy = { 2, 6 }, buoyancy = 1, drag = 0.8, grow = true, alpha = 0.3,
+              from = { 1.00, 0.28, 0.22 }, to = { 0.50, 0.02, 0.05 } },
+        },
+        jets = true,
+        Animate = function(self, liquid, t, dt)
+            if not liquid.nextBeat then liquid.nextBeat = t + BEAT_EVERY * math.random() end
+            local pulse
+            if liquid.gush then
+                liquid.gush = nil
+                liquid.nextBeat = t + BEAT_EVERY * (0.93 + 0.14 * math.random())
+                liquid.secondBeat = nil
+                liquid:Splash(0.5, liquid.edge - 8, liquid.edge)
+                pulse = "gush"
+            elseif t >= liquid.nextBeat then
+                liquid.nextBeat = t + BEAT_EVERY * (0.93 + 0.14 * math.random())
+                liquid.secondBeat = t + BEAT_SECOND
+                liquid:Ripple(0.3)
+                pulse = 1
+            elseif liquid.secondBeat and t >= liquid.secondBeat then
+                liquid.secondBeat = nil
+                liquid:Ripple(0.15)
+                pulse = 2
+            end
+            if not self.jets then return end
+            if pulse then StartJet(liquid, pulse) end
+            if liquid.jet then Jet(liquid, dt) end
+        end,
+    },
     plague = {
         colors = VENOM_DARK,
         splashFrom = VENOM_FROM, splashTo = VENOM_TO,
@@ -137,7 +229,7 @@ end
 -- The look for a DoT liquid's key: green motes beside the model skulls, or the drawn skull where there are none.
 local function LookFor(key)
     if SkullPool() then return DOT_LOOKS[key] end
-    return SPRITE_LOOKS[key]
+    return SPRITE_LOOKS[key] or DOT_LOOKS[key]
 end
 
 -- Sends count skulls up off liquid d of marker m: bursts follow the Sparkles setting, the steady ones Ambient.
@@ -249,11 +341,16 @@ local function DotTheme(key, plate)
         if field ~= "colors" then t[field] = value end
     end
     for field, value in pairs(look.colors or {}) do t[field] = value end
+    -- A plate's liquid is clipped to the bar (no SPILL), so particles that only show outside it (spill) and the
+    -- heartbeat's jets would never show there.
     local ambient = {}
     for _, list in ipairs({ base.ambient or {}, look.ambient or {} }) do
-        for _, emitter in ipairs(list) do ambient[#ambient + 1] = emitter end
+        for _, emitter in ipairs(list) do
+            if not (plate and emitter.spill) then ambient[#ambient + 1] = emitter end
+        end
     end
     t.ambient = ambient
+    if plate then t.jets = nil end
     return t
 end
 
@@ -806,6 +903,11 @@ ns.Dots.Listen(function(event)
     if not target then return end
     if event == "applied" then
         Landed(target)
+    elseif event == "crit" then
+        -- A crit tears the wound open: a bleed's liquid gushes at once (DOT_LOOKS.blood).
+        for _, d in ipairs(target.liquids) do
+            if d.themeKey == "blood" and d.pool:IsShown() then d.liquid.gush = true end
+        end
     else
         -- Read again on the next frame; another target's DoTs grow in from nothing.
         if event == "target" and target.clip:IsShown() then Hide(target) end

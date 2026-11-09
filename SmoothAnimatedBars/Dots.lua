@@ -1170,11 +1170,48 @@ end
 ---------------------------------------------------------------------------
 
 -- fn(event): "changed" when the target's DoTs may have changed, "target" when the target did, "applied" when a
--- DoT lands on it.
+-- DoT lands on it, "crit" when a hit on it crits (anyone's).
 local listeners = {}
 
 local function notify(event)
     for _, fn in ipairs(listeners) do fn(event) end
+end
+
+-- The flag UNIT_COMBAT gives a hit on the target ("CRITICAL", "CRUSHING", "GLANCING" or ""), counted for /sab dots
+-- whether or not its amount can be read. Forever keeps it readable (seen in game: BLOCK_REDUCED, and crits), unlike
+-- the amount.
+-- The event does not say whose hit it was, so a crit is anyone's. A hit reaches the addon under every token the mob
+-- has (target, nameplate), so only the target's are counted. A crit tells the listeners "crit".
+local flagCounts = {} -- "secret", or the flag ("none" for ""), -> hits
+local function noteFlag(unit, action, flag)
+    if isSecret(unit) or unit ~= "target" or isSecret(action) or action ~= "WOUND" then return end
+    local key
+    if isSecret(flag) then
+        key = "secret"
+    elseif type(flag) == "string" then
+        key = flag == "" and "none" or flag
+    else
+        key = "none"
+    end
+    if not flagCounts[key] then
+        trace(key == "secret" and "Hit flags on the target are secret: crits can't be seen"
+            or ("Hit flag on the target readable: " .. key))
+    end
+    flagCounts[key] = (flagCounts[key] or 0) + 1
+    if key == "CRITICAL" then notify("crit") end
+end
+
+-- For /sab dots: what the target's hit flags have shown since the last reload.
+local function flagReport()
+    if not next(flagCounts) then return "Hit flags on the target: not seen yet (hit your target, then /sab dots)" end
+    local parts = {}
+    for key, n in pairs(flagCounts) do
+        if key ~= "secret" then parts[#parts + 1] = string.format("%s %d", key, n) end
+    end
+    table.sort(parts)
+    local read = #parts > 0 and ("readable (" .. table.concat(parts, ", ") .. ")") or nil
+    local hidden = flagCounts.secret and string.format("secret %d", flagCounts.secret) or nil
+    return "Hit flags on the target: " .. (read and hidden and (read .. ", " .. hidden) or read or hidden)
 end
 
 local frame = CreateFrame("Frame")
@@ -1227,7 +1264,7 @@ local function onEvent(_, event, ...)
         end
 
     elseif event == "UNIT_COMBAT" then
-        local unit, action, _, _, school = ...
+        local unit, action, flag, _, school = ...
         local revealed = onUnitCombat(...)
         local poisoned = poisonGuard(onPoisonCombat, unit, action, school)
         local target = unitKey("target")
@@ -1235,6 +1272,7 @@ local function onEvent(_, event, ...)
             notify("changed")
             notify("applied")
         end
+        noteFlag(unit, action, flag)
     end
 end
 
@@ -1309,7 +1347,7 @@ function Dots.IsEnabled()
     return enabled
 end
 
--- fn(event) for "changed", "target" and "applied" (see notify).
+-- fn(event) for "changed", "target", "applied" and "crit" (see notify).
 function Dots.Listen(fn)
     listeners[#listeners + 1] = fn
 end
@@ -1357,6 +1395,7 @@ function Dots.Debug(n)
     else
         out[#out + 1] = "Poison on the weapons: none with damage over time seen"
     end
+    out[#out + 1] = flagReport()
     for i = math.max(1, #log - (n or 10) + 1), #log do out[#out + 1] = log[i] end
     return out
 end

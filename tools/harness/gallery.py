@@ -90,8 +90,9 @@ SCENARIOS = {
                 (2.0, "__dotsCast(348, 'Cast-2'); __hit(30, 4)"),
                 (3.4, "__hit(12, 32)"), (4.2, "__hit(60, 32)"), (5.0, "__hit(18, 4)"), (6.4, "__hit(12, 32)"),
                 (6.9, "__hit(60, 32)"), (8.0, "__hit(18, 4)"), (8.6, "__newTarget()")]),
-    # A warrior's bleed: Rend goes up and the liquid is Blood; white swings and Heroic Strikes bring the
-    # pillager down until Rend will finish it and the skull comes up, then a last swing kills it.
+    # A warrior's bleed: Rend goes up and the liquid is Blood, beating out of the wound; white swings and Heroic
+    # Strikes bring the pillager down, one of them a crit that makes the bleed gush, until Rend will finish it and
+    # the skull comes up, then a last swing kills it.
     "rend": dict(
         player="Hollywood Hootsman", level="12", power="RAGE", target="Defias Pillager", target_level="12",
         maxes=(349, 100, 210, 350), loop=9.0,
@@ -102,7 +103,7 @@ SCENARIOS = {
                 (6.0, 0.82, 0.38, 0.086, 0.9), (6.4, 0.82, 0.38, 0.052, 0.9), (7.6, 0.82, 0.48, 0.000, 0.9),
                 (8.4, 0.82, 0.48, 1.000, 0.9)],
         events=[(0.4, "__dotsCast(6546, 'Cast-1')"), (1.0, "__hit(30, 1)"), (2.2, "__hit(45, 1)"),
-                (3.4, "__hit(7, 1)"), (3.6, "__hit(30, 1)"), (5.0, "__hit(40, 1)"), (6.0, "__hit(40, 1)"),
+                (3.4, "__hit(7, 1)"), (3.6, "__crit(30, 1)"), (5.0, "__hit(40, 1)"), (6.0, "__hit(40, 1)"),
                 (6.4, "__hit(7, 1)"), (7.6, "__hit(11, 1); __target.dead = true"), (8.4, "__newTarget()")]),
     # The heal marker, Holy then Nature: Renew goes up as a Holy liquid ahead of the priest's health and Flash
     # Heal, while it is cast, joins it; then a bandage goes up as a Nature liquid past it. The health rises into
@@ -229,6 +230,7 @@ def dots_setup(target, spells):
         __fire('UNIT_SPELLCAST_SUCCEEDED', 'player', guid, id)
     end
     function __hit(amount, school) __fire('UNIT_COMBAT', 'target', 'WOUND', '', amount, school) end
+    function __crit(amount, school) __fire('UNIT_COMBAT', 'target', 'WOUND', 'CRITICAL', amount, school) end
     function __newTarget()
         __target = {{ guid = 'Creature-0-1-2-3-40-0002', name = {target!r} }}
         __fire('PLAYER_TARGET_CHANGED')

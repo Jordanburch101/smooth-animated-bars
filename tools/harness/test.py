@@ -772,6 +772,21 @@ check(dm.eval("__total()") == 14 and dm.eval("__m().clip.shown"),
       f"Rend with hit amounts secret: no tick is seen, but it is not dropped, and runs down on time ({dm.eval('__total()')})")
 check(any("Hit amounts are secret" in m for m in dm.eval("__ns.Dots.Debug(40)").values()),
       "and the tracking says why")
+# The hit flags (crits): readable on Forever, unlike the amounts. /sab dots counts what the target's hits show,
+# readable or secret, and only under the target's token (the same hit comes again under its nameplate's).
+dm.execute("""
+    __fire('UNIT_COMBAT', 'target', 'WOUND', 'CRITICAL', __secret(), 1)
+    __fire('UNIT_COMBAT', 'nameplate1', 'WOUND', 'CRITICAL', __secret(), 1)
+    __fire('UNIT_COMBAT', 'target', 'WOUND', __secret(), __secret(), 1)
+""")
+run(dm, 0.05)
+jet = dm.eval("__m().liquids[1].liquid.jet")
+check(dm.eval("__m().liquids[1].themeKey") == "blood" and jet is not None and jet.density > 1,
+      "a crit on the bleeding target makes its bleed gush")
+flags = [m for m in dm.eval("__ns.Dots.Debug(0)").values() if m.startswith("Hit flags")]
+check(len(flags) == 1 and flags[0].startswith("Hit flags on the target: readable (CRITICAL 1, none ")
+      and flags[0].endswith("), secret 1"),
+      f"/sab dots counts the target's hit flags, readable and secret ({flags})")
 run(dm, 5.5)  # its last tick, due 12 s after the cast, has a moment to land
 check(dm.eval("__total()") == 0 and not dm.eval("__m().clip.shown"), "gone once its 12 seconds are up")
 dm.execute("__cast(6546, 'Cast-4'); __fire('UNIT_COMBAT', 'target', 'DODGE', '', 0, 1)")

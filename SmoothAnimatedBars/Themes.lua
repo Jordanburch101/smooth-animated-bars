@@ -13,7 +13,7 @@
 --   bubbles   = { texture, blend, rate, energyRate, rise, size, alpha, drift, splash }
 --   burst     = { texture, blend, mode = "throw" | "attract", buoyancy, drag, spin, twinkle, wander, orient }
 --   ambient   = { { area, rate, energyRate, texture, blend, size, life, vx, vy, buoyancy, drag,
---                   spin, twinkle, wander, orient, grow, alpha, from, to }, ... }  continuous particles
+--                   spin, twinkle, wander, orient, grow, alpha, from, to, reach }, ... }  continuous particles
 --   Resolve(self, unit, preview) -> theme   pick colours once the unit is known (class, faction); nil for none
 --   Colors(self, t, frac)  -> fillA, fillB, accent   animate colours every frame
 --   Animate(self, liquid, t, dt)   stir the liquid every frame (liquid:Warm, :Ripple); state goes on liquid

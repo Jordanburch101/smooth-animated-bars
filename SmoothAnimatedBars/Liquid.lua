@@ -617,11 +617,15 @@ end
 -- Continuous particles from a theme's `ambient` list (embers, snow, spores, stars...).
 -- area: "liquid" anywhere in the liquid, "surface" along its top, "front" at the liquid front,
 -- "vapour" off the top of the liquid just behind the front,
--- "above" over the bar so they can drift down onto it.
+-- "above" over the bar so they can drift down onto it,
+-- "drip" hanging from the bottom of the liquid, mostly close behind the front (within em.reach px), to fall off it.
 function Liquid:EmitAmbient(em, edge)
     local w, h = self.width, self.height
     local x, y
-    if em.area == "front" then
+    if em.area == "drip" then
+        if edge < 8 then return end
+        x, y = edge - 3 - Rand(0, min(edge - 6, em.reach or 60)) * random(), Rand(0, 2)
+    elseif em.area == "front" then
         if edge < 4 or edge > w - 2 then return end
         x, y = Rand(edge - 6, edge + 1), Rand(2, h - 2)
     elseif em.area == "surface" then

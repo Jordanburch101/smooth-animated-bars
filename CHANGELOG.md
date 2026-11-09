@@ -27,6 +27,11 @@ Sections are `### New` and `### Fixed`; skip one that would be empty.
   have targeted. A mob you dotted and left keeps its marker. Bleeds are a
   dark crimson there, so they show against the nameplate's own red.
   Nameplates get no kill icon or poison skulls.
+- Bleeds bleed: on your target's DoT marker, a bleed's liquid beats like a
+  heart, and with every beat blood spurts from the wound in glowing bursts
+  that arc up and fall back, as from a cut artery. Between beats a few drops
+  trickle off the bar, and each tick spatters more. A critical hit on the
+  target tears the wound open and the bleed gushes.
 - `/sab perf` shows what the liquid costs each frame, the unit frames and the
   nameplates apart, so you can see what the nameplates take in a crowd.
   Each report is kept in the addon's saved variables, with a note if you

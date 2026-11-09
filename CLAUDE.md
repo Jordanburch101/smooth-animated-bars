@@ -90,7 +90,8 @@ Facts found while building this, which the code relies on and which are not obvi
   still fires on the target, focus and nameplates with plain actions (WOUND, PARRY, DODGE...), but its damage
   amounts are secret: a whole session of a warrior's Rends in DoesItDie's saved log had not one readable hit.
   So no tick is ever seen, DoTs run on their tooltip numbers, and a missing tick only counts on a mob whose
-  hits have shown readable amounts. The player's `UNIT_SPELLCAST_*` events and spell descriptions are readable. DoesItDie reports (not verified here) that
+  hits have shown readable amounts. The hit's flag is readable, though (seen in game: `BLOCK_REDUCED`, and a crit
+  made a Rend gush), so a crit on the target makes a bleed gush; it does not say whose hit it was. `/sab dots` counts what the target's hits show (`Dots.lua`, `noteFlag`). The player's `UNIT_SPELLCAST_*` events and spell descriptions are readable. DoesItDie reports (not verified here) that
   creature GUIDs are secret in instances, so mobs there are keyed by their nameplate. The
   marker and kill icon (`Marker.lua`) leave every comparison with health to StatusBars, as the liquid does.
   The marker is up to two DoT liquids, one per school (oldest at the front), drawn 10 and 5 sublevels under
