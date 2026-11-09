@@ -10,17 +10,15 @@ Sections are `### New` and `### Fixed`; skip one that would be empty.
 - Enemy nameplates (trial, off until you turn it on under Nameplates in the
   settings): the liquid in the health bars of enemy nameplates, in your
   target's colour or the nameplate's own (grey once another player has
-  tagged the mob). In a big crowd the first 15 get it. Friendly nameplates
-  in dungeons are locked to addons, so they keep the game's bar.
+  tagged the mob). In a big crowd the first 15 get it.
 - Friendly nameplates (off until you turn it on, under Nameplates): the
   liquid in the health bars of other players and friendly NPCs, with a
   colour of its own: the nameplate's own by default, any theme, Class
   Color for other players' classes, or the same as enemy nameplates. With
   Class Color on nameplates, Class Color on Mobs shows under Nameplates
-  too. Up to
-  10 get it, apart from the
-  enemies, so a busy city cannot crowd out a fight. Your own nameplate and
-  friendly nameplates in dungeons keep the game's bar.
+  too. Up to 10 get it, apart from the enemies, so a busy city cannot
+  crowd out a fight. Your own nameplate keeps the game's bar, and so do
+  friendly nameplates in dungeons, which the game keeps from addons.
 - Your DoTs on nameplates (under Enemy Nameplates, off until you turn it
   on): every mob carrying your damage-over-time spells shows them on its
   nameplate as the DoT marker does on your target, not just the mob you
