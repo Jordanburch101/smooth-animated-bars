@@ -204,7 +204,19 @@ Facts found while building this, which the code relies on and which are not obvi
   works on plates, but a bleed (Blood theme) did not show against a hostile plate's red, and a lighter or darker bleed was
   tried. The real cause was the health: the game tints its grey fill with the plate's colour, so an enemy plate
   shows a deep red, (165, 6, 3) measured in game, while the liquid took the colour at full strength. Plate colours
-  are now taken at the fill's 65% (`Bars.lua`, `PLATE_SHADE`), and a bleed on a plate is the target frame's Blood.
+  are taken at a share of the fill's brightness (`Bars.lua`, `PLATE_SHADE`), and a bleed on a plate is the target
+  frame's Blood. At 65% with the unit frames' theme from a colour, a plate still looked darker than the game's in
+  game: measured, its red matched (145 against 144) but white in the fill and swirl had greyed it to (145, 45, 42)
+  against the game's pure (144, 0, 0). A plate's own colour now takes a deep theme (`Themes.FromColor(c, template,
+  true)`): no white anywhere, its clouds and dark pockets kept to its hue (`swirlC`, `deepColor`, which `Liquid.lua`
+  otherwise shifts round the wheel), lightning in its colour (`pureLight`; `EmitBolt` otherwise draws it toward
+  white), no inherited particles, and a nearly flat fill along the bar, as the game's is. Several rounds of tuning
+  went wrong because the plates being measured never had that theme: they followed a target on Class Color with
+  Class Color on Mobs at Game Colour, and that fallback (`ThemeFor`) built the unit frames' theme. It, and Reaction
+  on a mob's plate (`PlateReaction`), now take the deep theme. The bar's colour is readable in game (`1 0 0`, not
+  secret). With 57% the plate looked right in game. The mock draws the added light layers fainter than the game
+  (10 green against 45 in game for the same plate), so plate colours have to be judged on screenshots from the game,
+  with the effects off and on.
   The fill also fades to dark over its top and bottom quarter, so the game's red sits inside the rim; `PlateMask.tga`
   fades the liquid the same way (`make_media.py`, `PLATE_FADE`, measured on the captured fill). Not yet seen in game:
   the plate's size and colour (`GetStatusBarColor`) being readable, the liquid under the plate's text and

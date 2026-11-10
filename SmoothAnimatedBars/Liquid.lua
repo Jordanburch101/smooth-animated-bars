@@ -279,8 +279,9 @@ function Liquid:SetTheme(theme)
     self:LayerColor(self.shadeHot, self.shade.hotColor or theme.tip)
     -- A third vein colour a little round the wheel from the first; the light clouds drift between it and
     -- swirlB, and the dark pockets take a deep shifted tint, so the inside mixes related colours.
+    -- A theme can set both (Themes.FromColor's deep themes for nameplates keep to their own hue).
     self.veinC = theme.swirlC or HueShift(theme.swirlA, 0.18)
-    local deep = HueShift(theme.fillA, -0.12)
+    local deep = theme.deepColor or HueShift(theme.fillA, -0.12)
     self.deep = { deep[1] * 0.3, deep[2] * 0.3, deep[3] * 0.3 }
     -- Room for extra light before the liquid washes out to white. A colour that is already bright in
     -- two channels (pale violet, gold) saturates fast, so stirs and lightning add less to it.
@@ -702,10 +703,13 @@ function Liquid:EmitBolt()
             b.power = 0.35 + 0.65 * p
             b.sheet = p < 0.25 or random() < cr.sheet
             -- The arc is nearly white with a hint of colour; the bloom carries the cloud's colour.
+            -- A theme with pure light (nameplates' deep themes) keeps both to its colour.
             local c = cr.color or self.accent or self.theme.swirlB
             local g = self.veinC
-            b.tex:SetVertexColor(Lerp(c[1], 1, 0.6), Lerp(c[2], 1, 0.6), Lerp(c[3], 1, 0.6))
-            b.glow:SetVertexColor(Lerp(g[1], 1, 0.35), Lerp(g[2], 1, 0.35), Lerp(g[3], 1, 0.35))
+            local wa, wg = 0.6, 0.35
+            if self.theme.pureLight then wa, wg = 0, 0 end
+            b.tex:SetVertexColor(Lerp(c[1], 1, wa), Lerp(c[2], 1, wa), Lerp(c[3], 1, wa))
+            b.glow:SetVertexColor(Lerp(g[1], 1, wg), Lerp(g[2], 1, wg), Lerp(g[3], 1, wg))
             b.active = true
             if not b.sheet then b.tex:Show() end
             b.glow:Show()

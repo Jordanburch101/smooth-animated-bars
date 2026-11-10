@@ -66,13 +66,33 @@ local function HSV(h, s, v)
 end
 
 -- A full colour set built from one base colour, for the game's bar colours, class and similar themes.
-local function FromColor(c, template)
-    local t = {
-        fillA = Scale(c, 0.42), fillB = Mix(c, WHITE, 0.15),
-        tip = Mix(c, WHITE, 0.75), glow = Mix(c, WHITE, 0.3),
-        swirlA = Mix(c, WHITE, 0.55), swirlB = Mix(c, WHITE, 0.35), bubble = Mix(c, WHITE, 0.8),
-        splashFrom = Mix(c, WHITE, 0.6), splashTo = c,
-    }
+-- deep: for a nameplate's colour, which the game fills at full saturation (an enemy's measured (144, 0, 0) in game).
+-- The white the unit frames' themes take toward the front and in the swirl greyed it out there, to (145, 45, 42), so
+-- a deep theme takes no white at all, and keeps its clouds, lightning and particles to its own hue.
+local function FromColor(c, template, deep)
+    local t
+    if deep then
+        t = {
+            -- Nearly flat along the bar, as the game's fill is (its shading runs top to bottom only).
+            fillA = Scale(c, 0.9), fillB = c,
+            tip = c, glow = c, swirlA = c, swirlB = c, bubble = c, splashFrom = c, splashTo = c,
+            -- The light clouds and dark pockets otherwise drift to hues round the wheel (orange and magenta from a
+            -- red), which in game still greyed it to (119, 37, 36) with the white gone.
+            swirlC = c, deepColor = c,
+            -- Lightning's arc and bloom are otherwise drawn most of the way to white, and the default theme's own
+            -- particles (inherited) have colours of their own. With the effects off the plate measured pure red
+            -- in game, and with them on still grey, so on a deep theme every light is its colour.
+            pureLight = true, ambient = false,
+            crackle = { color = c },
+        }
+    else
+        t = {
+            fillA = Scale(c, 0.42), fillB = Mix(c, WHITE, 0.15),
+            tip = Mix(c, WHITE, 0.75), glow = Mix(c, WHITE, 0.3),
+            swirlA = Mix(c, WHITE, 0.55), swirlB = Mix(c, WHITE, 0.35), bubble = Mix(c, WHITE, 0.8),
+            splashFrom = Mix(c, WHITE, 0.6), splashTo = c,
+        }
+    end
     return setmetatable(t, { __index = template })
 end
 Themes.FromColor = FromColor
@@ -118,12 +138,17 @@ local function ClassOf(unit)
     return c
 end
 
--- A unit's colour by how it stands with the player, or nil if the client will not say.
-local function ReactionOf(unit)
+-- The colours the game gives nameplates' bars: pure red, yellow and green (its fill shows an enemy's as (144, 0, 0)).
+local PLATE_HOSTILE, PLATE_NEUTRAL, PLATE_FRIENDLY = { 1, 0, 0 }, { 1, 1, 0 }, { 0, 1, 0 }
+
+-- A unit's colour by how it stands with the player, or nil if the client will not say. plate: in the nameplates'
+-- pure colours rather than the softer ones the unit frames' Reaction uses.
+local function ReactionOf(unit, plate)
     local ok, reaction = pcall(UnitReaction, unit, "player")
     if not ok or IsSecret(reaction) or not reaction then return nil end
-    if reaction <= 3 then return HOSTILE end
-    return reaction == 4 and NEUTRAL or FRIENDLY
+    if reaction <= 3 then return plate and PLATE_HOSTILE or HOSTILE end
+    if reaction == 4 then return plate and PLATE_NEUTRAL or NEUTRAL end
+    return plate and PLATE_FRIENDLY or FRIENDLY
 end
 -- Red, yellow or green by how the unit stands to the player, or nil if the client will not say (nameplates, Bars.lua).
 Themes.ReactionColor = ReactionOf

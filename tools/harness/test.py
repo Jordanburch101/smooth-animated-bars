@@ -1681,7 +1681,7 @@ check(np.eval("""(function()
     return clip.clipsChildren and tl.rel == bar and tl.x == 0 and tl.y == 0 and br.x == 0 and br.y == 0
 end)()"""), "its clip frame is the bar itself, so the waves stop at the bar's end")
 r, g, b = np.eval("__tint(" + plate_bar("nameplate1") + ")")
-check(r > 0.5 and g < 0.4, f"follows the target's colour, which follows the player's game colour: the plate's own red "
+check(r > 0.4 and g < 0.2, f"follows the target's colour, which follows the player's game colour: the plate's own red "
       f"({r:.2f}, {g:.2f}, {b:.2f})")
 np.execute(plate_bar("nameplate1") + ":SetStatusBarColor(0.5, 0.5, 0.5)")
 run(np, 0.7)
@@ -1890,9 +1890,24 @@ run(pd, 1)
 fill = pd.eval("__pm('nameplate5').liquids[1].liquid.theme.fillB")
 health = pd.eval("__ns.Bars.Liquid(__pbar('nameplate5')).theme.fillB")
 target_blood = pd.eval("__ns.Bars.Theme('blood').fillB")
-check(health[1] < 0.7 and health[1] > 0.5,
-      f"a red plate's health takes the game's deep red, the plate's colour at the fill's 65% ({health[1]:.2f}, "
+check(health[1] < 0.6 and health[1] > 0.45 and health[2] < 0.1,
+      f"a red plate's health takes the game's deep red, the plate's colour at the fill's 57%, no white in it "
+      f"({health[1]:.2f}, "
       f"{health[2]:.2f}, {health[3]:.2f})")
+def plate_theme(target_color, mobs):
+    pd.execute(f"SmoothAnimatedBarsDB.targetHealthColor = '{target_color}'; SmoothAnimatedBarsDB.mobClassColor = '{mobs}'")
+    pd.execute("__ns.Bars.ApplyColors()")
+    run(pd, 0.1)
+    return pd.eval("(function() local t = __ns.Bars.Liquid(__pbar('nameplate5')).theme "
+                   "return t.fillA[1], t.fillB[1], t.fillB[2], t.pureLight == true end)()")
+
+
+for target_color, mobs in (("class", "game"), ("class", "reaction")):
+    fa, fb, fg, pure = plate_theme(target_color, mobs)
+    check(pure and fg < 0.1 and fa > 0.8 * fb and fb < 0.6,
+          f"plates following a target on Class Color with mobs on {mobs.title()} take the plate's deep colour too "
+          f"(seen in game: Game Colour there fell back on the unit frames' theme, greyed) ({fa:.2f}, {fb:.2f}, {fg:.2f})")
+plate_theme("same", "reaction")
 check(pd.eval("__pm('nameplate5').liquids[1].themeKey") == "blood"
       and all(abs(fill[i] - target_blood[i]) < 1e-9 for i in (1, 2, 3)),
       f"a bleed on a plate is the target frame's Blood, the same colour ({fill[1]}, {fill[2]}, {fill[3]})")
@@ -1981,7 +1996,7 @@ run(fp, 0.3)
 check(fp.eval("__shown('nameplate2')") and fp.eval("__pbar('nameplate2').fill.alpha") == 0,
       "turned on: a friendly plate already showing gets the liquid")
 r, g, b = fp.eval("__tint(__pbar('nameplate2'))")
-check(g > 0.5 and r < 0.4, f"in the plate's own colour, green for a friendly NPC ({r:.2f}, {g:.2f}, {b:.2f})")
+check(g > 0.4 and r < 0.2, f"in the plate's own colour, green for a friendly NPC ({r:.2f}, {g:.2f}, {b:.2f})")
 check(fp.eval("__ns.Bars.PlateMask(__pbar('nameplate2')) ~= nil")
       and fp.eval("(select(2, __ours(__pbar('nameplate2')))).useParentLevel") is False
       and fp.eval("__ns.Bars.Liquid(__pbar('nameplate2')).theme.fillB[2]") < 0.8,
@@ -1993,7 +2008,7 @@ fp.execute("__settings.plateHealthColor:SetValue('fire')")
 run(fp, 0.7)
 r, g, b = fp.eval("__tint(__pbar('nameplate2'))")
 r1, g1, b1 = fp.eval("__tint(__pbar('nameplate1'))")
-check(g > 0.5 and r < 0.4 and r1 > 0.6, f"friends keep their own colour while the enemies take Fire ({r:.2f}, {g:.2f}, {b:.2f})")
+check(g > 0.4 and r < 0.2 and r1 > 0.6, f"friends keep their own colour while the enemies take Fire ({r:.2f}, {g:.2f}, {b:.2f})")
 fp.execute("__settings.plateFriendlyColor:SetValue('same')")
 run(fp, 0.7)
 r, g, b = fp.eval("__tint(__pbar('nameplate2'))")

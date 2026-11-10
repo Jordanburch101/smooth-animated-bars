@@ -10,6 +10,8 @@ Sections are `### New` and `### Fixed`; skip one that would be empty.
 - Health numbers on nameplates (turned on in the game's nameplate
   settings) are no longer hidden under the liquid, and neither is the
   name in the Large nameplate style.
+- Nameplates in their own colour now match the game's: an enemy's red is
+  as deep as the game's, no longer greyed out and darker looking.
 
 ## 1.6.0
 

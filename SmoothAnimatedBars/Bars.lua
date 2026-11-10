@@ -199,8 +199,22 @@ local INTERPOLATION = Enum and Enum.StatusBarInterpolation and Enum.StatusBarInt
 -- A nameplate's own colour: the one the game gave its bar (red, yellow, grey once tapped), else the unit's reaction.
 -- The game tints its plate fill (UI-HUD-CoolDownManager-Bar, a grey ramp) with the plate's colour, so what shows is
 -- that colour darkened: an enemy plate measured (165, 6, 3) in the middle of the bar in game. Taken at full strength
--- the liquid was a much brighter, pinkish red, so it takes the colour at the fill's brightness.
-local PLATE_SHADE = 0.65
+-- the liquid was a much brighter, pinkish red, so it takes the colour at the fill's brightness, in a theme with no
+-- white in its fill (Themes.FromColor, deep): with the unit frames' white it showed (145, 45, 42) against the game's
+-- (144, 0, 0) on the same plate. At 0.6 with the deep theme it measured (119, 37, 36) in game, its red too dark, so
+-- 0.72 (the red scales with it), which measured (178, 55, 50): bright enough, but greyed. The fallback colour was
+-- the unit frames' softer reaction red, (0.9, 0.15, 0.1), and is now the game's pure plate colours, with less white
+-- still in the highlights, so 0.55. That measured (145, 52, 48): the red right, still grey. The bar's colour turned
+-- out readable (1, 0, 0) in game, and with the effects off the liquid was pure red, (59 to 78, 0, 0): the grey came
+-- from lightning and particles, drawn toward white whatever the theme. The deep theme now keeps them to its colour,
+-- and with their white went some of the red: at 0.65 it measured pure, (86, 6, 6) near the bar's left end against the
+-- game's (138, 0, 0), where the deep theme's fill was then at 60% of the colour. Its fill is now nearly flat, as the
+-- game's is. But those plates had never had the deep theme: they followed a target on Class Color whose mobs show
+-- Game Colour, and that fell back on the unit frames' theme (ThemeFor, PlateReaction). That theme at 0.68, effects
+-- off, measured 90 at the bar's left end and 176 at its front for a fill of 0.29 and 0.73, about 255 on screen to
+-- the unit, so the deep theme's nearly flat fill takes 0.57 to show the game's 138. The mock's render is not a
+-- guide here: it draws the added light layers fainter.
+local PLATE_SHADE = 0.57
 
 local function PlateColor(b)
     local bar = b.bar
@@ -209,7 +223,8 @@ local function PlateColor(b)
         local ok, r, g, bl = pcall(bar.GetStatusBarColor, bar)
         if ok and type(r) == "number" and not Secret(r, g, bl) then c = { r, g, bl } end
     end
-    c = c or ns.Themes.ReactionColor(b.unit) or { 1, 0, 0 }
+    -- Where the bar's colour is kept from us, the colour the game gives a plate of that reaction.
+    c = c or ns.Themes.ReactionColor(b.unit, true) or { 1, 0, 0 }
     return { c[1] * PLATE_SHADE, c[2] * PLATE_SHADE, c[3] * PLATE_SHADE }
 end
 
@@ -242,16 +257,25 @@ local function SmallPhysics(physics)
 end
 
 -- The theme for a bar's colour choice: "game" for the bar's own colour, or a theme key.
+-- Whether a plate's Class Color shows its mob's reaction (Class Color on Mobs: Reaction), which on a plate is the
+-- plate's own colour: then it takes that, as deep as the game's, rather than the unit frames' softer reaction colours.
+local function PlateReaction(b, choice)
+    if not (b and b.spot.plate and choice == "class") or ns.Core.Get("mobClassColor") ~= "reaction" then return false end
+    local ok, isPlayer = pcall(UnitIsPlayer, b.unit)
+    return ok and not Secret(isPlayer) and not isPlayer
+end
+
 local function ThemeFor(b, choice)
     local Themes = ns.Themes
     local theme
-    if choice == "game" or not Themes.list[choice] then
-        theme = Themes.FromColor(GameColor(b), Themes.Get(Themes.default))
+    if choice == "game" or not Themes.list[choice] or PlateReaction(b, choice) then
+        -- A nameplate's own colour stays as deep as the game's fill.
+        theme = Themes.FromColor(GameColor(b), Themes.Get(Themes.default), b and b.spot.plate)
     else
         theme = Themes.Get(choice)
         if theme.Resolve then -- class and faction colours
             theme = theme:Resolve(b and b.unit, b and b.spot.preview)
-                or Themes.FromColor(GameColor(b), Themes.Get(Themes.default))
+                or Themes.FromColor(GameColor(b), Themes.Get(Themes.default), b and b.spot.plate)
         end
     end
     return setmetatable({ physics = SmallPhysics(theme.physics) }, { __index = theme })
