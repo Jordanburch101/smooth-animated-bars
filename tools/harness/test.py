@@ -1691,6 +1691,25 @@ run(np, 3)
 np.execute("__fire('UNIT_HEALTH', 'nameplate1')")
 run(np, 0.1)
 check(np.eval("(select(2, __liquid(" + plate_bar("nameplate1") + ")))") > 0, "a health change on the plate keeps it going")
+TEXTS = "__ns.Bars.PlateTexts(" + plate_bar("nameplate1") + ")"
+check(not np.eval(TEXTS + "[1].shown") and not np.eval(TEXTS + ".name.shown"),
+      "with the game's health text off, nothing is copied; the name above the bar (Normal) is left to the game")
+np.execute(f"""local bar = {plate_bar("nameplate1")}
+bar.Text:SetFont("Fonts\\\\ARIALN.TTF", 9, "OUTLINE"); bar.Text:SetTextColor(1, 0.9, 0.2)
+bar.Text:SetText(__secret()); bar.Text:Show()""")
+run(np, 0.2)
+check(np.eval(f"""(function()
+    local mine, theirs = {TEXTS}[1], {plate_bar("nameplate1")}.Text
+    local frame = {TEXTS}.frame
+    local path, size, flags = mine:GetFont()
+    local r, g = mine:GetTextColor()
+    return mine.shown and issecretvalue(mine.text) and path == "Fonts\\\\ARIALN.TTF" and size == 9 and flags == "OUTLINE"
+        and r == 1 and g == 0.9 and mine.points.TOPLEFT.rel == theirs and mine.points.BOTTOMRIGHT.rel == theirs
+        and frame.level == {plate_bar("nameplate1")}:GetFrameLevel() + 2
+end)()"""), "health text the game's settings turn on is copied over the liquid, secret, in its font, colour and place")
+np.execute(plate_bar("nameplate1") + ".Text:Hide()")
+run(np, 0.2)
+check(not np.eval(TEXTS + "[1].shown"), "and goes when the game hides it")
 np.execute("__showPlate('nameplate2', { friendly = true, reaction = 5 })")
 run(np, 0.2)
 check(np.eval("(select(2, __liquid(" + plate_bar("nameplate2") + ")))") == 0

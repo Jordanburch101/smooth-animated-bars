@@ -182,7 +182,10 @@ Facts found while building this, which the code relies on and which are not obvi
   the game's frame, so it stays. Plate liquids (and the plate's DoT liquids) sit one frame level above the bar
   (`RaisePlate`, `RaisePlateMarker`), the one exception to the frame level rule: at the bar's level the plate's
   background, dark inside with a shadow along its edges, drew over the liquid. Both were tried in game and above was
-  much better; the cost is that the plate's text inside the bar (the Large style's name) is under the liquid. Seen in
+  much better. The plate's text inside the bar was then under the liquid (seen in game: health numbers turned on in the
+  game's nameplate settings were hidden), so `Bars.lua` (`PlateTexts`) copies the bar's `Text`/`LeftText`/`RightText`,
+  and the name while it sits inside the bar, into FontStrings of its own two levels above the bar, every 0.1 s: text
+  (secret, through `SetText`), font, colour and anchors; the game's are left alone. Seen in game and right. Seen in
   game with two DoTs (Fire and Shadow) on a raised plate, each in its own colour inside the rim. The setup's nameplate
   step shows four example plates instead of the unit frames (`Preview.CreatePlates`), built from those atlases in
   the Normal style and following the plate settings; seen in game and right.

@@ -151,13 +151,23 @@ function Region:SetRotation(rad) self.rotation = rad end
 function Region:SetDrawLayer(layer, sub) self.layer, self.sub = layer, sub or 0 end
 function Region:SetSnapToPixelGrid() end
 function Region:SetTexelSnappingBias() end
-function Region:SetFont(_, size) self.fontSize = size end
-function Region:SetShadowColor() end
-function Region:SetShadowOffset() end
-function Region:SetTextColor() end
-function Region:SetJustifyH() end
-function Region:SetJustifyV() end
-function Region:SetWordWrap() end
+function Region:SetFont(path, size, flags)
+    self.fontPath, self.fontSize, self.fontFlags = path, size, flags
+    return true
+end
+function Region:GetFont() return self.fontPath or "Fonts\\FRIZQT__.TTF", self.fontSize or 12, self.fontFlags or "" end
+function Region:SetShadowColor(r, g, b, a) self.shadowColor = { r, g, b, a or 1 } end
+function Region:GetShadowColor() return unpack(self.shadowColor or { 0, 0, 0, 1 }) end
+function Region:SetShadowOffset(x, y) self.shadowOffset = { x, y } end
+function Region:GetShadowOffset() return unpack(self.shadowOffset or { 0, 0 }) end
+function Region:SetTextColor(r, g, b, a) self.textColor = { r, g, b, a or 1 } end
+function Region:GetTextColor() return unpack(self.textColor or { 1, 1, 1, 1 }) end
+function Region:SetJustifyH(j) self.justifyH = j end
+function Region:GetJustifyH() return self.justifyH or "CENTER" end
+function Region:SetJustifyV(j) self.justifyV = j end
+function Region:GetJustifyV() return self.justifyV or "MIDDLE" end
+function Region:SetWordWrap(v) self.wordWrap = v end
+function Region:GetWordWrap() return self.wordWrap ~= false end
 function Region:SetToplevel() end
 function Region:SetChecked(v) self.checked = not not v end
 function Region:GetChecked() return self.checked end
@@ -853,7 +863,16 @@ local plateBases = {}
 local function NewPlateUnitFrame()
     local uf = CreateFrame("Button", nil, UIParent)
     uf.HealthBarsContainer = CreateFrame("Frame", nil, uf)
-    uf.HealthBarsContainer.healthBar = NewStatusBar("NamePlate.healthBar", uf.HealthBarsContainer, 110, 10)
+    local hb = NewStatusBar("NamePlate.healthBar", uf.HealthBarsContainer, 110, 10)
+    uf.HealthBarsContainer.healthBar = hb
+    -- The bar's texts (TextStatusBar: health numbers, hidden unless the game's settings show them) and the name.
+    for _, key in ipairs({ "Text", "LeftText", "RightText" }) do
+        hb[key] = hb:CreateFontString(nil, "OVERLAY")
+        hb[key]:SetPoint("CENTER", hb, "CENTER")
+        hb[key]:Hide()
+    end
+    uf.name = uf:CreateFontString(nil, "OVERLAY")
+    uf.name:SetPoint("BOTTOM", hb, "TOP", 0, 2)
     return uf
 end
 -- __showPlate(token, unit, opts): the unit goes into __units[token] ({ friendly, isOtherPlayer, color, reaction });

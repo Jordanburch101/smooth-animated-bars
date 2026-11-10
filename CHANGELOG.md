@@ -4,6 +4,13 @@ Player-facing notes for each release. Write for players: what they can now
 do or see, and what was broken and now works. Leave out internal changes.
 Sections are `### New` and `### Fixed`; skip one that would be empty.
 
+## 1.6.1
+
+### Fixed
+- Health numbers on nameplates (turned on in the game's nameplate
+  settings) are no longer hidden under the liquid, and neither is the
+  name in the Large nameplate style.
+
 ## 1.6.0
 
 ### New

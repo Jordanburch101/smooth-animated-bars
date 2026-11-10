@@ -312,6 +312,7 @@ local function SetLive(b, live)
     if live == b.live then return end
     b.live = live
     b.clip:SetShown(live)
+    if b.texts then b.texts.frame:SetShown(live) end
     HideGameFill(b.bar, live and 0 or 1)
     if live then
         Feed(b, false)
@@ -332,9 +333,9 @@ end
 
 -- A nameplate's liquid sits one frame level above its bar, unlike the unit frames'. At the bar's own level the plate's
 -- background (UI-HUD-CoolDownManager-Bar-BG, dark inside, with a shadow along its edges) draws over it, which made it
--- dark and shadowed; tried both ways in game, and above was much better. The cost: the plate's text inside the bar
--- (the name in the Large style, health text if shown) is under the liquid. Where the client keeps the bar's level
--- secret it stays at the bar's level.
+-- dark and shadowed; tried both ways in game, and above was much better. The plate's text inside the bar (health
+-- numbers, the Large style's name) would be under it, so copies of it go above (PlateTexts). Where the client keeps
+-- the bar's level secret it stays at the bar's level.
 local function RaisePlate(b)
     local clip = b.clip
     local ok, level = pcall(b.bar.GetFrameLevel, b.bar)
@@ -344,6 +345,87 @@ local function RaisePlate(b)
     else
         AtParentLevel(clip, b.bar)
     end
+end
+
+-- The plate's text inside the bar, which the raised liquid would cover: the health numbers (the bar's Text, LeftText
+-- and RightText, shown by the game's nameplate settings) and the name where the style puts it inside the bar (Large).
+-- Each is copied, text, font, colour and place, into a FontString of ours a level above the liquid, drawn exactly
+-- over the game's own, which is left as it is. The texts may be secret; FontString:SetText takes them as they are.
+local PLATE_TEXTS = { "Text", "LeftText", "RightText" }
+local TEXT_EVERY = 0.1 -- seconds between copies; the game's health text changes no faster than the bar's value
+
+-- Whether a region's centre is inside the bar (the name: inside in the Large style, above it in Normal).
+local function Inside(region, bar)
+    local ok, x, y = pcall(region.GetCenter, region)
+    if not ok or type(x) ~= "number" or type(y) ~= "number" or Secret(x) or Secret(y) then return false end
+    local ok2, left, bottom, width, height = pcall(bar.GetRect, bar)
+    if not ok2 or type(left) ~= "number" or type(height) ~= "number" or Secret(left) or Secret(bottom)
+        or Secret(width) or Secret(height) then
+        return false
+    end
+    return x >= left and x <= left + width and y >= bottom and y <= bottom + height
+end
+
+local function CopyText(mine, theirs, shown)
+    if not shown then
+        mine:Hide()
+        return
+    end
+    local ok, path, size, flags = pcall(theirs.GetFont, theirs)
+    if ok and path and mine.fontFrom ~= path .. size .. (flags or "") then
+        if mine:SetFont(path, size, flags) then mine.fontFrom = path .. size .. (flags or "") end
+    end
+    pcall(function()
+        mine:SetTextColor(theirs:GetTextColor())
+        mine:SetShadowColor(theirs:GetShadowColor())
+        mine:SetShadowOffset(theirs:GetShadowOffset())
+        mine:SetJustifyH(theirs:GetJustifyH())
+        mine:SetJustifyV(theirs:GetJustifyV())
+        mine:SetWordWrap(theirs:GetWordWrap())
+    end)
+    if mine.over ~= theirs then
+        mine.over = theirs
+        mine:ClearAllPoints()
+        mine:SetAllPoints(theirs)
+    end
+    mine:SetText(theirs:GetText())
+    mine:Show()
+end
+
+local function SyncPlateTexts(b)
+    local t = b.texts
+    if not t then return end
+    for i, key in ipairs(PLATE_TEXTS) do
+        local theirs = b.bar[key]
+        if type(theirs) == "table" and theirs.GetText then
+            local ok, shown = pcall(theirs.IsShown, theirs)
+            CopyText(t[i], theirs, ok and shown == true)
+        end
+    end
+    local name = b.unitFrame and b.unitFrame.name
+    if type(name) == "table" and name.GetText then
+        local ok, shown = pcall(name.IsVisible, name)
+        CopyText(t.name, name, ok and shown == true and Inside(name, b.bar))
+    end
+end
+
+-- The copies' frame, built once per plate bar, a level above the liquid; not clipped, as the name is wider.
+local function PlateTexts(b)
+    if not b.texts then
+        local frame = CreateFrame("Frame", nil, b.bar)
+        frame:SetAllPoints(b.bar)
+        local t = { frame = frame }
+        -- A font of the game's to start from, so SetText never meets a string without one.
+        for i in ipairs(PLATE_TEXTS) do t[i] = frame:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall") end
+        t.name = frame:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+        for _, fs in pairs(t) do if fs ~= frame then fs:Hide() end end
+        b.texts = t
+    end
+    local frame = b.texts.frame
+    local ok, level = pcall(b.bar.GetFrameLevel, b.bar)
+    if ok and type(level) == "number" and not Secret(level) then frame:SetFrameLevel(level + 2) end
+    frame:SetShown(b.live)
+    b.textIn = 0
 end
 
 local function NewBar(spot, bar)
@@ -564,6 +646,11 @@ local function UpdateBar(b, dt)
             b.colorIn = PLATE_COLOR_EVERY
             ApplyColor(b)
         end
+        b.textIn = (b.textIn or 0) - dt
+        if b.textIn <= 0 then
+            b.textIn = TEXT_EVERY
+            SyncPlateTexts(b)
+        end
     else
         Inflow(b, dt, w, h)
         BuildUp(b, dt, w, h)
@@ -608,7 +695,7 @@ local function PlateBar(token)
     local unitFrame = plate.UnitFrame
     if type(unitFrame) ~= "table" or plate.unitToken ~= token then return nil end
     local bar = Path(unitFrame, "HealthBarsContainer", "healthBar") or Path(unitFrame, "healthBar")
-    if type(bar) == "table" and bar.GetStatusBarTexture and bar.GetValue then return bar end
+    if type(bar) == "table" and bar.GetStatusBarTexture and bar.GetValue then return bar, unitFrame end
 end
 
 -- Whether the player can attack the unit: true, false, or nil when the client will not say.
@@ -663,7 +750,7 @@ end
 local function AttachPlate(token)
     local side = Side(token)
     if not side then return true end
-    local bar = PlateBar(token)
+    local bar, unitFrame = PlateBar(token)
     if not bar then return false end
     local b = plates[bar]
     -- The bar may still be on the books for a token whose removal came after its next use.
@@ -677,6 +764,8 @@ local function AttachPlate(token)
     b.spot.frame = side == "friend" and "friend" or "plate" -- whose colour setting it takes
     b.err, b.colorIn = nil, PLATE_COLOR_EVERY
     RaisePlate(b)
+    b.unitFrame = unitFrame
+    PlateTexts(b)
     plateOf[token] = b
     ApplyColor(b, true)
     if b.live then Feed(b, false); b.liquid:Snap(b.width) else SetLive(b, true) end
@@ -925,6 +1014,12 @@ end
 function Bars.PlateMask(bar)
     local b = plates[bar]
     return b and b.mask
+end
+
+-- For the tests: a plate bar's copies of its texts ({ frame, [1..3], name }), nil until it first had the liquid.
+function Bars.PlateTexts(bar)
+    local b = plates[bar]
+    return b and b.texts
 end
 
 -- The enemy nameplates showing the liquid: token -> their health bar (for the DoT marker on them, Marker.lua).
