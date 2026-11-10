@@ -168,6 +168,12 @@ function Region:GetStringWidth()
     local plain = (self.text or ""):gsub("|c%x%x%x%x%x%x%x%x", ""):gsub("|r", "")
     return #plain * (self.fontSize or 12) * 0.55
 end
+-- Wrapped over its width, if it has one, a line per width's worth of text.
+function Region:GetStringHeight()
+    local lines = 1
+    if self.w and self.w > 0 then lines = math.max(1, math.ceil(self:GetStringWidth() / self.w)) end
+    return lines * (self.fontSize or 12)
+end
 function Region:CreateTexture(_, layer, _, sub) return NewRegion("Texture", self, layer, sub) end
 function Region:CreateMaskTexture(_, layer, _, sub) return NewRegion("MaskTexture", self, layer, sub) end
 function Region:GetObjectType() return self.kind end
@@ -640,7 +646,15 @@ C_UnitAuras = {
 }
 -- Other addons loaded: __addons[name] = true.
 __addons = {}
-C_AddOns = { IsAddOnLoaded = function(name) return __addons[name] or false end }
+-- The addon's toc fields: the version is the toc's own @project-version@ until a build fills it in.
+__addonVersion = "@project-version@"
+C_AddOns = {
+    IsAddOnLoaded = function(name) return __addons[name] or false end,
+    GetAddOnMetadata = function(name, field)
+        assert(type(name) == "string" and type(field) == "string", "Usage: GetAddOnMetadata(addon, field)")
+        if name == "SmoothAnimatedBars" and field == "Version" then return __addonVersion end
+    end,
+}
 __player.power = 0 -- UnitPowerType index: 0 mana, 1 rage, 3 energy
 local POWER_TOKENS = { [0] = "MANA", [1] = "RAGE", [2] = "FOCUS", [3] = "ENERGY" }
 function UnitPowerType() return __player.power, POWER_TOKENS[__player.power] end
@@ -943,8 +957,13 @@ function __loadAddon(dir, name)
     local ns = {}
     for line in io.lines(dir .. "/" .. name .. ".toc") do
         line = line:gsub("%s+$", "")
-        if line ~= "" and not line:find("^#") then
-            __load(dir .. "/" .. line:gsub("\\", "/"), name, ns)
+        -- WhatsNewData.lua is written by the build (tools/whatsnew_data.py) and absent from the source; the client
+        -- skips a toc file it cannot find, so the mock does for that one.
+        local path = dir .. "/" .. line:gsub("\\", "/")
+        local f = io.open(path, "rb")
+        if f then f:close() end
+        if line ~= "" and not line:find("^#") and (f or line ~= "WhatsNewData.lua") then
+            __load(path, name, ns)
         end
     end
     return ns

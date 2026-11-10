@@ -36,6 +36,16 @@ tools/venv/Scripts/python tools/harness/preview.py SmoothAnimatedBars preview he
 
 `preview.py` takes any setting as `key=value`, and `power=` for the power type (0 mana, 1 rage, 3 energy).
 
+## The in-game changelog
+
+`WhatsNew.lua` shows each release's `CHANGELOG.md` section in a window once after an update. Its notes are
+`WhatsNewData.lua`, which `scripts/package.ps1` writes for every build and git ignores. To try the window in the
+dev install, write it by hand, then restart the game once (it is a toc file) and use `/sab changes`:
+
+```powershell
+tools/venv/Scripts/python tools/whatsnew_data.py    # SmoothAnimatedBars/WhatsNewData.lua from CHANGELOG.md
+```
+
 ## Measuring
 
 `/sab perf [note]` in game prints what the liquid's updates cost each frame over the last 10 seconds, the unit

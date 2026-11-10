@@ -243,6 +243,7 @@ local HELP = {
     "/sab - open settings",
     "/sab on | off - liquid in all the bars, or none",
     "/sab setup - open the setup wizard",
+    "/sab changes - what's new in the latest versions",
     "/sab debug - what each bar is doing",
     "/sab dots - your DoTs on the target, and what the tracking saw lately",
     "/sab heals - your heals on the way to you, and what the tracking saw lately",
@@ -296,6 +297,8 @@ SlashCmdList.SMOOTHANIMATEDBARS = function(input)
         ns.Capture.Start("plates")
     elseif cmd == "setup" then
         ns.Wizard.Open()
+    elseif cmd == "changes" then
+        ns.WhatsNew.Open()
     elseif cmd == "debug" then
         for _, line in ipairs(ns.Bars.Debug()) do Core.Print(line) end
     elseif cmd == "dots" then

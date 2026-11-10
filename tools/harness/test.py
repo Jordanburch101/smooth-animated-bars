@@ -2037,6 +2037,148 @@ check(not fp.eval("__shown('nameplate2')") and fp.eval("__pbar('nameplate2').fil
       and fp.eval("__shown('nameplate40')"), "friends off again: their bars go back to the game's, the enemies keep theirs")
 check(not any("Error in" in m for m in chat(fp)), "no errors")
 
+print("== what's new (the in-game changelog)")
+sys.path.insert(0, os.path.join(HERE, ".."))
+import whatsnew_data  # noqa: E402
+
+SAMPLE = """# Changelog
+
+Notes for players.
+
+## 1.2.0
+
+### New
+- **A feature**: the window shows
+  this under its title.
+- A `/sab` thing on **two**
+  lines.
+
+### Fixed
+- One fix.
+
+## 1.1.0
+
+### New
+- Older.
+
+## Unreleased draft
+- not a version
+"""
+parsed = whatsnew_data.parse(SAMPLE)
+check([v["version"] for v in parsed] == ["1.2.0", "1.1.0"]
+      and parsed[0]["sections"] == [("New", [("A feature", "The window shows this under its title."),
+                                            "A /sab thing on two lines."]), ("Fixed", ["One fix."])]
+      and parsed[1]["sections"] == [("New", ["Older."])],
+      "whatsnew_data.py reads the changelog's versions and notes as players read them, Markdown marks dropped")
+check(whatsnew_data.for_release(parsed, "1.1.0")[0]["version"] == "1.1.0"
+      and whatsnew_data.for_release(parsed, "1.3.0") is None,
+      "for a release it leaves out later versions, and has nothing for a version without a section")
+real = whatsnew_data.parse(open(os.path.join(HERE, "..", "..", "CHANGELOG.md"), encoding="utf-8").read())
+DATA = whatsnew_data.lua(real)
+
+
+def wn_session(saved, version):
+    lua = session(saved, f"__addonVersion = {version!r}")
+    lua.globals().__wnd = DATA
+    lua.execute("assert(loadstring(__wnd))(nil, __ns)")
+    return lua
+
+
+def window(lua):
+    return lua.eval("SmoothAnimatedBarsWhatsNew and SmoothAnimatedBarsWhatsNew.shown")
+
+
+newest, older = real[0]["version"], real[2]["version"]
+
+wn = wn_session("{ setupDone = true }", "@project-version@")
+wn.execute("__fire('PLAYER_LOGIN')")
+run(wn, 7)
+check(not window(wn) and wn.eval("SmoothAnimatedBarsDB.whatsNewSeen") is None, "a dev build shows nothing at login")
+
+wn = wn_session("nil", newest)
+wn.execute("__fire('PLAYER_LOGIN')")
+run(wn, 7)
+check(not window(wn) and wn.eval("SmoothAnimatedBarsDB.whatsNewSeen") == newest,
+      "a new account (the setup greets it) shows nothing and notes its version quietly")
+
+wn = wn_session("{ setupDone = true }", newest)
+wn.execute("__fire('PLAYER_LOGIN')")
+run(wn, 5)
+check(not window(wn) and wn.eval("SmoothAnimatedBarsDB.whatsNewSeen") is None, "an account that had the addon: not yet")
+run(wn, 2)
+check(window(wn) and wn.eval("SmoothAnimatedBarsWhatsNew.subtitle.text") == "Version " + newest
+      and wn.eval("SmoothAnimatedBarsDB.whatsNewSeen") == newest,
+      "then, six seconds after login, this version's notes, noted as seen once shown")
+
+wn = wn_session(f"{{ setupDone = true, whatsNewSeen = {older!r} }}", newest)
+wn.execute("__fire('PLAYER_LOGIN')")
+run(wn, 7)
+heads = wn.eval("""(function()
+    local out = {}
+    for _, fs in ipairs(SmoothAnimatedBarsWhatsNew.pools.GameFontHighlightLarge or {}) do
+        if fs.shown then out[#out + 1] = fs.text end
+    end
+    return table.concat(out, ",")
+end)()""")
+notes = wn.eval("""(function()
+    local n = 0
+    for _, fs in ipairs(SmoothAnimatedBarsWhatsNew.pools.GameFontHighlight or {}) do
+        if fs.shown then n = n + 1 end
+    end
+    return n
+end)()""")
+want = sum(len(n) for v in real[:2] for _, n in v["sections"])
+check(heads == f"{real[0]['version']},{real[1]['version']}" and notes == want,
+      f"updating from {older}: every version since, newest first, each note ({heads}, {notes} notes)")
+titles = [n[0] for _, ns_ in real[0]["sections"] for n in ns_ if isinstance(n, tuple)]
+shown_titles = wn.eval("""(function()
+    local out = {}
+    for _, fs in ipairs(SmoothAnimatedBarsWhatsNew.pools.GameFontNormal or {}) do
+        if fs.shown then out[fs.text] = true end
+    end
+    return out
+end)()""")
+check(titles and all(shown_titles[t] for t in titles),
+      f"a note's title shows on a line of its own ({len(titles)} titles in {real[0]['version']})")
+
+wn = wn_session(f"{{ setupDone = true, whatsNewSeen = {newest!r} }}", newest)
+wn.execute("__fire('PLAYER_LOGIN')")
+run(wn, 7)
+check(not window(wn), "a version already seen shows nothing")
+
+wn = wn_session(f"{{ setupDone = true, whatsNewSeen = {older!r} }}", newest)
+wn.execute("__fire('PLAYER_LOGIN'); __combat = true")
+run(wn, 7)
+check(not window(wn) and wn.eval("SmoothAnimatedBarsDB.whatsNewSeen") == older, "never in combat: it waits")
+wn.execute("__combat = false; __fire('PLAYER_REGEN_ENABLED')")
+check(window(wn) and wn.eval("SmoothAnimatedBarsDB.whatsNewSeen") == newest, "and shows once combat ends")
+wn.execute("SmoothAnimatedBarsWhatsNew:Hide(); SlashCmdList.SMOOTHANIMATEDBARS('changes')")
+check(window(wn), "/sab changes opens it again")
+wn.execute("__closeSettings(); __openedCategory = nil")
+wn.execute("""(function()
+    for _, f in ipairs(__frames) do
+        if f.parent == SmoothAnimatedBarsWhatsNew and f.text == "Open Settings" then f.scripts.OnClick(f) end
+    end
+end)()""")
+check(not window(wn) and wn.eval("__openedCategory") == "Smooth Animated Bars", "Open Settings closes it and opens them")
+rows = wn.eval("__settingsRows()")
+button = [rows[i] for i in range(1, len(rows) + 1) if rows[i].name == "What's New"]
+check(bool(button), "a What's New button on the settings page")
+if button:
+    button[0].onClick()
+check(window(wn), "which opens it")
+many = [{"version": f"1.{i}.0", "sections": [("New", ["x"])]} for i in range(12, 0, -1)]
+wn.globals().__many = whatsnew_data.lua(many)
+wn.execute("assert(loadstring(__many))(nil, __ns)")
+check(wn.eval("#__ns.WhatsNew.Unseen(__ns.WhatsNewData, '1.12.0', '0.1.0')") == 8
+      and wn.eval("__ns.WhatsNew.Unseen(__ns.WhatsNewData, '1.12.0', '0.1.0').cut"),
+      "at most eight versions, then a line pointing to the release notes")
+nodata = session("{ setupDone = true }")
+nodata.execute("__ns.WhatsNewData = nil")  # as in a dev install, whatever WhatsNewData.lua is on this disk
+nodata.execute("SlashCmdList.SMOOTHANIMATEDBARS('changes')")
+check(any("no changelog" in m for m in chat(nodata)), "a dev install without notes says how to make them")
+check(not any("Error in" in m for m in chat(wn)), "no errors")
+
 if failures:
     print(f"\n{len(failures)} check(s) failed:")
     for f in failures:

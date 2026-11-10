@@ -39,7 +39,11 @@ Every release, before tagging:
 
 1. Check that the `CHANGELOG.md` section for the version is complete and written for players:
    `## X.Y.Z` with `### New` and `### Fixed`. `bash scripts/changelog.sh X.Y.Z` prints what the release
-   will use.
+   will use. The same section is the in-game changelog (`WhatsNew.lua`, as Road to Sixty's): every player sees
+   it in a window after updating, so every release needs one and each note must read well on its own. Nothing
+   else is updated by hand: `scripts/package.ps1` writes `WhatsNewData.lua` from `CHANGELOG.md`
+   (`tools/whatsnew_data.py`), prints "WhatsNewData.lua: N versions, newest X.Y.Z" (the newest must be this
+   version), and fails if the version has no section. That file is not committed.
 2. Only if something visible changed since the gallery was last rebuilt (the liquid, a theme, the DoT marker,
    the frame art): rebuild the images it shows, all of them with
    `cd tools/harness; ../venv/Scripts/python gallery.py ../../SmoothAnimatedBars`, or just the scenarios that

@@ -292,6 +292,8 @@ function Options.Register(savedDB, defaultValues)
         .. "up through that wait and lets go in a burst of stars as regeneration returns.")
 
     Header("Setup")
+    Button("What's New", "Open", function() ns.WhatsNew.Open() end,
+        "What changed in the latest versions, as shown once after each update.")
     Button("Setup Wizard", "Open", function() ns.Wizard.Open() end,
         "Pick the bars, their colours, how lively they are and the DoT marker again, seeing each choice on your frame.")
 

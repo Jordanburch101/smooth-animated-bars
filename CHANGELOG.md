@@ -7,42 +7,31 @@ Sections are `### New` and `### Fixed`; skip one that would be empty.
 ## 1.6.0
 
 ### New
-- Enemy nameplates (trial, off until you turn it on under Nameplates in the
-  settings): the liquid in the health bars of enemy nameplates, in your
-  target's colour or the nameplate's own (grey once another player has
-  tagged the mob). In a big crowd the first 15 get it.
-- Friendly nameplates (off until you turn it on, under Nameplates): the
-  liquid in the health bars of other players and friendly NPCs, with a
-  colour of its own: the nameplate's own by default, any theme, Class
-  Color for other players' classes, or the same as enemy nameplates. With
-  Class Color on nameplates, Class Color on Mobs shows under Nameplates
-  too. Up to 10 get it, apart from the enemies, so a busy city cannot
-  crowd out a fight. Your own nameplate keeps the game's bar, and so do
-  friendly nameplates in dungeons, which the game keeps from addons.
-- Your DoTs on nameplates (under Enemy Nameplates, off until you turn it
-  on): every mob carrying your damage-over-time spells shows them on its
-  nameplate as the DoT marker does on your target, not just the mob you
-  have targeted. A mob you dotted and left keeps its marker. Bleeds look the
-  same there as on your target's frame.
-  Nameplates get no kill icon or poison skulls.
-- The setup has a new last step for nameplates: enemy nameplates off, with
-  the liquid, or with your DoTs too, and friendly nameplates on or off.
-- The DoT marker on French, German, Spanish, Portuguese, Russian, Korean
-  and Chinese clients: it reads your spells' text in those languages too,
-  checked against every class spell's tooltip in each language (not yet
+- **Enemy nameplates**: the liquid in the health bars of enemy nameplates,
+  in the nameplate's own colour or your target's. Turn it on under
+  Nameplates in the settings, or in the setup. In a big crowd the first 15
+  get it.
+- **Friendly nameplates**: the same for other players and friendly NPCs,
+  with a colour of their own: the nameplate's, any theme, or Class Color
+  for other players' classes. Up to 10 get it, apart from the enemies, so a
+  busy city cannot crowd out a fight. Friendly nameplates in dungeons keep
+  the game's bar, as the game keeps them from addons.
+- **Your DoTs on nameplates**: every mob carrying your damage over time
+  shows it on its nameplate, as your target's frame does, and keeps it
+  when you change target. Bleeds look the same as on the frame. No kill
+  icon or poison skulls there.
+- **Bleeds bleed**: on the DoT marker a bleed beats like a heart and spurts
+  blood with every beat, drips between beats, and gushes on a critical hit.
+- **Other client languages**: the DoT marker reads your spells in French,
+  German, Spanish, Portuguese, Russian, Korean and Chinese too (not yet
   tried in game; rogue poisons and Immolation Trap still need an English
   client). `/sab dots` lists any spell text it could not read.
-- Bleeds bleed: on your target's DoT marker, a bleed's liquid beats like a
-  heart, and with every beat blood spurts from the wound in glowing bursts
-  that arc up and fall back, as from a cut artery. Between beats a few drops
-  trickle off the bar, and each tick spatters more. A critical hit on the
-  target tears the wound open and the bleed gushes.
-- `/sab perf` shows what the liquid costs each frame, the unit frames and the
-  nameplates apart, so you can see what the nameplates take in a crowd.
-  Each report is kept in the addon's saved variables, with a note if you
-  add one (`/sab perf 12 mobs`), the zone and whether you were in combat.
-  `/sab perf reset` starts the timing over; `/sab perf clear` forgets the
-  saved reports.
+- **Nameplates in the setup**: a last step to turn enemy and friendly
+  nameplates on, with example nameplates showing each choice.
+- **What's new**: this window, once after each update. `/sab changes` or
+  What's New on the settings page opens it again.
+- **`/sab perf`**: what the liquid costs each frame, the unit frames and the
+  nameplates apart, kept for later (`/sab perf 12 mobs` labels it).
 
 ### Fixed
 - Rip and Rupture cast with 1 combo point no longer show the damage of a

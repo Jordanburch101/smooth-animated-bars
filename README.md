@@ -160,6 +160,7 @@ whether to mark your DoTs (marker and skull, just the marker, or off). Skip puts
 | `/sab` | Open the settings |
 | `/sab on` / `/sab off` | Liquid in all the bars, or back to the game's own bars |
 | `/sab setup` | Open the setup again |
+| `/sab changes` | What changed in the latest versions, as shown once after each update |
 | `/sab debug` | What each bar is doing, if something looks wrong |
 | `/sab dots` | Your DoTs on the target, and what the DoT tracking saw lately |
 | `/sab heals` | Your heals, food and drink on the way to you, and what the tracking saw lately |

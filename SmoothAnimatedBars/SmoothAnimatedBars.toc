@@ -28,3 +28,5 @@ Options.lua
 Preview.lua
 Capture.lua
 Wizard.lua
+WhatsNewData.lua
+WhatsNew.lua
