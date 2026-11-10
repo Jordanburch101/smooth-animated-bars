@@ -10,7 +10,8 @@ for players; `docs/DEVELOPMENT.md` covers the layout and tools; this file holds 
   `UnitPower`, the bars' `GetValue`). Never compare them or do arithmetic on them. Hand them to widgets
   (`StatusBar:SetValue`) and anchor to what the client lays out; `Bars.lua` explains the design.
 - **Game frames:** only read and draw on them. No hooks, no fields written onto them, no changes besides the
-  fill texture's alpha. Our frames sit at the bar's own frame level so the game's text stays on top.
+  fill texture's alpha. Our frames sit at the bar's own frame level so the game's text stays on top, except on
+  nameplates (see Enemy nameplates below).
 - **Forever assets:** game files by path often fail to load there. Use `SetColorTexture` for solid fills and
   the addon's own TGAs in `SmoothAnimatedBars/Media/` (made by `tools/make_media.py`), never `Interface\...`
   game paths. Icons by file ID.
@@ -163,7 +164,8 @@ Facts found while building this, which the code relies on and which are not obvi
   `plate.UnitFrame` and `plate.unitToken` on `NAME_PLATE_UNIT_ADDED` (perhaps after our handler), and the release
   sets `UnitFrame` to nil, so one health bar (`UnitFrame.HealthBarsContainer.healthBar`) shows mob after mob. The
   liquid is built once per bar and follows its unit, waits for the unit frame, and gives the game's fill back on
-  removal before the bar is reused. The bar has no mask, so the clip frame is the bar itself. Forbidden plates
+  removal before the bar is reused. The bar has no mask, so the clip frame is the bar itself, and the liquid takes a mask of the addon's own, `PlateMask.tga` (`make_media.py`), the shape of the game's fill with its cut corners: square, it covered the bronze rim's corners. The plate's DoT liquids take it too (`Bars.PlateMask`).
+  Forever's plates are its own (`Blizzard_NamePlates/Camelot/*`, loaded instead of the shared files): a bronze bar background (`UI-HUD-CoolDownManager-Bar-BG`), a separate level box (`ui-hud-nameplates-levelindicator`), and a yellow glow on the target (`UI-HUD-CoolDownManager-Selected-yellow`). `/sab capture plates` and `capture_art.py --plates` capture those pieces (and the Classic style's `Nameplate-Border`); measuring a live plate's layout in game did not save, so the layout was measured on screenshots of the Normal and Large styles. Forbidden plates
   (`FORBIDDEN_NAME_PLATE_*`, friendly plates in instances) are never handed to addons. At most `MAX_PLATES` (15)
   have the liquid, idling at 20 fps. Friendly plates (`plateFriendly`) are a side of their own (`Side`: by
   `UnitCanAttack`, never the player's own plate, nothing when the answer is secret) with their own cap
@@ -173,7 +175,14 @@ Facts found while building this, which the code relies on and which are not obvi
   the unit frames. Drawing them at half size and brighter, with more lightning, was tried in game and the plain look
   was preferred, so plates draw the liquid exactly as the unit frames do. The game darkens every plate but the target's
   (`deselectedOverlay`, the bar's OVERLAY layer, likely over the liquid as the text is; not checked); that is
-  the game's frame, so it stays. `/sab perf` times the updates with `debugprofilestop`, unit frames and plates
+  the game's frame, so it stays. Plate liquids (and the plate's DoT liquids) sit one frame level above the bar
+  (`RaisePlate`, `RaisePlateMarker`), the one exception to the frame level rule: at the bar's level the plate's
+  background, dark inside with a shadow along its edges, drew over the liquid. Both were tried in game and above was
+  much better; the cost is that the plate's text inside the bar (the Large style's name) is under the liquid. Seen in
+  game with two DoTs (Fire and Shadow) on a raised plate, each in its own colour inside the rim. The setup's nameplate
+  step shows four example plates instead of the unit frames (`Preview.CreatePlates`), built from those atlases in
+  the Normal style and following the plate settings; seen in game and right.
+  `/sab perf` times the updates with `debugprofilestop`, unit frames and plates
   apart; the mock's numbers are mostly the mock's own cost, so only the game's say anything. Addons cannot write
   files, so each `/sab perf` is kept in `SmoothAnimatedBarsDB.perfLog` (last 50), which the client writes on
   `/reload`; `tools/perf_report.py` turns the newest saved file under Forever's WTF folder into
@@ -181,8 +190,12 @@ Facts found while building this, which the code relies on and which are not obvi
   keeps DoTs per mob, so `Dots.Unit(token)` reads a plate's; `Marker.lua` builds a marker per plate bar the first
   time its mob carries the player's DoTs (from `Bars.Plates()`), with no kill icon and no model skulls, and a DoT
   landing there shows as more damage to come (Dots says "applied" only for the target). Seen in game: the marker
-  works on plates, but a bleed (Blood theme) did not show against a hostile plate's red, so plates take a dark
-  crimson (`PLATE_LOOKS`; lighter blood looked pink in game). Not yet seen in game:
+  works on plates, but a bleed (Blood theme) did not show against a hostile plate's red, and a lighter or darker bleed was
+  tried. The real cause was the health: the game tints its grey fill with the plate's colour, so an enemy plate
+  shows a deep red, (165, 6, 3) measured in game, while the liquid took the colour at full strength. Plate colours
+  are now taken at the fill's 65% (`Bars.lua`, `PLATE_SHADE`), and a bleed on a plate is the target frame's Blood.
+  The fill also fades to dark over its top and bottom quarter, so the game's red sits inside the rim; `PlateMask.tga`
+  fades the liquid the same way (`make_media.py`, `PLATE_FADE`, measured on the captured fill). Not yet seen in game:
   the plate's size and colour (`GetStatusBarColor`) being readable, the liquid under the plate's text and
   deselected overlay, and the cost in a crowd.
 - **Unit frame menus** (`Options.lua`, `AddToUnitMenus`): `Menu.ModifyMenu("MENU_UNIT_" .. which, ...)` adds Open

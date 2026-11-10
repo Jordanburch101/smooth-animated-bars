@@ -239,7 +239,7 @@ function BUILD.dots(p)
 end
 
 function BUILD.plates(p)
-    Heading(p, "Nameplates too?", "The health bars over heads. They are not in the frames above: look at the mobs around you.")
+    Heading(p, "Nameplates too?", "The health bars over heads, as above: your target, two more mobs and a friendly guard.")
     -- Short cards on one line each, as the target colours' rows.
     for row, spec in ipairs({ { "Enemies", "plates", PLATES }, { "Friends", "friends", FRIENDS } }) do
         local y = -56 - (row - 1) * 46
@@ -300,6 +300,14 @@ local function ShowPage(name)
         BUILD[name](p)
     end
     for key, p in pairs(ui.pages) do p:SetShown(key == name) end
+    -- The nameplate step shows example nameplates in the preview strip, the others the unit frames.
+    local plates = name == "plates"
+    if plates and not ui.platePreview then
+        ui.platePreview = ns.Preview.CreatePlates(ui.strip)
+        ui.platePreview:SetPoint("CENTER")
+    end
+    ui.preview:SetShown(not plates)
+    if ui.platePreview then ui.platePreview:SetShown(plates) end
     Refresh()
 end
 
@@ -369,6 +377,7 @@ local function Build()
     stripBg:SetAllPoints()
     stripBg:SetColorTexture(0, 0, 0, 0.45)
     Outline(strip, EDGE)
+    ui.strip = strip
     ui.preview = ns.Preview.Create(strip)
     ui.preview:SetPoint("CENTER")
     ui.body = CreateFrame("Frame", nil, frame)

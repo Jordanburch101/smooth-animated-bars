@@ -22,8 +22,8 @@ Sections are `### New` and `### Fixed`; skip one that would be empty.
 - Your DoTs on nameplates (under Enemy Nameplates, off until you turn it
   on): every mob carrying your damage-over-time spells shows them on its
   nameplate as the DoT marker does on your target, not just the mob you
-  have targeted. A mob you dotted and left keeps its marker. Bleeds are a
-  dark crimson there, so they show against the nameplate's own red.
+  have targeted. A mob you dotted and left keeps its marker. Bleeds look the
+  same there as on your target's frame.
   Nameplates get no kill icon or poison skulls.
 - The setup has a new last step for nameplates: enemy nameplates off, with
   the liquid, or with your DoTs too, and friendly nameplates on or off.

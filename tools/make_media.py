@@ -524,6 +524,41 @@ def make_plus(path, size=32):
     write_tga(path, size, size, radial(size, fn))
 
 
+# How bright the captured plate fill is down from its top edge, as a share of its middle, against the distance from
+# the edge as a share of its height: it fades over its top and bottom quarter, so the game's red sits inside the rim.
+PLATE_FADE = [(0.0, 0.0), (0.041, 0.13), (0.082, 0.37), (0.123, 0.59), (0.164, 0.75), (0.206, 0.87), (0.247, 0.94),
+              (0.288, 1.0)]
+
+
+def make_plate_mask(path, w=256, h=32):
+    """The shape of a nameplate's health bar, for the liquid there (the game's plate bar has no mask of its own): the
+    fill Forever draws (UI-HUD-CoolDownManager-Bar, captured with /sab capture plates) with its four corners cut at
+    45 degrees, 1.5% of the width across and a quarter of the height down, as the captured fill is at 128 x 10, and
+    fading out toward its top and bottom edges as the fill does (PLATE_FADE), so the liquid stays off the rim as the
+    game's red does. It is stretched over the bar as the game stretches the fill, so it matches at any plate size."""
+    cx, cy = 0.015 * w, 0.25 * h
+    samples = 4
+
+    def inside(x, y):
+        dx = min(x, w - x)
+        dy = min(y, h - y)
+        return dx / cx + dy / cy >= 1 if dx < cx and dy < cy else True
+
+    def fade(y):
+        d = min(y, h - y) / h
+        for (d0, v0), (d1, v1) in zip(PLATE_FADE, PLATE_FADE[1:]):
+            if d <= d1:
+                return v0 + (v1 - v0) * (d - d0) / (d1 - d0)
+        return 1.0
+
+    def pixel(x, y):
+        hits = sum(inside(x + (i + 0.5) / samples, y + (j + 0.5) / samples)
+                   for i in range(samples) for j in range(samples))
+        return (1, 1, 1, hits / samples ** 2 * fade(y + 0.5))
+
+    write_tga(path, w, h, pixel)
+
+
 def make_skull(path, size=64):
     """A poison's skull, like the ones the game shows over a poisoned character: a rounded cranium over cheekbones
     and a narrower jaw, shaded as if lit from the upper left (gold where the light falls, sickly green in shadow),
@@ -626,6 +661,7 @@ def main():
     make_crystal(os.path.join(out, "Crystal.tga"))
     make_plus(os.path.join(out, "Plus.tga"))
     make_skull(os.path.join(out, "Skull.tga"))
+    make_plate_mask(os.path.join(out, "PlateMask.tga"))
     print("wrote", sorted(os.listdir(out)))
 
 

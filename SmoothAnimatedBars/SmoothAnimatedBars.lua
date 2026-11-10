@@ -292,6 +292,8 @@ SlashCmdList.SMOOTHANIMATEDBARS = function(input)
         Core.Print(cmd == "on" and "Liquid in the unit frames' bars." or "The game's own bars again.")
     elseif cmd == "capture" then -- photographs the frame art for the gallery; see Capture.lua
         ns.Capture.Start()
+    elseif cmd == "capture plates" then -- the same for a nameplate's art
+        ns.Capture.Start("plates")
     elseif cmd == "setup" then
         ns.Wizard.Open()
     elseif cmd == "debug" then

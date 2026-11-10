@@ -38,10 +38,16 @@ function Region:SetPoint(point, a, b, c, d)
     self.points[point] = { rel = rel, relPoint = relPoint, x = x, y = y }
 end
 function Region:ClearAllPoints() self.points = {} end
-function Region:SetAllPoints()
+-- Like the client: over the region given, else over the parent.
+function Region:SetAllPoints(rel)
     self.points = {}
-    self:SetPoint("TOPLEFT")
-    self:SetPoint("BOTTOMRIGHT")
+    if rel then
+        self:SetPoint("TOPLEFT", rel, "TOPLEFT")
+        self:SetPoint("BOTTOMRIGHT", rel, "BOTTOMRIGHT")
+    else
+        self:SetPoint("TOPLEFT")
+        self:SetPoint("BOTTOMRIGHT")
+    end
 end
 function Region:GetPoint()
     for p, v in pairs(self.points) do return p, v.rel, v.relPoint, v.x, v.y end

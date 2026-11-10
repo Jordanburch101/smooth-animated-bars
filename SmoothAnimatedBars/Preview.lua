@@ -279,3 +279,159 @@ function Preview.Create(parent)
     holder.player, holder.target, holder.marker = player, target, marker
     return holder
 end
+
+--------------------------------------------------------------------------------
+-- The preview nameplates (the setup's nameplate step)
+--------------------------------------------------------------------------------
+-- Forever's own plate (Blizzard_NamePlates/Camelot), in its Normal style: a bar 13 high in the bronze background
+-- (UI-HUD-CoolDownManager-Bar-BG, 2 left, 3 up, 6 right and 6 down of the bar, its atlas's own margin included), its
+-- fill tinted with the unit's colour, the level box 5 right of the bar (28 wide, 3 above to 2 below), the name above.
+-- The target has the yellow glow round the background and the level box's outline; the others the game's darkening.
+-- The liquid follows the plate settings (plateHealth, plateFriendly, plateDots) and sits a level above the bar, as on
+-- real plates.
+
+local PLATE_W, PLATE_H = 150, 13
+-- name, level, unit colour, colour setting it follows ("plate" or "friend"), on/off setting, targeted, place
+local PLATES = {
+    { "Defias Pillager", 18, { 1, 0, 0 }, "plate", "plateHealth", true, 14, -24 },
+    { "Defias Smuggler", 17, { 1, 0, 0 }, "plate", "plateHealth", false, 14, -70 },
+    { "Mottled Boar", 16, { 1, 1, 0 }, "plate", "plateHealth", false, 254, -24 },
+    { "Stormwind Guard", 25, { 0, 1, 0 }, "friend", "plateFriendly", false, 254, -70 },
+}
+-- Health as fractions, looped: { seconds, the target's, the second enemy's, the boar's, the guard's }.
+local PLATE_SCRIPT = {
+    { 0.0, 1.00, 0.90, 0.60, 1.00 },
+    { 1.2, 0.80, 0.90, 0.60, 1.00 },
+    { 2.2, 0.62, 0.70, 0.60, 0.92 },
+    { 3.0, 0.62, 0.70, 0.48, 1.00 },
+    { 4.0, 0.40, 0.55, 0.48, 1.00 },
+    { 5.0, 0.40, 0.55, 0.48, 0.85 },
+    { 6.0, 0.18, 0.40, 0.48, 1.00 },
+    { 7.2, 1.00, 0.90, 0.60, 1.00 },
+}
+-- The target's DoTs at each row, in points of its 210 health, as on the frames' target (DOTS).
+local PLATE_DOTS = {
+    {},
+    { { "Corruption", 54, 32 } },
+    { { "Corruption", 48, 32 }, { "Immolate", 40, 4 } },
+    { { "Corruption", 42, 32 }, { "Immolate", 34, 4 } },
+    { { "Corruption", 30, 32 }, { "Immolate", 28, 4 } },
+    { { "Corruption", 30, 32 }, { "Immolate", 28, 4 } },
+    { { "Corruption", 20, 32 } },
+    {},
+}
+
+local function Plate(holder, top, spec)
+    local name, level, color, frame, key, targeted, x, y = unpack(spec)
+    local bar = CreateFrame("StatusBar", nil, holder)
+    bar:SetSize(PLATE_W, PLATE_H)
+    bar:SetPoint("TOPLEFT", x, y)
+    local fill = bar:CreateTexture(nil, "ARTWORK")
+    if not Atlas(fill, "UI-HUD-CoolDownManager-Bar") then fill:SetColorTexture(1, 1, 1, 1) end
+    bar:SetStatusBarTexture(fill)
+    bar:SetStatusBarColor(color[1], color[2], color[3])
+    bar:SetMinMaxValues(0, 210)
+    bar:SetValue(210)
+    bar.max = 210
+
+    local bg = bar:CreateTexture(nil, "BACKGROUND")
+    if Atlas(bg, "UI-HUD-CoolDownManager-Bar-BG") then
+        bg:SetPoint("TOPLEFT", bar, "TOPLEFT", -2, 3)
+        bg:SetPoint("BOTTOMRIGHT", bar, "BOTTOMRIGHT", 6, -6)
+    else
+        bg:Hide()
+    end
+    if not targeted then
+        local dark = bar:CreateTexture(nil, "OVERLAY")
+        if Atlas(dark, "ui-hud-nameplates-deselected-overlay") then dark:SetAllPoints(bar) else dark:Hide() end
+    end
+
+    local box = CreateFrame("Frame", nil, holder)
+    box:SetPoint("TOPLEFT", bar, "TOPRIGHT", 5, 3)
+    box:SetPoint("BOTTOMLEFT", bar, "BOTTOMRIGHT", 5, -2)
+    box:SetWidth(28)
+    local boxArt = box:CreateTexture(nil, "BACKGROUND")
+    if Atlas(boxArt, "ui-hud-nameplates-levelindicator") then boxArt:SetAllPoints() else boxArt:Hide() end
+    local levelText = top:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    levelText:SetPoint("CENTER", box, "CENTER", 0, 0)
+    levelText:SetText(level)
+
+    if targeted then
+        local glow = top:CreateTexture(nil, "OVERLAY")
+        if Atlas(glow, "UI-HUD-CoolDownManager-Selected-yellow") then
+            glow:SetPoint("TOPLEFT", bg, "TOPLEFT", -3, 2)
+            glow:SetPoint("BOTTOMRIGHT", bg, "BOTTOMRIGHT", 0, 2)
+        else
+            glow:Hide()
+        end
+        local outline = top:CreateTexture(nil, "OVERLAY")
+        if Atlas(outline, "ui-hud-nameplates-levelindicator-rectangle-selected") then
+            outline:SetPoint("TOPLEFT", box, "TOPLEFT", -3, 3)
+            outline:SetPoint("BOTTOMRIGHT", box, "BOTTOMRIGHT", 3, -4)
+        else
+            outline:Hide()
+        end
+    end
+
+    local label = top:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+    label:SetPoint("BOTTOM", bar, "TOP", 0, 3)
+    label:SetText(name)
+
+    bar.state = ns.Bars.Preview(bar, { key = key, frame = frame, unit = frame == "friend" and "player" or "target",
+                                       kind = "health", plate = true })
+    return bar
+end
+
+local function SetPlate(bar, frac)
+    local value = math.floor(frac * bar.max + 0.5)
+    if value == bar.shownValue then return end
+    bar.shownValue = value
+    bar:SetValue(value)
+    ns.Bars.Stir(bar.state)
+end
+
+-- The four plates side by side in two rows, playing the loop while shown.
+function Preview.CreatePlates(parent)
+    local holder = CreateFrame("Frame", nil, parent)
+    holder:SetSize(480, 100)
+    local top = CreateFrame("Frame", nil, holder)
+    top:SetAllPoints()
+    top:SetFrameLevel(holder:GetFrameLevel() + 10)
+    local bars = {}
+    for i, spec in ipairs(PLATES) do bars[i] = Plate(holder, top, spec) end
+
+    local dots = {}
+    local target = bars[1]
+    local marker = ns.Marker.Preview({
+        bar = target, mask = target.state.mask, iconHost = holder, plate = true,
+        visible = function() return true end,
+        source = function()
+            local list, total = {}, 0
+            for i, dot in ipairs(dots) do
+                list[i] = { name = dot[1], damage = dot[2], school = dot[3] }
+                total = total + dot[2]
+            end
+            return target.max, target.shownValue, total, list
+        end,
+    })
+
+    local t, step = 0, 0
+    local function Play(i)
+        local row = PLATE_SCRIPT[i]
+        for n, bar in ipairs(bars) do SetPlate(bar, row[n + 1]) end
+        local landed = #PLATE_DOTS[i] > #dots
+        dots = PLATE_DOTS[i]
+        if landed then ns.Marker.Landed(marker) end
+    end
+    Play(1)
+    holder:SetScript("OnUpdate", function(_, elapsed)
+        t = t + elapsed
+        if t >= LOOP then t, step = t - LOOP, 0 end
+        while PLATE_SCRIPT[step + 1] and PLATE_SCRIPT[step + 1][1] <= t do
+            step = step + 1
+            Play(step)
+        end
+    end)
+    holder.plates, holder.marker = bars, marker
+    return holder
+end

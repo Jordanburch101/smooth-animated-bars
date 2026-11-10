@@ -40,6 +40,7 @@ local MAX_FRIENDLY = 10           -- friendly plates apart, so a city full of pl
 local PLATE_IDLE_FPS = 20
 local PLATE_W, PLATE_H = 110, 10  -- a plate's bar, until the client says (its size can be secret)
 local PLATE_COLOR_EVERY = 0.5     -- seconds between looks at a plate's own colour (it greys once tapped)
+local PLATE_MASK = "Interface\\AddOns\\SmoothAnimatedBars\\Media\\PlateMask"
 local PLATE_WAIT = 1              -- how long a new plate may take to get its unit frame, seconds
 
 -- Inflow (Bars.Inflow): while something is on the way into a bar, its particles drift back from the front into
@@ -196,13 +197,20 @@ local INTERPOLATION = Enum and Enum.StatusBarInterpolation and Enum.StatusBarInt
 --------------------------------------------------------------------------------
 
 -- A nameplate's own colour: the one the game gave its bar (red, yellow, grey once tapped), else the unit's reaction.
+-- The game tints its plate fill (UI-HUD-CoolDownManager-Bar, a grey ramp) with the plate's colour, so what shows is
+-- that colour darkened: an enemy plate measured (165, 6, 3) in the middle of the bar in game. Taken at full strength
+-- the liquid was a much brighter, pinkish red, so it takes the colour at the fill's brightness.
+local PLATE_SHADE = 0.65
+
 local function PlateColor(b)
     local bar = b.bar
+    local c
     if bar.GetStatusBarColor then
         local ok, r, g, bl = pcall(bar.GetStatusBarColor, bar)
-        if ok and type(r) == "number" and not Secret(r, g, bl) then return { r, g, bl } end
+        if ok and type(r) == "number" and not Secret(r, g, bl) then c = { r, g, bl } end
     end
-    return ns.Themes.ReactionColor(b.unit) or { 0.90, 0.15, 0.10 }
+    c = c or ns.Themes.ReactionColor(b.unit) or { 1, 0, 0 }
+    return { c[1] * PLATE_SHADE, c[2] * PLATE_SHADE, c[3] * PLATE_SHADE }
 end
 
 -- The bar's own colour: health green (a nameplate's its own), or the game's colour for the unit's power type (a
@@ -322,6 +330,22 @@ local function AtParentLevel(frame, parent)
     end
 end
 
+-- A nameplate's liquid sits one frame level above its bar, unlike the unit frames'. At the bar's own level the plate's
+-- background (UI-HUD-CoolDownManager-Bar-BG, dark inside, with a shadow along its edges) draws over it, which made it
+-- dark and shadowed; tried both ways in game, and above was much better. The cost: the plate's text inside the bar
+-- (the name in the Large style, health text if shown) is under the liquid. Where the client keeps the bar's level
+-- secret it stays at the bar's level.
+local function RaisePlate(b)
+    local clip = b.clip
+    local ok, level = pcall(b.bar.GetFrameLevel, b.bar)
+    if ok and type(level) == "number" and not Secret(level) then
+        if clip.SetUsingParentLevel then clip:SetUsingParentLevel(false) end
+        clip:SetFrameLevel(level + 1)
+    else
+        AtParentLevel(clip, b.bar)
+    end
+end
+
 local function NewBar(spot, bar)
     local w, h = Size(bar, spot.plate and PLATE_W or 1, spot.plate and PLATE_H or 1)
     local b = { spot = spot, unit = spot.unit, kind = spot.kind, bar = bar, width = w, height = h, live = false,
@@ -359,8 +383,16 @@ local function NewBar(spot, bar)
     b.mover = mover
 
     b.liquid = ns.Liquid.New(mover, math.max(w, 1) + ROOM, math.max(h, 1), ns.Themes.Get(ns.Themes.default), ns.Core.db)
-    -- The bar's mask cuts the liquid to the bar. Motes are left free to fly off the front.
-    b.mask = BarMask(bar, spot.kind)
+    -- The bar's mask cuts the liquid to the bar. Motes are left free to fly off the front. A nameplate's bar has no
+    -- mask, and its bronze rim has cut corners that a square liquid would cover, so the liquid there takes a mask of
+    -- the addon's own in the shape of the game's fill (PlateMask.tga, make_media.py).
+    if spot.plate then
+        b.mask = clip:CreateMaskTexture()
+        b.mask:SetTexture(PLATE_MASK, "CLAMPTOBLACKADDITIVE", "CLAMPTOBLACKADDITIVE")
+        b.mask:SetAllPoints(bar)
+    else
+        b.mask = BarMask(bar, spot.kind)
+    end
     if b.mask then
         local free = {}
         for _, m in ipairs(b.liquid.motes) do free[m.tex] = true end
@@ -644,6 +676,7 @@ local function AttachPlate(token)
     b.token, b.unit, b.spot.unit, b.side = token, token, token, side
     b.spot.frame = side == "friend" and "friend" or "plate" -- whose colour setting it takes
     b.err, b.colorIn = nil, PLATE_COLOR_EVERY
+    RaisePlate(b)
     plateOf[token] = b
     ApplyColor(b, true)
     if b.live then Feed(b, false); b.liquid:Snap(b.width) else SetLive(b, true) end
@@ -861,9 +894,12 @@ end
 
 -- The liquid on a bar of a preview frame. spec: { key = its on/off setting, unit, kind, token = power
 -- type for a power bar }. Returns its state, for Bars.Stir.
+-- spec.plate makes it a nameplate's (the setup's nameplate step): the plate mask, a level above the bar as in game,
+-- and spec.frame ("plate" or "friend") names whose colour setting it follows.
 function Bars.Preview(bar, spec)
     spec.preview = true
     local b = NewBar(spec, bar)
+    if spec.plate then RaisePlate(b) end
     previews[#previews + 1] = b
     Bars.Apply()
     return b
@@ -883,6 +919,12 @@ local function StateFor(bar)
         if b.bar == bar then return b end
     end
     return plates[bar]
+end
+
+-- The mask the liquid on a nameplate's bar takes, for the DoT marker's liquids there (Marker.lua).
+function Bars.PlateMask(bar)
+    local b = plates[bar]
+    return b and b.mask
 end
 
 -- The enemy nameplates showing the liquid: token -> their health bar (for the DoT marker on them, Marker.lua).

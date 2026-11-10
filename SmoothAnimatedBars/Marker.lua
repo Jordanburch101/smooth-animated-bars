@@ -315,15 +315,12 @@ local function ClearSkulls(m)
     end
 end
 
--- On an enemy nameplate the health is the plate's own red, which Blood's red all but matches (seen in game: a bleed
--- did not show), so a bleed there is a dark crimson. Lighter blood, toward white, looked pink in game; dark keeps it
--- blood and stands apart by brightness. Its front stays bright, so the edge where it meets the health shows.
-local PLATE_LOOKS = {
-    blood = { colors = {
-        fillA = { 0.25, 0.00, 0.03 }, fillB = { 0.55, 0.02, 0.06 }, tip = { 1.00, 0.55, 0.55 }, glow = { 0.80, 0.15, 0.15 },
-        swirlA = { 0.85, 0.25, 0.25 }, swirlB = { 0.70, 0.10, 0.18 },
-    } },
-}
+-- On an enemy nameplate a bleed in Blood's own red did not show against the health in the plate's red (seen in game).
+-- A dark crimson bleed did, and then the two were swapped, also in game: the health there is the crimson and the
+-- bleed the plate's red.
+-- A bleed on a plate is the target frame's (Blood, as it is), so the two look alike: with the plate's health in the
+-- game's own deep red (Bars.lua, PLATE_SHADE) the bleed shows against it. Colour changes per DoT on plates go here.
+local PLATE_LOOKS = {}
 
 -- A DoT liquid's theme by key: the unit frames' version of the theme (Bars.Theme), with its look's changes, and on a
 -- nameplate (plate) its plate look's.
@@ -333,7 +330,8 @@ local function DotTheme(key, plate)
     local plateLook = plate and PLATE_LOOKS[key]
     if plateLook then
         base = setmetatable({}, { __index = base })
-        for field, value in pairs(plateLook.colors) do base[field] = value end
+        local colors = type(plateLook.colors) == "function" and plateLook.colors() or plateLook.colors
+        for field, value in pairs(colors) do base[field] = value end
     end
     if not look then return base end
     local t = setmetatable({}, { __index = base })
@@ -733,6 +731,7 @@ end
 -- a mob dotted and then left keeps its marker on its plate.
 
 local plateMarkers = {} -- plate health bar -> marker
+local RaisePlateMarker   -- below
 local platesLive = false
 local plateErr          -- an error in matching markers to plates turns them off until a reload
 local plateSince = REFRESH_EVERY
@@ -749,7 +748,8 @@ local function PlateThere(spec)
 end
 
 local function NewPlateMarker(bar)
-    local spec = { bar = bar, iconHost = bar, plate = true }
+    -- The plate's own liquid's mask (Bars.lua), so the DoT liquids keep to the bar's cut corners too.
+    local spec = { bar = bar, iconHost = bar, plate = true, mask = ns.Bars.PlateMask(bar) }
     spec.visible = function() return PlateThere(spec) end
     spec.source = function()
         local total, list = ns.Dots.Unit(spec.token)
@@ -758,6 +758,7 @@ local function NewPlateMarker(bar)
     end
     local m = New(spec)
     plateMarkers[bar] = m
+    RaisePlateMarker(m)
     return m
 end
 
@@ -866,10 +867,12 @@ function Marker.Apply()
         end
     end
     local any = (live and target) or platesLive
+    -- A preview on a nameplate (the setup's nameplate step) follows the plates' DoT setting, the others the target's.
     for _, m in ipairs(previews) do
-        m.live = want
-        if not want then Hide(m) end
-        any = any or want
+        local on = (m.spec.plate and wantPlates) or (not m.spec.plate and want) or false
+        m.live = on
+        if not on then Hide(m) end
+        any = any or on
     end
     if any and not driver then
         driver = CreateFrame("Frame")
@@ -889,6 +892,7 @@ end
 function Marker.Preview(spec)
     spec.mask = spec.mask or MaskOf(spec.bar)
     local m = New(spec)
+    if spec.plate then RaisePlateMarker(m) end
     previews[#previews + 1] = m
     Marker.Apply()
     return m
@@ -914,6 +918,18 @@ ns.Dots.Listen(function(event)
         target.since = REFRESH_EVERY
     end
 end)
+
+-- The DoT liquids on a nameplate sit one frame level above its bar, as the plate's health liquid does (Bars.lua,
+-- RaisePlate), so the plate's dark background does not draw over them either.
+function RaisePlateMarker(m)
+    local ok, level = pcall(m.bar.GetFrameLevel, m.bar)
+    if ok and type(level) == "number" and not Secret(level) then
+        if m.clip.SetUsingParentLevel then m.clip:SetUsingParentLevel(false) end
+        m.clip:SetFrameLevel(level + 1)
+    else
+        AtParentLevel(m.clip, m.bar)
+    end
+end
 
 -- For the tests: the target frame's marker (nil until built) and the previews'.
 function Marker.State()

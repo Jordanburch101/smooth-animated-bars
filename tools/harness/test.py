@@ -536,6 +536,11 @@ check(wz.eval("__ns.Wizard.State().page") == "plates" and wz.eval("__card('plate
       and wz.eval("__card('friends', 'off').radio.checked") and wz.eval("__ns.Wizard.State().ui.next.text") == "Finish"
       and wz.eval("__ns.Wizard.State().ui.step.text") == "Step 6 of 6",
       "Nameplates: the last step, both rows Off as the settings start, says Finish")
+PP = "__ns.Wizard.State().ui.platePreview"
+check(wz.eval(PP + ".shown") and not wz.eval("__ns.Wizard.State().ui.preview.shown") and wz.eval("#" + PP + ".plates") == 4,
+      "the preview strip shows four example nameplates instead of the unit frames")
+check(wz.eval("(select(2, __liquid(" + PP + ".plates[1])))") == 0 and wz.eval(PP + ".plates[1].fill.alpha") == 1,
+      "with nameplates off they show the game's own bar")
 wz.execute("__showPlate('nameplate1', { reaction = 2 }); __pick('plates', 'dots'); __pick('friends', 'on')")
 run(wz, 0.3)
 check(wz.eval("SmoothAnimatedBarsDB.plateHealth") is True and wz.eval("SmoothAnimatedBarsDB.plateDots") is True
@@ -543,6 +548,16 @@ check(wz.eval("SmoothAnimatedBarsDB.plateHealth") is True and wz.eval("SmoothAni
       and wz.eval("(select(2, __liquid(__plates.nameplate1.UnitFrame.HealthBarsContainer.healthBar)))") > 0
       and wz.eval("__card('plates', 'dots').radio.checked") and wz.eval("__card('friends', 'on').radio.checked"),
       "With your DoTs and friends on: applied at once, the mob's nameplate takes the liquid")
+check(all(wz.eval("(select(2, __liquid(" + PP + ".plates[%d])))" % i) > 0 for i in (1, 2, 3, 4))
+      and wz.eval(PP + ".marker.live") and wz.eval(PP + ".plates[1].state.mask ~= nil")
+      and wz.eval("(select(2, __ours(" + PP + ".plates[1]))).useParentLevel") is False,
+      "and the example plates follow: the liquid in all four, the plate mask, a level above the bar, the DoTs live")
+run(wz, 2.5)
+check(wz.eval(PP + ".marker.clip.shown"), "the target's DoTs show on its example plate as the loop plays")
+wz.execute("__press('back')")
+check(wz.eval("__ns.Wizard.State().ui.preview.shown") and not wz.eval(PP + ".shown"),
+      "Back to the DoT step: the unit frames again")
+wz.execute("__press('next')")
 wz.execute("__pick('plates', 'liquid')")
 check(wz.eval("SmoothAnimatedBarsDB.plateDots") is False and wz.eval("__card('plates', 'liquid').radio.checked"),
       "Liquid alone: the DoTs on nameplates off")
@@ -1597,6 +1612,42 @@ check(not cap.eval(f"{grid}.shown") and cap.eval("__cvars.screenshotFormat") == 
 cap.execute("__fire('SCREENSHOT_SUCCEEDED')")
 check(cap.eval("__screenshots") == 2, "a later screenshot of the player's own is left alone")
 
+print("== /sab capture plates (nameplate art)")
+cp = session()
+cp.execute("SlashCmdList.SMOOTHANIMATEDBARS('capture plates')")
+grid = "SmoothAnimatedBarsCapturePlates"
+check(cp.eval(f"{grid}.shown") and cp.eval("__cvars.screenshotFormat") == "tga"
+      and any("No nameplate on your target to measure" in m for m in chat(cp)),
+      "with no target nameplate: says so, and captures the art anyway, as TGA")
+pieces = cp.eval(f"""(function()
+    local out = {{}}
+    for _, r in ipairs(__regions) do
+        if r.parent == {grid} and r.kind == "Texture" and (r.atlas or (r.file and r.file ~= "SOLID")) then
+            out[#out + 1] = (r.atlas or r.file) .. " " .. r.tc[3] .. " " .. r.w .. "x" .. r.h
+        end
+    end
+    table.sort(out)
+    return table.concat(out, "; ")
+end)()""")
+check(pieces == r"Interface\TargetingFrame\UI-TargetingFrame-BarFill 0 128x10; Interface\Tooltips\Nameplate-Border 0.5 128x16; "
+      r"UI-HUD-CoolDownManager-Bar 0 128x10; UI-HUD-CoolDownManager-Bar-BG 0 136x19; "
+      r"UI-HUD-CoolDownManager-Selected-yellow 0 139x19; ui-hud-nameplates-deselected-overlay 0 128x10; "
+      r"ui-hud-nameplates-levelindicator 0 28x25; ui-hud-nameplates-levelindicator-rectangle-selected 0 34x32; "
+      r"ui-hud-nameplates-levelindicator-skull 0 18x18",
+      f"draws the Classic plate's border (the texture's bottom half) and bar fill, and the other styles' pieces: {pieces}")
+run(cp, 0.6)
+check(cp.eval("__screenshots") == 1, "first screenshot, on black")
+cp.execute("__fire('SCREENSHOT_SUCCEEDED')")
+run(cp, 4.1)
+check(cp.eval("__screenshots") == 2, "then on white")
+cp.execute("__fire('SCREENSHOT_SUCCEEDED')")
+check(not cp.eval(f"{grid}.shown") and cp.eval("__cvars.screenshotFormat") == "jpg"
+      and any("capture_art.py --plates" in m for m in chat(cp)), "then it hides, puts the format back and says what next")
+cp.execute("SlashCmdList.SMOOTHANIMATEDBARS('capture')")
+check(cp.eval("SmoothAnimatedBarsCapture.shown") and not cp.eval(f"{grid}.shown"),
+      "the frames' capture still works after it, on its own grid")
+check(not any("Error in" in m for m in chat(cp)), "no errors")
+
 print("== enemy nameplates")
 
 
@@ -1609,11 +1660,20 @@ np.execute("__showPlate('nameplate1', { reaction = 2 })")
 run(np, 0.3)
 check(np.eval("(select(2, __liquid(" + plate_bar("nameplate1") + ")))") == 0
       and np.eval(plate_bar("nameplate1") + ".fill.alpha") == 1, "off by default: a plate keeps the game's own fill")
-np.execute("__settings.plateHealth:SetValue(true)")
+np.execute(plate_bar("nameplate1") + ".level = 7; __settings.plateHealth:SetValue(true)")
 run(np, 0.3)
+check(np.eval("(select(2, __ours(" + plate_bar("nameplate1") + "))).useParentLevel") is False
+      and np.eval("(select(2, __ours(" + plate_bar("nameplate1") + "))).level") == 8,
+      "a plate's liquid sits a level above its bar, over the plate's dark background")
 n, shown, alpha, masked, free = np.eval("__liquid(" + plate_bar("nameplate1") + ")")
 check(shown > 0 and alpha == 0, f"turned on: a plate already showing gets the liquid, game fill hidden ({shown}/{n})")
-check(masked == 0, "a plate's bar has no mask, nothing is masked")
+check(masked > 0 and free == 64 and np.eval("""(function()
+    local bar = """ + plate_bar("nameplate1") + """
+    local mask = __ns.Bars.PlateMask(bar)
+    local a, b = mask.points.TOPLEFT, mask.points.BOTTOMRIGHT
+    return mask.kind == "MaskTexture" and mask.file:sub(-15) =="Media\\\\PlateMask" and a.rel == bar and b.rel == bar
+end)()"""), f"a plate's bar has no mask, so the liquid takes the addon's own in the fill's shape, laid over the bar; "
+      f"motes free ({masked} masked, {free} free)")
 check(np.eval("""(function()
     local bar = """ + plate_bar("nameplate1") + """
     local _, clip = __ours(bar)
@@ -1781,9 +1841,18 @@ check(pd.eval("""(function()
     local a = mover.points.TOPRIGHT
     return a.rel == __pm('nameplate1').endFill and a.relPoint == 'TOPLEFT'
 end)()"""), "the plate's health liquid draws back to where its health will end")
+check(pd.eval("""(function()
+    local mask = __ns.Bars.PlateMask(__pbar('nameplate1'))
+    for _, t in ipairs(__pm('nameplate1').liquids[1].liquid.textures) do
+        if t.masks and t.masks[1] == mask then return true end
+    end
+end)()"""), "the plate's DoT liquids take its mask too, so they keep to the bar's cut corners")
 check(not pd.eval("__pm('nameplate1').window.shown") and not pd.eval("__pm('nameplate1').hasIcon"),
       "no kill icon on a plate")
 check(pd.eval("__pm('nameplate1').liquids[1].liquid.body.sub") == -7, "under the plate's health liquid")
+check(pd.eval("__pm('nameplate1').clip.useParentLevel") is False
+      and pd.eval("__pm('nameplate1').clip.level") == pd.eval("__pbar('nameplate1'):GetFrameLevel()") + 1,
+      "the plate's DoT liquids a level above the bar too")
 check(not pd.eval("(__ns.Marker.State())"), "the target frame's marker is not built while DoT Marker is off")
 pd.execute("__aim(WOLF); __cast(348, 'Cast-2')")
 run(pd, 1)
@@ -1799,8 +1868,14 @@ pd.execute("""
 """)
 run(pd, 1)
 fill = pd.eval("__pm('nameplate5').liquids[1].liquid.theme.fillB")
-check(pd.eval("__pm('nameplate5').liquids[1].themeKey") == "blood" and fill[1] < 0.7 and fill[2] < 0.1,
-      f"a bleed on a red plate is a dark crimson, so it shows against the plate's red ({fill[1]}, {fill[2]}, {fill[3]})")
+health = pd.eval("__ns.Bars.Liquid(__pbar('nameplate5')).theme.fillB")
+target_blood = pd.eval("__ns.Bars.Theme('blood').fillB")
+check(health[1] < 0.7 and health[1] > 0.5,
+      f"a red plate's health takes the game's deep red, the plate's colour at the fill's 65% ({health[1]:.2f}, "
+      f"{health[2]:.2f}, {health[3]:.2f})")
+check(pd.eval("__pm('nameplate5').liquids[1].themeKey") == "blood"
+      and all(abs(fill[i] - target_blood[i]) < 1e-9 for i in (1, 2, 3)),
+      f"a bleed on a plate is the target frame's Blood, the same colour ({fill[1]}, {fill[2]}, {fill[3]})")
 pd.execute("__hidePlate('nameplate5')")
 run(pd, 0.3)
 pd.execute("__showPlate('nameplate3', { guid = 'Creature-0-1-2-3-99-0003', name = 'Kobold', reaction = 2 })")
@@ -1887,6 +1962,10 @@ check(fp.eval("__shown('nameplate2')") and fp.eval("__pbar('nameplate2').fill.al
       "turned on: a friendly plate already showing gets the liquid")
 r, g, b = fp.eval("__tint(__pbar('nameplate2'))")
 check(g > 0.5 and r < 0.4, f"in the plate's own colour, green for a friendly NPC ({r:.2f}, {g:.2f}, {b:.2f})")
+check(fp.eval("__ns.Bars.PlateMask(__pbar('nameplate2')) ~= nil")
+      and fp.eval("(select(2, __ours(__pbar('nameplate2')))).useParentLevel") is False
+      and fp.eval("__ns.Bars.Liquid(__pbar('nameplate2')).theme.fillB[2]") < 0.8,
+      "a friendly plate as an enemy one: the plate mask, a level above the bar, the game's shade of its colour")
 fp.execute("__showPlate('nameplate3', { isOtherPlayer = true, friendly = true, reaction = 5, class = 'MAGE', color = { 0.1, 0.9, 0.1 } })")
 run(fp, 0.3)
 check(fp.eval("__shown('nameplate3')"), "another player's plate gets it too")
