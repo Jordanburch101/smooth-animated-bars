@@ -185,7 +185,11 @@ Facts found while building this, which the code relies on and which are not obvi
   much better. The plate's text inside the bar was then under the liquid (seen in game: health numbers turned on in the
   game's nameplate settings were hidden), so `Bars.lua` (`PlateTexts`) copies the bar's `Text`/`LeftText`/`RightText`,
   and the name while it sits inside the bar, into FontStrings of its own two levels above the bar, every 0.1 s: text
-  (secret, through `SetText`), font, colour and anchors; the game's are left alone. Seen in game and right. Seen in
+  (secret, through `SetText`), font, colour and place; the game's are left alone. The game sizes these texts with
+  `SetTextHeight(NamePlateSetupOptions.healthBarFontHeight)`, which `GetFont` does not report: copying `GetFont` drew
+  the copy bigger, so in game it showed doubled over the game's (seen through the liquid's faded edge) and cut short
+  ("10..."). The copies take the font object and that height, and the health texts are pinned at their justified side
+  rather than laid over their text-sized box; seen in game and right. Seen in
   game with two DoTs (Fire and Shadow) on a raised plate, each in its own colour inside the rim. The setup's nameplate
   step shows four example plates instead of the unit frames (`Preview.CreatePlates`), built from those atlases in
   the Normal style and following the plate settings; seen in game and right.

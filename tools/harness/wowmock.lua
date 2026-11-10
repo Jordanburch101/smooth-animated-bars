@@ -155,7 +155,18 @@ function Region:SetFont(path, size, flags)
     self.fontPath, self.fontSize, self.fontFlags = path, size, flags
     return true
 end
-function Region:GetFont() return self.fontPath or "Fonts\\FRIZQT__.TTF", self.fontSize or 12, self.fontFlags or "" end
+function Region:GetFont()
+    if self.fontObject and not self.fontPath then return self.fontObject:GetFont() end
+    return self.fontPath or "Fonts\\FRIZQT__.TTF", self.fontSize or 12, self.fontFlags or ""
+end
+-- A font object; GetFont then answers with its font, as in the client, not any SetTextHeight.
+function Region:SetFontObject(object)
+    assert(type(object) == "table" and object.GetFont, "SetFontObject needs a font object")
+    self.fontObject, self.fontPath, self.fontFlags = object, nil, nil
+    self.fontSize = select(2, object:GetFont())
+end
+function Region:GetFontObject() return self.fontObject end
+function Region:SetTextHeight(h) self.textHeight = h end
 function Region:SetShadowColor(r, g, b, a) self.shadowColor = { r, g, b, a or 1 } end
 function Region:GetShadowColor() return unpack(self.shadowColor or { 0, 0, 0, 1 }) end
 function Region:SetShadowOffset(x, y) self.shadowOffset = { x, y } end
@@ -677,6 +688,9 @@ Enum = { StatusBarInterpolation = { Immediate = 0, ExponentialEaseOut = 1 } }
 PowerBarColor = { MANA = { r = 0, g = 0, b = 1 }, RAGE = { r = 1, g = 0, b = 0 }, ENERGY = { r = 1, g = 1, b = 0 } }
 
 GameFontNormal = { GetFont = function() return "Fonts\\FRIZQT__.TTF", 12, "" end }
+SystemFont_NamePlate = { GetFont = function() return "Fonts\\FRIZQT__.TTF", 9, "" end }
+-- What the plates are laid out with (Blizzard_NamePlates.lua); the texts' height comes from here.
+NamePlateSetupOptions = { healthBarFontHeight = 11 }
 
 __combat = false
 function InCombatLockdown() return __combat end
@@ -865,13 +879,20 @@ local function NewPlateUnitFrame()
     uf.HealthBarsContainer = CreateFrame("Frame", nil, uf)
     local hb = NewStatusBar("NamePlate.healthBar", uf.HealthBarsContainer, 110, 10)
     uf.HealthBarsContainer.healthBar = hb
-    -- The bar's texts (TextStatusBar: health numbers, hidden unless the game's settings show them) and the name.
+    -- The bar's texts (TextStatusBar: health numbers, hidden unless the game's settings show them) and the name, in
+    -- the plates' font object at the plates' text height, as Blizzard_NamePlateUnitFrame.lua sets them.
     for _, key in ipairs({ "Text", "LeftText", "RightText" }) do
         hb[key] = hb:CreateFontString(nil, "OVERLAY")
-        hb[key]:SetPoint("CENTER", hb, "CENTER")
+        hb[key]:SetFontObject(SystemFont_NamePlate)
+        hb[key]:SetTextHeight(NamePlateSetupOptions.healthBarFontHeight)
         hb[key]:Hide()
     end
+    hb.LeftText:SetPoint("RIGHT", hb, "RIGHT", -4, 0)
+    hb.RightText:SetPoint("RIGHT", hb.LeftText, "LEFT", -2, 0)
+    hb.Text:SetPoint("RIGHT", hb.RightText, "LEFT", 2, 0)
     uf.name = uf:CreateFontString(nil, "OVERLAY")
+    uf.name:SetFontObject(SystemFont_NamePlate)
+    uf.name:SetTextHeight(NamePlateSetupOptions.healthBarFontHeight)
     uf.name:SetPoint("BOTTOM", hb, "TOP", 0, 2)
     return uf
 end

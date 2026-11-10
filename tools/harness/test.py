@@ -1695,18 +1695,19 @@ TEXTS = "__ns.Bars.PlateTexts(" + plate_bar("nameplate1") + ")"
 check(not np.eval(TEXTS + "[1].shown") and not np.eval(TEXTS + ".name.shown"),
       "with the game's health text off, nothing is copied; the name above the bar (Normal) is left to the game")
 np.execute(f"""local bar = {plate_bar("nameplate1")}
-bar.Text:SetFont("Fonts\\\\ARIALN.TTF", 9, "OUTLINE"); bar.Text:SetTextColor(1, 0.9, 0.2)
-bar.Text:SetText(__secret()); bar.Text:Show()""")
+bar.Text:SetTextColor(1, 0.9, 0.2); bar.Text:SetText(__secret()); bar.Text:Show()""")
 run(np, 0.2)
 check(np.eval(f"""(function()
     local mine, theirs = {TEXTS}[1], {plate_bar("nameplate1")}.Text
     local frame = {TEXTS}.frame
-    local path, size, flags = mine:GetFont()
     local r, g = mine:GetTextColor()
-    return mine.shown and issecretvalue(mine.text) and path == "Fonts\\\\ARIALN.TTF" and size == 9 and flags == "OUTLINE"
-        and r == 1 and g == 0.9 and mine.points.TOPLEFT.rel == theirs and mine.points.BOTTOMRIGHT.rel == theirs
+    local p = mine.points.CENTER
+    return mine.shown and issecretvalue(mine.text) and mine:GetFontObject() == SystemFont_NamePlate
+        and mine.textHeight == NamePlateSetupOptions.healthBarFontHeight
+        and r == 1 and g == 0.9 and p and p.rel == theirs and mine.points.TOPLEFT == nil
         and frame.level == {plate_bar("nameplate1")}:GetFrameLevel() + 2
-end)()"""), "health text the game's settings turn on is copied over the liquid, secret, in its font, colour and place")
+end)()"""), "health text the game's settings turn on is copied over the liquid, secret, in the plates' font at the "
+      "plates' text height (which GetFont does not tell), colour, pinned on it rather than squeezed into its box")
 np.execute(plate_bar("nameplate1") + ".Text:Hide()")
 run(np, 0.2)
 check(not np.eval(TEXTS + "[1].shown"), "and goes when the game hides it")
@@ -2149,7 +2150,8 @@ end)()""")
 want = sum(len(n) for v in real[:2] for _, n in v["sections"])
 check(heads == f"{real[0]['version']},{real[1]['version']}" and notes == want,
       f"updating from {older}: every version since, newest first, each note ({heads}, {notes} notes)")
-titles = [n[0] for _, ns_ in real[0]["sections"] for n in ns_ if isinstance(n, tuple)]
+# The titled notes in the versions shown (the newest alone may have none, as a fix release often does).
+titles = [n[0] for v in real[:2] for _, ns_ in v["sections"] for n in ns_ if isinstance(n, tuple)]
 shown_titles = wn.eval("""(function()
     local out = {}
     for _, fs in ipairs(SmoothAnimatedBarsWhatsNew.pools.GameFontNormal or {}) do
@@ -2158,7 +2160,8 @@ shown_titles = wn.eval("""(function()
     return out
 end)()""")
 check(titles and all(shown_titles[t] for t in titles),
-      f"a note's title shows on a line of its own ({len(titles)} titles in {real[0]['version']})")
+      f"a note's title shows on a line of its own ({len(titles)} titles in {real[0]['version']} and "
+      f"{real[1]['version']})")
 
 wn = wn_session(f"{{ setupDone = true, whatsNewSeen = {newest!r} }}", newest)
 wn.execute("__fire('PLAYER_LOGIN')")

@@ -366,15 +366,42 @@ local function Inside(region, bar)
     return x >= left and x <= left + width and y >= bottom and y <= bottom + height
 end
 
-local function CopyText(mine, theirs, shown)
+-- The size the game draws its plate texts at: it gives them their font object and then SetTextHeight with this
+-- (Blizzard_NamePlateUnitFrame.lua), which GetFont does not report.
+local function PlateTextHeight()
+    local options = NamePlateSetupOptions
+    local h = type(options) == "table" and options.healthBarFontHeight
+    if type(h) == "number" and not Secret(h) and h > 0 then return h end
+end
+
+local function CopyFont(mine, theirs)
+    local ok, object = pcall(theirs.GetFontObject, theirs)
+    local height = PlateTextHeight()
+    if ok and type(object) == "table" then
+        if mine.fontObject ~= object then
+            mine.fontObject, mine.textHeight = object, nil
+            mine:SetFontObject(object)
+        end
+    else
+        local okFont, path, size, flags = pcall(theirs.GetFont, theirs)
+        local key = okFont and path and (path .. size .. (flags or ""))
+        if key and mine.fontFrom ~= key then
+            mine.textHeight = nil
+            if mine:SetFont(path, size, flags) then mine.fontFrom = key end
+        end
+    end
+    if height and mine.textHeight ~= height and mine.SetTextHeight then
+        mine.textHeight = height
+        mine:SetTextHeight(height)
+    end
+end
+
+local function CopyText(mine, theirs, shown, whole)
     if not shown then
         mine:Hide()
         return
     end
-    local ok, path, size, flags = pcall(theirs.GetFont, theirs)
-    if ok and path and mine.fontFrom ~= path .. size .. (flags or "") then
-        if mine:SetFont(path, size, flags) then mine.fontFrom = path .. size .. (flags or "") end
-    end
+    CopyFont(mine, theirs)
     pcall(function()
         mine:SetTextColor(theirs:GetTextColor())
         mine:SetShadowColor(theirs:GetShadowColor())
@@ -383,10 +410,15 @@ local function CopyText(mine, theirs, shown)
         mine:SetJustifyV(theirs:GetJustifyV())
         mine:SetWordWrap(theirs:GetWordWrap())
     end)
-    if mine.over ~= theirs then
-        mine.over = theirs
+    -- The health texts are sized by their text, so a copy laid over their box would be cut short by any difference
+    -- in width; it is pinned at the side its text is justified to instead. The name has a width of the game's (it is
+    -- cut short to fit), so its copy takes the same box.
+    local ok, justify = pcall(theirs.GetJustifyH, theirs)
+    local point = whole and "ALL" or (ok and (justify == "LEFT" or justify == "RIGHT") and justify) or "CENTER"
+    if mine.over ~= theirs or mine.overPoint ~= point then
+        mine.over, mine.overPoint = theirs, point
         mine:ClearAllPoints()
-        mine:SetAllPoints(theirs)
+        if point == "ALL" then mine:SetAllPoints(theirs) else mine:SetPoint(point, theirs, point) end
     end
     mine:SetText(theirs:GetText())
     mine:Show()
@@ -405,7 +437,7 @@ local function SyncPlateTexts(b)
     local name = b.unitFrame and b.unitFrame.name
     if type(name) == "table" and name.GetText then
         local ok, shown = pcall(name.IsVisible, name)
-        CopyText(t.name, name, ok and shown == true and Inside(name, b.bar))
+        CopyText(t.name, name, ok and shown == true and Inside(name, b.bar), true)
     end
 end
 
