@@ -209,6 +209,7 @@ events:SetScript("OnEvent", function(self, event, arg1, arg2)
         end
         Core.db = db
         ns.Dots.Load(db)
+        ns.SelfProbe.Load(db)
         ns.Options.Register(db, DEFAULTS)
         self:UnregisterEvent("ADDON_LOADED")
 
@@ -246,6 +247,8 @@ local HELP = {
     "/sab dots - your DoTs on the target, and what the tracking saw lately",
     "/sab heals - your heals on the way to you, and what the tracking saw lately",
     "/sab mana - the wait before your mana regenerates, and what it saw lately",
+    "/sab self on | off - note what the game lets the addon read about DoTs and hits on you, saved for /reload; "
+        .. "/sab self shows it (self clear: start afresh)",
     "/sab perf [note] - what the liquid costs each frame, the unit frames and the nameplates apart, saved for "
         .. "tools/perf_report.py after /reload (perf reset: time afresh, perf clear: forget the saved ones)",
 }
@@ -301,6 +304,15 @@ SlashCmdList.SMOOTHANIMATEDBARS = function(input)
         for _, line in ipairs(ns.Heals.Debug(15)) do Core.Print(line) end
     elseif cmd == "mana" then
         for _, line in ipairs(ns.ManaRule.Debug(15)) do Core.Print(line) end
+    elseif cmd == "self" then
+        for _, line in ipairs(ns.SelfProbe.Debug(8)) do Core.Print(line) end
+    elseif cmd == "self on" or cmd == "self off" then
+        ns.SelfProbe.SetOn(cmd == "self on")
+        Core.Print(cmd == "self on" and "Self probe on: take a DoT and some hits, then /sab self and /reload."
+            or "Self probe off.")
+    elseif cmd == "self clear" then
+        ns.SelfProbe.Clear()
+        Core.Print("Self probe cleared.")
     elseif cmd == "perf" or cmd:match("^perf ") and not PERF_WORDS[cmd] then
         for _, line in ipairs(ns.Bars.Perf()) do Core.Print(line) end
         local note = strtrim(input or ""):match("^%S+%s+(.+)$") -- /sab perf <note>: what was going on

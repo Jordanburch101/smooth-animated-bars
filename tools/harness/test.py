@@ -1835,6 +1835,41 @@ pd.execute("SlashCmdList.SMOOTHANIMATEDBARS('dots')")
 check(any("DoT marker on nameplates: off" in m for m in chat(pd)), "/sab dots reports the plates' marker")
 check(not any("Error in" in m for m in chat(pd)), "no errors")
 
+print("== probe for DoTs on the player")
+sp = session()
+check(not sp.eval("__ns.SelfProbe.IsListening()"), "off by default: listens to nothing")
+sp.execute("SlashCmdList.SMOOTHANIMATEDBARS('self on')")
+sp.execute("""
+    __playerDebuffs = { { name = 'Poison', spellId = 744, auraInstanceID = 7, duration = 30, expirationTime = 130,
+                          dispelName = 'Poison', isHarmful = true } }
+    __spells[744] = { 'Poison', 'Inflicts 10 Nature damage every 3 sec for 30 sec.' }
+    __combat = true
+    __fire('UNIT_AURA', 'player', __secret())
+    __fire('UNIT_COMBAT', 'player', 'WOUND', '', __secret(), 8)
+    __fire('UNIT_COMBAT', 'target', 'WOUND', '', 5, 1)
+""")
+sp.execute("SlashCmdList.SMOOTHANIMATEDBARS('self')")
+lines = chat(sp)
+check(any("UNIT_AURA (combat)" in m and "payload 0/1" in m for m in lines), "a secret UNIT_AURA payload counts as secret")
+check(any("GetUnitAuras (combat)" in m and "whole aura 0/1" in m for m in lines), "and so does a secret debuff")
+check(any("UNIT_COMBAT (combat)" in m and "amount 0/1" in m and "school 1/0" in m for m in lines),
+      "a hit on the player: secret amount, readable school")
+check(sp.eval("#SmoothAnimatedBarsDB.selfProbe.events") > 0, "the events are kept for /reload")
+sp.execute("""
+    __aurasReadable = true; __combat = false
+    __fire('UNIT_AURA', 'player', { addedAuras = { __playerDebuffs[1] } })
+""")
+events = list(sp.eval("SmoothAnimatedBarsDB.selfProbe.events").values())
+check(any("spellId=744" in e and "Nature damage every 3 sec" in e and "GetRemainingDuration=30" in e for e in events),
+      "readable debuffs are logged with their spell, description and duration")
+sp.execute("SlashCmdList.SMOOTHANIMATEDBARS('self clear')")
+check(sp.eval("#SmoothAnimatedBarsDB.selfProbe.events") == 0, "/sab self clear starts afresh")
+sp2 = session("{ setupDone = true, selfProbe = { on = true } }")
+check(sp2.eval("__ns.SelfProbe.IsListening()"), "stays on across a reload")
+sp2.execute("SlashCmdList.SMOOTHANIMATEDBARS('self off')")
+check(not sp2.eval("__ns.SelfProbe.IsListening()") and not sp2.eval("SmoothAnimatedBarsDB.selfProbe.on"), "/sab self off stops it")
+check(not any("ERROR" in e for e in events) and not any("Error in" in m for m in chat(sp)), "no errors")
+
 print("== friendly nameplates")
 fp = session("{ setupDone = true, heals = false, manaBuild = false, plateHealth = true }")
 fp.execute("""

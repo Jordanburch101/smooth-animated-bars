@@ -22,6 +22,7 @@ Marker.lua
 Heals.lua
 HealMarker.lua
 ManaRule.lua
+SelfProbe.lua
 SmoothAnimatedBars.lua
 Options.lua
 Preview.lua

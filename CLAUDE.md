@@ -136,6 +136,14 @@ Facts found while building this, which the code relies on and which are not obvi
   straight cut, though its sublevels are lower, so sublevels do not seem to order liquids in separate clip frames
   (the mock does not model draw order). `HealMarker.lua` lays a seam of the bar's colour over the edge, which
   looked right in game. `Marker.lua` uses the same sublevels and has no seam.
+- **DoTs on the player** (`SelfProbe.lua`, `/sab self on`; seen in game on a mob's Poison, 744): out of combat the
+  player's harmful auras are fully readable through `GetUnitAuras`, `GetAuraDataByIndex` and `GetDebuffDataByIndex`
+  (name, spellId, duration, expirationTime, dispelName), and `GetAuraDuration` returns a userdata whose
+  `GetRemainingDuration`/`GetTotalDuration`/`GetElapsedDuration` answer. In combat all three lookups throw "Auras
+  cannot be accessed when secret while tainted", and `UNIT_AURA`'s `addedAuras` is secret (the payload itself is
+  not). `UNIT_COMBAT` on the player always has a secret amount but a readable action, flag and school, in combat and
+  out: the poison's ticks were school 8 every 3 seconds, the mob's swings school 1. A mob's DoT description has no
+  number ("Inflicts Nature damage to an enemy every 3 sec. for 30 sec."; Infected Wound's was nil).
 - **Regeneration:** on Forever energy and mana refill continuously rather than in 2-second ticks, so the gallery's
   scenarios draw them that way (`gallery.py`, `regen`).
 - **The five-second rule** (`ManaRule.lua`): mana is secret, so the wait is timed from `UNIT_SPELLCAST_SUCCEEDED`

@@ -589,11 +589,47 @@ __spellCosts = {}
 -- The player's auras by spell ID: __playerAuras[id] = { expirationTime = ... }. Forever may keep auras secret
 -- (SecretWhenUnitAuraRestricted), so they are secret unless __aurasReadable is set.
 __playerAuras, __aurasReadable = {}, false
+-- The player's debuffs, in order: __playerDebuffs[i] = { name, spellId, auraInstanceID, duration, ... }. Each one is
+-- secret unless __aurasReadable is set.
+__playerDebuffs = {}
+local function debuffAt(unit, i)
+    assert(type(unit) == "string", "aura lookups need a unit")
+    assert(type(i) == "number", "aura lookups need an index")
+    local aura = unit == "player" and __playerDebuffs[i]
+    if not aura then return nil end
+    return __aurasReadable and aura or __secret()
+end
 C_UnitAuras = {
     GetPlayerAuraBySpellID = function(id)
         assert(type(id) == "number", "GetPlayerAuraBySpellID needs a spell ID")
         if not __aurasReadable then return __secret() end
         return __playerAuras[id]
+    end,
+    GetUnitAuras = function(unit, filter)
+        assert(type(unit) == "string" and type(filter) == "string", "Usage: GetUnitAuras(unit, filter)")
+        local list = {}
+        if filter:find("HARMFUL") then
+            for i = 1, #__playerDebuffs do list[i] = debuffAt(unit, i) end
+        end
+        return list
+    end,
+    GetAuraDataByIndex = function(unit, i, filter)
+        if filter and not filter:find("HARMFUL") then return nil end
+        return debuffAt(unit, i)
+    end,
+    GetDebuffDataByIndex = function(unit, i) return debuffAt(unit, i) end,
+    -- A duration object widgets take; its numbers are secret like the aura's.
+    GetAuraDuration = function(unit, id)
+        assert(type(unit) == "string" and type(id) == "number", "Usage: GetAuraDuration(unit, auraInstanceID)")
+        for _, aura in ipairs(__playerDebuffs) do
+            if aura.auraInstanceID == id then
+                return {
+                    GetRemainingDuration = function() return __aurasReadable and aura.duration or __secret() end,
+                    GetTotalDuration = function() return __aurasReadable and aura.duration or __secret() end,
+                }
+            end
+        end
+        error("GetAuraDuration: no aura with that instance ID")
     end,
 }
 -- Other addons loaded: __addons[name] = true.
