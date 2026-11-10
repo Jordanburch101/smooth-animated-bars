@@ -632,7 +632,8 @@ PLATE_W, PLATE_H = 166, 13
 PLATE_BG = (2.8, 3.7, 3.2, 2.3)      # left, right, top, bottom
 PLATE_GLOW = (2.8, 0.5, 1.9, 1.4)
 PLATE_PIECES = ("plate-modern-bg", "plate-selected", "plate-deselected", "plate-level", "plate-level-selected")
-PLATE_RED, PLATE_YELLOW, PLATE_GREEN = "{ 0.9, 0.1, 0.1 }", "{ 0.95, 0.85, 0.1 }", "{ 0.1, 0.9, 0.1 }"
+# The colours the game gives plates' bars, read in game (GetStatusBarColor: 1 0 0 on an enemy).
+PLATE_RED, PLATE_YELLOW, PLATE_GREEN = "{ 1, 0, 0 }", "{ 1, 1, 0 }", "{ 0, 1, 0 }"
 LEVEL_GREEN, LEVEL_YELLOW, LEVEL_RED = (64, 191, 64), (255, 210, 0), (255, 64, 64)
 PLATE_LOOP = 9.0
 
