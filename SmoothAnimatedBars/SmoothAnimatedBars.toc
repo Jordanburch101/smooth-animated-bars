@@ -9,6 +9,14 @@
 Themes.lua
 Liquid.lua
 Bars.lua
+Locale.lua
+Locale_deDE.lua
+Locale_esES.lua
+Locale_frFR.lua
+Locale_koKR.lua
+Locale_ptBR.lua
+Locale_zhCN.lua
+Locale_ruRU.lua
 Dots.lua
 Marker.lua
 Heals.lua

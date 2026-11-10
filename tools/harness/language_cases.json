@@ -1,0 +1,445 @@
+[
+ {
+  "label": "enUS English Rip, 1 point (non-breaking space before the colon)",
+  "desc": "Finishing move that causes damage over time.  Damage increases per combo point and by your Attack Power:\n   1 point  : 57 damage over 12 sec.\n   2 points: 90 damage over 12 sec.\n   3 points: 123 damage over 12 sec.\n   4 points: 156 damage over 12 sec.\n   5 points: 189 damage over 12 sec.",
+  "points": 1,
+  "dot": "57/1/12"
+ },
+ {
+  "label": "enUS English Rip, 5 points",
+  "desc": "Finishing move that causes damage over time.  Damage increases per combo point and by your Attack Power:\n   1 point  : 305 damage over 12 sec.\n   2 points: 497 damage over 12 sec.\n   3 points: 688 damage over 12 sec.\n   4 points: 880 damage over 12 sec.\n   5 points: 1071 damage over 12 sec.",
+  "points": 5,
+  "dot": "1071/1/12"
+ },
+ {
+  "label": "enUS English Rip, 3 points",
+  "desc": "Finishing move that causes damage over time.  Damage increases per combo point and by your Attack Power:\n   1 point  : 84 damage over 12 sec.\n   2 points: 138 damage over 12 sec.\n   3 points: 192 damage over 12 sec.\n   4 points: 246 damage over 12 sec.\n   5 points: 300 damage over 12 sec.",
+  "points": 3,
+  "dot": "192/1/12"
+ },
+ {
+  "label": "enUS English Grounding Totem is no DoT",
+  "desc": "Summons a Grounding Totem with 5 health at the feet of the caster that will redirect one harmful spell cast on a nearby party member to itself every 10 seconds.  Will not redirect area of effect spells.  Lasts 45 sec.",
+  "points": null,
+  "dot": null
+ },
+ {
+  "label": "enUS English Siphon Life drain",
+  "desc": "Transfers 11 health from the target to the caster every 3 sec.  Lasts 30 sec.",
+  "points": null,
+  "dot": "110/1/30"
+ },
+ {
+  "label": "enUS English Renew is no DoT",
+  "desc": "Heals the target of 45 damage over 15 sec.",
+  "points": null,
+  "dot": null
+ },
+ {
+  "label": "enUS English Immolate's periodic part",
+  "desc": "Burns the enemy for [10.8 * (((1)))] Fire damage and then an additional 15 Fire damage over 15 sec.",
+  "points": null,
+  "dot": "15/4/15"
+ },
+ {
+  "label": "enUS English Deadly Poison coating is no DoT",
+  "desc": "Coats a weapon with poison that lasts for 30 minutes.\nEach strike has a 30% chance of poisoning the enemy for 24 Nature damage over 12 sec.  Stacks up to 5 times on a single target.  90 charges.",
+  "points": null,
+  "dot": null
+ },
+ {
+  "label": "deDE Seal of Fury (melee buff, no DoT)",
+  "desc": "Erfüllt den Paladin 30 Sek. lang mit heiligem Zorn, durch den Nahkampfangriffe zusätzlich 14 Heiligschaden verursachen. Während ein Schild ausgerüstet ist, gewährt jeder Angriff zudem einen Absorptionsschild in Höhe von 50% des verursachten Heiligschadens. Es kann immer nur jeweils ein Siegel auf dem Paladin aktiv sein.\n\nDie Entfesselung der Energie dieses Siegels fügt einem Gegner 66 bis 72 Heiligschaden zu und verspottet das Ziel, wodurch es gezwungen wird, Euch 3 Sek. lang anzugreifen.",
+  "points": null,
+  "dot": null
+ },
+ {
+  "label": "deDE Seal of Fury, other wording (no DoT)",
+  "desc": "Erfüllt Euch 30 Sek. lang mit göttlichem Furor, wodurch jeder Nahkampfangriff zusätzlich 9 Heiligschaden verursacht. Während ein Schild ausgerüstet ist, gewährt jeder Angriff außerdem einen Absorptionsschild in Höhe von 50% des verursachten Heiligschadens. Es kann immer nur jeweils ein Siegel auf dem Paladin aktiv sein.\n\nDie Entfesselung der Energie dieses Siegels fügt einem Gegner 48 bis 52 Heiligschaden zu und verspottet das Ziel, damit es Euch 3 Sek. lang angreift.",
+  "points": null,
+  "dot": null
+ },
+ {
+  "label": "deDE Rip 1 point (non-breaking space before the colon)",
+  "desc": "Finishing-Move, der Schaden über Zeit verursacht. Schaden steigt pro Combopunkt und mit Angriffskraft:\n   1 Punkt  : 57 Schaden über 12 Sek..\n   2 Punkte: 90 Schaden über 12 Sek..\n   3 Punkte: 123 Schaden über 12 Sek..\n   4 Punkte: 156 Schaden über 12 Sek..\n   5 Punkte: 189 Schaden über 12 Sek..",
+  "points": 1,
+  "dot": "57/1/12"
+ },
+ {
+  "label": "deDE Rip 5 points",
+  "desc": "Finishing-Move, der Schaden über Zeit verursacht. Schaden steigt pro Combopunkt und mit Angriffskraft:\n   1 Punkt  : 57 Schaden über 12 Sek..\n   2 Punkte: 90 Schaden über 12 Sek..\n   3 Punkte: 123 Schaden über 12 Sek..\n   4 Punkte: 156 Schaden über 12 Sek..\n   5 Punkte: 189 Schaden über 12 Sek..",
+  "points": 5,
+  "dot": "189/1/12"
+ },
+ {
+  "label": "deDE Corruption",
+  "desc": "Verdirbt das Ziel und verursacht 12 Sek. lang 40 Punkt(e) Schattenschaden.",
+  "points": null,
+  "dot": "40/32/12"
+ },
+ {
+  "label": "deDE Immolate (periodic part only)",
+  "desc": "Verbrennt den Gegner und fügt ihm [10.8 * (((1)))] Feuerschaden sowie im Verlauf von 15 Sek. insgesamt 15 zusätzlichen Feuerschaden zu.",
+  "points": null,
+  "dot": "15/4/15"
+ },
+ {
+  "label": "deDE Rend",
+  "desc": "Verwundet das Ziel, lässt es 9 Sek. lang bluten und fügt damit 15 Punkt(e) Schaden zu.",
+  "points": null,
+  "dot": "15/1/9"
+ },
+ {
+  "label": "deDE Rejuvenation (heal over time, no DoT)",
+  "desc": "Heilt beim Ziel 12 Sek. lang 32 Punkt(e) Schaden.",
+  "points": null,
+  "dot": null
+ },
+ {
+  "label": "esES Corrupción reads Shadow DoT",
+  "desc": "Corrompe al objetivo, causando 40 p. de daño de las Sombras durante 12 s.",
+  "points": null,
+  "dot": "40/32/12"
+ },
+ {
+  "label": "esES Arañazo reads the bleed after the hit",
+  "desc": "Araña al objetivo causando 27 p. de daño y un daño extra de 60 p. durante 9 s. Otorga 1 punto de combo.",
+  "points": null,
+  "dot": "60/1/9"
+ },
+ {
+  "label": "esES Destripar at 1 combo point",
+  "desc": "Remate que inflige daño en el tiempo. El daño aumenta por cada punto de combo y por tu poder de ataque:\n 1 punto: 57 de daño durante 12 s.\n 2 puntos: 90 de daño durante 12 s.\n 3 puntos: 123 de daño durante 12 s.\n 4 puntos: 156 de daño durante 12 s.\n 5 puntos: 189 de daño durante 12 s.",
+  "points": 1,
+  "dot": "57/1/12"
+ },
+ {
+  "label": "esES Incapacitación (hit, then incapacitate for 4 s) is no DoT",
+  "desc": "Inflige 10 p. de daño, detiene tu ataque e incapacita al objetivo durante 4 s. El objetivo tiene que estar mirándote. Cualquier daño recibido anulará el efecto. Otorga 1 p. de combo.",
+  "points": null,
+  "dot": null
+ },
+ {
+  "label": "esES Choque de tierra (hit, then lockout for 2 s) is no DoT",
+  "desc": "Choque instantáneo con fuerza de concusión que inflige 21 al 24 p. de daño de Naturaleza al objetivo. También interrumpe el lanzamiento de hechizos e impide que se lance cualquier hechizo de ese tipo durante 2 s. Causa una gran cantidad de amenaza.",
+  "points": null,
+  "dot": null
+ },
+ {
+  "label": "esES Sello de furia (hit, then taunt for 3 s) is no DoT",
+  "desc": "Colma al paladín de furia divina durante 30 s, lo que hace que los ataques cuerpo a cuerpo inflijan 14 p. de daño Sagrado extra. Mientras lleves equipado un escudo, cada ataque también otorga un escudo de absorción equivalente al 50% del daño Sagrado infligido. Un paladín solo puede tener un sello activo a la vez.\n\nLiberar la energía de este sello causará 66 al 72 p. de daño Sagrado a un enemigo y le provocará para que te ataque durante 3 s.",
+  "points": null,
+  "dot": null
+ },
+ {
+  "label": "esES Plan de contingencia (heal over time) is no DoT",
+  "desc": "Coloca un resguardo Sagrado sobre un aliado durante 30 s. La próxima vez que reciba una cantidad de daño que reduzca su salud por debajo del 35%, obtendrá un escudo que absorberá 290 p. de daño y le sanará 200 p. de salud durante 15 s. Cada objetivo solo puede verse afectado por un Plan de contingencia.",
+  "points": null,
+  "dot": null
+ },
+ {
+  "label": "esES Tótem derribador (totem health, every 10 s) is no DoT",
+  "desc": "Invoca un Tótem derribador con 5 p. de salud que redirige 1 hechizo dañino dirigido a alguno de los miembros del grupo contra sí mismo cada 10 segundos. No redirige hechizos de área o efecto. Dura 45 s.",
+  "points": null,
+  "dot": null
+ },
+ {
+  "label": "frFR Explosion pyrotechnique rank 2: \"56 dégâts de Feu\", no \"points\" (12505)",
+  "desc": "Lance un immense rocher enflammé qui inflige 126 à 162 points de dégâts de Feu et 56 dégâts de Feu supplémentaires en 12 sec.",
+  "points": null,
+  "dot": "56/4/12"
+ },
+ {
+  "label": "frFR Déchirure at 1 combo point (nbsp around the colon) (9896)",
+  "desc": "Coup de grâce qui inflige des dégâts sur la durée. Les dégâts augmentent avec le nombre de points de combo et votre puissance d’attaque :\n 1 point : 305 points de dégâts en 12 sec.\n 2 points : 497 points de dégâts en 12 sec.\n 3 points : 688 points de dégâts en 12 sec.\n 4 points : 880 points de dégâts en 12 sec.\n 5 points : 1071 points de dégâts en 12 sec.",
+  "points": 1,
+  "dot": "305/1/12"
+ },
+ {
+  "label": "frFR Déchirure at 5 combo points (9896)",
+  "desc": "Coup de grâce qui inflige des dégâts sur la durée. Les dégâts augmentent avec le nombre de points de combo et votre puissance d’attaque :\n 1 point : 305 points de dégâts en 12 sec.\n 2 points : 497 points de dégâts en 12 sec.\n 3 points : 688 points de dégâts en 12 sec.\n 4 points : 880 points de dégâts en 12 sec.\n 5 points : 1071 points de dégâts en 12 sec.",
+  "points": 5,
+  "dot": "1071/1/12"
+ },
+ {
+  "label": "frFR Immolation: nbsp and \"points supplémentaires de dégâts\" (348)",
+  "desc": "Brûle l’ennemi et lui inflige [10.8 * (((1)))] points de dégâts de feu, puis 15 points supplémentaires de dégâts de feu en 15 sec.",
+  "points": null,
+  "dot": "15/4/15"
+ },
+ {
+  "label": "frFR Plaie d'agonie (980)",
+  "desc": "Afflige la cible d’une plaie d’agonie qui lui inflige 72 points de dégâts d’ombre en 24 sec. Les dégâts sont progressifs et sont plus importants avec le temps. La cible ne peut être victime que d’une plaie par démoniste à la fois.",
+  "points": null,
+  "dot": "72/32/24"
+ },
+ {
+  "label": "frFR Pourfendre: a bleed as health lost (772)",
+  "desc": "Blesse la cible. Elle saigne et perd 15 points de vie en 9 sec.",
+  "points": null,
+  "dot": "15/1/9"
+ },
+ {
+  "label": "frFR Totem de Glèbe is no DoT (English reads one) (8177)",
+  "desc": "Invoque un Totem de Glèbe. Il dispose de 5 points de vie et redirige sur lui-même un sort offensif lancé sur un membre du groupe proche toutes les 10 secondes. Il ne redirige pas les sorts de zone. Dure 45 sec.",
+  "points": null,
+  "dot": null
+ },
+ {
+  "label": "frFR Rénovation is a heal over time (10927)",
+  "desc": "Rend 370 points de vie à la cible en 15 sec.",
+  "points": null,
+  "dot": null
+ },
+ {
+  "label": "koKR Korean Rip at 1 combo point (lines start with non-breaking spaces)",
+  "desc": "마무리 일격을 시도하여 적에게 지속적인 피해를 입힙니다. 연계 점수와 전투력에 따라 피해가 증가합니다:\n   연계 점수 1점: 12초에 걸쳐 84의 피해\n   연계 점수 2점: 12초에 걸쳐 138의 피해\n   연계 점수 3점: 12초에 걸쳐 192의 피해\n   연계 점수 4점: 12초에 걸쳐 246의 피해\n   연계 점수 5점: 12초에 걸쳐 300의 피해",
+  "points": 1,
+  "dot": "84/1/12"
+ },
+ {
+  "label": "koKR Korean Rip at 3 combo points",
+  "desc": "마무리 일격을 시도하여 적에게 지속적인 피해를 입힙니다. 연계 점수와 전투력에 따라 피해가 증가합니다:\n   연계 점수 1점: 12초에 걸쳐 84의 피해\n   연계 점수 2점: 12초에 걸쳐 138의 피해\n   연계 점수 3점: 12초에 걸쳐 192의 피해\n   연계 점수 4점: 12초에 걸쳐 246의 피해\n   연계 점수 5점: 12초에 걸쳐 300의 피해",
+  "points": 3,
+  "dot": "192/1/12"
+ },
+ {
+  "label": "koKR Korean Immolate: the periodic part after the direct hit",
+  "desc": "적을 불태워 [157.5 * (((1)))]의 화염 피해를 입히고 추가로 15초에 걸쳐 총 260의 화염 피해를 입힙니다.",
+  "points": null,
+  "dot": "260/4/15"
+ },
+ {
+  "label": "koKR Korean Serpent Sting: Nature",
+  "desc": "쐐기를 대상에게 발사하여 15초에 걸쳐 총 500의 자연 피해를 입힙니다. 사냥꾼마다 한 대상에 동시에 하나의 쐐기만 사용할 수 있습니다.",
+  "points": null,
+  "dot": "500/8/15"
+ },
+ {
+  "label": "koKR Korean Renew is a heal over time, no DoT",
+  "desc": "15초에 걸쳐 대상의 생명력을 총 670만큼 회복시킵니다.",
+  "points": null,
+  "dot": null
+ },
+ {
+  "label": "koKR Korean Rejuvenation is a heal over time, no DoT",
+  "desc": "12초에 걸쳐 644의 생명력을 회복시킵니다.",
+  "points": null,
+  "dot": null
+ },
+ {
+  "label": "koKR Korean Execute (named like \"finishing move\") is no DoT",
+  "desc": "상처 입은 적에게 마무리 일격을 시도하여 125의 피해를 입히고 나머지 분노를 모두 소모하여 분노당 3의 피해를 추가로 입힙니다. 생명력이 20%미만인 적에게만 사용할 수 있습니다.",
+  "points": 5,
+  "dot": null
+ },
+ {
+  "label": "koKR Korean Grounding Totem is no DoT",
+  "desc": "시전자의 위치에 5의 생명력을 지닌 마법정화 토템을 소환합니다. 매 10초마다 주위 파티원을 대상으로 시전되는 해로운 주문 1개의 목표가 마법정화 토템으로 바뀝니다. 광역 주문은 목표를 바꿀 수 없습니다. 45초 동안 지속됩니다.",
+  "points": null,
+  "dot": null
+ },
+ {
+  "label": "ptBR Frostfire Bolt (Fogofrio is Frost and Fire)",
+  "desc": "Lança uma seta de fogofrio contra o inimigo, causando de 103 para 118 de dano de Fogofrio, reduzindo em 40% a velocidade de movimento e causando mais 27 de dano de Fogofrio ao longo de 9 s. Este feitiço considera a menor entre as resistências a Gelo e Fogo do alvo e conta tanto como dano de Gelo quanto de Fogo.",
+  "points": null,
+  "dot": "27/20/9"
+ },
+ {
+  "label": "ptBR Rip at 1 point (its own line)",
+  "desc": "Golpe final que causa dano ao longo do tempo. O dano aumenta em função dos pontos de combo e do seu Poder de Ataque:\n   1 ponto: 57 de dano ao longo de 12 s.\n   2 pontos: 90 de dano ao longo de 12 s.\n   3 pontos: 123 de dano ao longo de 12 s.\n   4 pontos: 156 de dano ao longo de 12 s.\n   5 pontos: 189 de dano ao longo de 12 s.",
+  "points": 1,
+  "dot": "57/1/12"
+ },
+ {
+  "label": "ptBR Rip at 5 points",
+  "desc": "Golpe final que causa dano ao longo do tempo. O dano aumenta em função dos pontos de combo e do seu Poder de Ataque:\n   1 ponto: 57 de dano ao longo de 12 s.\n   2 pontos: 90 de dano ao longo de 12 s.\n   3 pontos: 123 de dano ao longo de 12 s.\n   4 pontos: 156 de dano ao longo de 12 s.\n   5 pontos: 189 de dano ao longo de 12 s.",
+  "points": 5,
+  "dot": "189/1/12"
+ },
+ {
+  "label": "ptBR Corruption",
+  "desc": "Corrompe o alvo, causando 40 de dano de Sombra ao longo de 12 s.",
+  "points": null,
+  "dot": "40/32/12"
+ },
+ {
+  "label": "ptBR Moonfire (periodic part after the hit)",
+  "desc": "Queima o inimigo causando 10 para 12 de dano Arcano e mais 12 de dano Arcano ao longo de 9 s.",
+  "points": null,
+  "dot": "12/64/9"
+ },
+ {
+  "label": "ptBR Renew (heal over time, no DoT)",
+  "desc": "Cura 45 pontos de vida do alvo ao longo de 15 s.",
+  "points": null,
+  "dot": null
+ },
+ {
+  "label": "ptBR Rejuvenation (heal over time, no DoT)",
+  "desc": "Cura 32 pontos de vida do alvo ao longo de 12 s.",
+  "points": null,
+  "dot": null
+ },
+ {
+  "label": "ruRU Shield Bash (lockout after the damage, no DoT)",
+  "desc": "Бьет цель щитом, нанося 6 ед. урона, прерывая применение заклинания и не позволяя применять заклинания той же школы в течение 6 сек.",
+  "points": null,
+  "dot": null
+ },
+ {
+  "label": "ruRU Seal of Fury (taunt after the damage, no DoT)",
+  "desc": "На 30 сек. наделяет вас божественной яростью, во время которой атаки ближнего боя наносят еще 14 ед. урона от светлой магии. Если вы держите в руке щит, каждая атака также дает вам барьер, поглощающий урон в объеме 50% нанесенного урона от светлой магии. Одновременно на вас может действовать только одно заклинание категории \"Печать\".\n\nВысвобождение энергии печати наносит противнику 66 в 72 ед. урона от светлой магии и заставляет его атаковать вас в течение 3 сек.",
+  "points": null,
+  "dot": null
+ },
+ {
+  "label": "ruRU Summon Hawk (formula tail is no amount, no DoT)",
+  "desc": "Вы приказываете ястребу спикировать на цель, нанося [47 + (Сила атаки дальнего боя * (0.05))] ед. физического урона, и атаковать ее в течение 18 сек. Одновременно вы можете призвать не более 2 ястребов:ястребов. \"Призыв ястреба\" имеет общее время восстановления с \"Чародейским выстрелом\".",
+  "points": null,
+  "dot": null
+ },
+ {
+  "label": "ruRU Frostfire Bolt (fire and frost)",
+  "desc": "Выпускает стрелу ледяного огня, наносящую 103 в 118 ед. урона от ледяного огня сразу и еще 27 ед. урона от ледяного огня за 9 сек., а также снижающую скорость передвижения цели на 40%. В расчет берется наименьшее из значений сопротивления огню и магии льда. Заклинание относится к обеим школам.",
+  "points": null,
+  "dot": "27/20/9"
+ },
+ {
+  "label": "ruRU Rip at 1 combo point",
+  "desc": "Завершающий прием, наносящий периодический урон. Урон увеличивается за счет длины серии и силы атаки:\n 1 прием: 84 ед. урона за 12 сек.\n 2 приема: 138 ед. урона за 12 сек.\n 3 приема: 192 ед. урона за 12 сек.\n 4 приема: 246 ед. урона за 12 сек.\n 5 приемов: 300 ед. урона за 12 сек.",
+  "points": 1,
+  "dot": "84/1/12"
+ },
+ {
+  "label": "ruRU Moonfire (periodic part, no 'ед.')",
+  "desc": "Обжигает противника, нанося ему 10 в 12 ед. урона от тайной магии и 12 дополнительного урона от тайной магии в течение 9 сек.",
+  "points": null,
+  "dot": "12/64/9"
+ },
+ {
+  "label": "ruRU Rend (lost health)",
+  "desc": "Наносит цели кровоточащую рану, из-за которой она теряет 15 ед. здоровья за 9 сек.",
+  "points": null,
+  "dot": "15/1/9"
+ },
+ {
+  "label": "ruRU Riptide (heal over time, no DoT)",
+  "desc": "Восстанавливает союзнику 575 ед. здоровья за 15 сек. Повышает эффективность \"Цепного исцеления\", применяемого напрямую к этой цели, на 25%.",
+  "points": null,
+  "dot": null
+ },
+ {
+  "label": "zhCN Fireball (zhCN): DoT clause names no school, takes the direct hit's Fire",
+  "desc": "发射一枚火球攻击目标，对其造成15至23点火焰伤害，并在4秒内造成额外的2点伤害。",
+  "points": null,
+  "dot": "2/4/4"
+ },
+ {
+  "label": "zhCN Corruption (zhTW): no school word anywhere, Shadow from the wording",
+  "desc": "腐蝕目標，在12秒內造成累計40點傷害。",
+  "points": null,
+  "dot": "40/32/12"
+ },
+ {
+  "label": "zhCN Shadow Word: Pain (zhTW)",
+  "desc": "黑暗的咒語，在18秒內造成總計426點暗影傷害。",
+  "points": null,
+  "dot": "426/32/18"
+ },
+ {
+  "label": "zhCN Frostfire Bolt (zhCN): Frostfire school",
+  "desc": "对敌人施放霜火之箭，造成103至118点霜火伤害，使其移动速度降低40%，并在9秒内造成额外27点霜火伤害。该法术同时视为冰霜与火焰伤害，并以目标冰霜与火焰抗性中较低者为准。",
+  "points": null,
+  "dot": "27/20/9"
+ },
+ {
+  "label": "zhCN Siphon Life (zhCN): drain stated as a rate",
+  "desc": "每3秒将目标的11点生命值转移给施法者，持续30秒。",
+  "points": null,
+  "dot": "110/1/30"
+ },
+ {
+  "label": "zhCN Tranquility (zhCN): a heal stated as a rate is no DoT",
+  "desc": "使20码内附近的所有队伍成员每2秒恢复91点生命值，持续10秒。德鲁伊必须持续引导才能维持该法术。",
+  "points": null,
+  "dot": null
+ },
+ {
+  "label": "zhCN Rip at 1 combo point (zhCN)",
+  "desc": "终结技，使目标在一段时间内受到持续伤害。伤害将根据连击点数和攻击强度决定：\n1点：12秒内57点伤害。\n2点：12秒内90点伤害。\n3点：12秒内123点伤害。\n4点：12秒内156点伤害。\n5点：12秒内189点伤害。",
+  "points": 1,
+  "dot": "57/1/12"
+ },
+ {
+  "label": "zhCN Pyroblast (zhTW): Fire from the direct hit",
+  "desc": "發射一枚巨大的火球，對目標造成101至131點火焰傷害，並在12秒內造成總計44點額外傷害。",
+  "points": null,
+  "dot": "44/4/12"
+ },
+ {
+  "label": "enUS Mutilate: \"Awards 2 Combo Points\", capitalised (1241582)",
+  "desc": "Instantly attacks with both weapons for 90% weapon damage plus an additional 57 with each weapon. Damage increased by 20% against Poisoned targets. Awards 2 Combo Points.",
+  "combo": 2
+ },
+ {
+  "label": "enUS Sinister Strike awards 1 combo point (1757)",
+  "desc": "An instant strike that causes 6 damage in addition to your normal weapon damage.  Awards 1 combo point.",
+  "combo": 1
+ },
+ {
+  "label": "koKR Backstab: \"1의 연계 점수를 얻습니다\" (53)",
+  "desc": "적을 기습하여 무기 공격력의 150%에 10의 추가 피해를 입힙니다. 주장비에 단검을 착용해야 하며 적의 배후에서 공격해야 합니다. 1의 연계 점수를 얻습니다.",
+  "combo": 1
+ },
+ {
+  "label": "koKR Execute's name means \"finishing move\": no finisher (5308)",
+  "desc": "상처 입은 적에게 마무리 일격을 시도하여 125의 피해를 입히고 나머지 분노를 모두 소모하여 분노당 3의 피해를 추가로 입힙니다. 생명력이 20%미만인 적에게만 사용할 수 있습니다.",
+  "finisher": false
+ },
+ {
+  "label": "koKR Rip is a finisher (1079)",
+  "desc": "마무리 일격을 시도하여 적에게 지속적인 피해를 입힙니다. 연계 점수와 전투력에 따라 피해가 증가합니다:\n   연계 점수 1점: 12초에 걸쳐 57의 피해\n   연계 점수 2점: 12초에 걸쳐 90의 피해\n   연계 점수 3점: 12초에 걸쳐 123의 피해\n   연계 점수 4점: 12초에 걸쳐 156의 피해\n   연계 점수 5점: 12초에 걸쳐 189의 피해",
+  "finisher": true
+ },
+ {
+  "label": "esES Kidney Shot: \"Golpe de remate\" is a finisher (408)",
+  "desc": "Golpe de remate que aturde al objetivo. Se prolonga con cada punto de combo:\n 1 punto: 1 segundo\n 2 puntos: 2 segundos\n 3 puntos: 3 segundos\n 4 puntos: 4 segundos\n 5 puntos: 5 segundos",
+  "finisher": true
+ },
+ {
+  "label": "esES Mutilate: \"Da 2 p. de combo\" (1241582)",
+  "desc": "Ataque instantáneo con ambas armas que inflige un 90% de daño de arma más 57 p. adicionales con cada arma. El daño aumenta un 20% contra objetivos envenenados. Da 2 p. de combo.",
+  "combo": 2
+ },
+ {
+  "label": "ruRU Mutilate: \"Продлевает серию приемов на 2\" (1241582)",
+  "desc": "Мгновенно атакует оружием в обеих руках, нанося 90% урона от оружия и еще 57 ед. урона каждым оружием. Урон увеличивается на 20% против отравленных целей. Продлевает серию приемов на 2.",
+  "combo": 2
+ },
+ {
+  "label": "ruRU Eviscerate: \"Завершающий удар\" is a finisher (6760)",
+  "desc": "Завершающий удар, наносящий урон в зависимости от длины серии:\n1 прием: [3 + (11 * (1 * 1))]-[11 + (11 * (1 * 1))] ед. урона\n 2 приема: [3 + (2 * 11 * (1 * 1))]-[11 + (2 * 11 * (1 * 1))] ед. урона\n 3 приема: [3 + (3 * 11 * (1 * 1))]-[11 + (3 * 11 * (1 * 1))] ед. урона\n 4 приема: [3 + (4 * 11 * (1 * 1))]-[11 + (4 * 11 * (1 * 1))] ед. урона\n 5 приемов: [3 + (5 * 11 * (1 * 1))]-[11 + (5 * 11 * (1 * 1))] ед. урона.",
+  "finisher": true
+ },
+ {
+  "label": "frFR Gouge: \"Confère 1 point de combo\" (1776)",
+  "desc": "Inflige 10 points de dégâts, interrompt votre attaque et stupéfie la cible pendant 4 sec. La cible doit vous faire face. Tout dégât subi dissipe l’effet. Confère 1 point de combo.",
+  "combo": 1
+ },
+ {
+  "label": "ptBR Cheap Shot: \"Concede 2 pontos de Combo\" (1833)",
+  "desc": "Atordoa o alvo por 4 s. É necessário estar furtivo. Concede 2 pontos de Combo.",
+  "combo": 2
+ },
+ {
+  "label": "zhCN Cheap Shot: \"奖励2点连击点数\" (1833)",
+  "desc": "使目标昏迷4秒，必须在潜行状态下使用。奖励2点连击点数。",
+  "combo": 2
+ },
+ {
+  "label": "deDE Sinister Strike: \"Gewährt 1 Combopunkt\" (1757)",
+  "desc": "Ein sofortiger Schlag, der zusätzlich zu Eurem normalen Waffenschaden noch 6 Punkt(e) Schaden zufügt. Gewährt 1 Combopunkt.",
+  "combo": 1
+ }
+]

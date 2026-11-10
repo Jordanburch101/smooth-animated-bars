@@ -3,8 +3,9 @@
 --
 -- Ported from DoesItDie 0.9.0 by Joe Greive (MIT licence, notice below), which worked
 -- out on Forever what can be read and how ticks behave. Its tracking is kept as it was, in its own words where
--- they still fit; its displays, options, nameplates and other languages are not ported (English spell text
--- only), and its trace goes to a short in-memory log for /sab dots instead of the saved variables.
+-- they still fit; its displays, options and nameplates are not ported, its other languages' spell text is read by
+-- Locale*.lua (the rogue poisons and traps below read English only), and its trace goes to a short in-memory log
+-- for /sab dots instead of the saved variables.
 --
 -- On Forever the target's health is secret and the combat log is closed to addons, so addon code can never
 -- compare "health vs DoT damage" itself. What stays readable:
@@ -127,6 +128,8 @@ local SPELL_IDS = {
     ["Serpent Sting"] = 1978, ["Pyroblast"] = 11366, ["Corruption"] = 172,
 }
 local NAME_TABLES = { KNOWN_TICK_INTERVALS, TICK_SHAPES, SCHOOL_BY_NAME, IGNORED_SPELLS, PROJECTILE_DOTS, TRAP_DOTS }
+-- The tables also answer to every registered language's names (Locale.lua).
+ns.locale.addNames(NAME_TABLES)
 
 local SCHOOL_MASKS = {
     Physical = 1, Holy = 2, Fire = 4, Nature = 8, Frost = 16, Shadow = 32, Arcane = 64,
@@ -212,20 +215,35 @@ local function schoolFromWords(words)
     return school
 end
 
+-- Forever's English text has non-breaking spaces (U+00A0) where plain ones would do: between sentences, in
+-- Rip's "1 point \194\160: 57 damage over 12 sec." and in Instant Poison IV's "lasts for 30 \194\160minutes".
+-- Lua's %s does not match them (two bytes in UTF-8, U+202F three), so the English patterns read a copy with
+-- them made plain spaces.
+local function plainSpaces(desc)
+    return (desc:gsub("\194\160", " "):gsub("\226\128\175", " "))
+end
+
 -- Finishers (Rip, Rupture) list their DoT per combo point:
---   "1 point : 243 damage over 12 sec. 2 points: 396 damage over 12 sec. ..."   (Rip; note the stray space)
---   "1 point: 25 damage over 8 secs\n ... 5 points: 87 damage over 16 secs"      (Rupture)
+--   "1 point \194\160: 57 damage over 12 sec.\n \194\160 2 points: 90 damage over 12 sec. ..."   (Rip)
+--   "1 point \194\160: 25 damage over 8 secs\n ... 5 points: 87 damage over 16 secs"            (Rupture)
 -- Returns total, school, duration for the given points (clamped to the listed range), or nil if the
--- finisher has no per-point DoT (e.g. Eviscerate).
+-- finisher has no per-point DoT (e.g. Eviscerate). Points with no line of their own take the nearest line
+-- below, else the lowest: never a higher one, which would show more damage than the cast deals.
 local function parseFinisher(desc, comboPoints)
-    local byPoints, highest = {}, 0
+    local byPoints, highest, lowest = {}, 0, nil
     for pointsText, amount, secs in desc:gmatch("(%d+) points?%s*:%s*(%d+) damage over (%d+%.?%d*) sec") do
         local points = tonumber(pointsText)
         byPoints[points] = { total = tonumber(amount), duration = tonumber(secs) }
         highest = math.max(highest, points)
+        lowest = math.min(lowest or points, points)
     end
     if highest == 0 then return nil end
-    local entry = byPoints[math.max(1, math.min(comboPoints, highest))] or byPoints[highest]
+    local entry
+    for points = math.max(1, math.min(comboPoints, highest)), 1, -1 do
+        entry = byPoints[points]
+        if entry then break end
+    end
+    entry = entry or byPoints[lowest]
     return entry.total, SCHOOL_MASKS.Physical, entry.duration
 end
 
@@ -245,27 +263,35 @@ end
 -- comboPoints is only used for finishers.
 local function parseDot(desc, comboPoints)
     if type(desc) ~= "string" or isSecret(desc) then return nil end
-    if desc:find("Finishing move") then return parseFinisher(desc, comboPoints or 5) end
+    local text = plainSpaces(desc)
+    if text:find("Finishing move") then return parseFinisher(text, comboPoints or 5) end
     -- Weapon enchants (rogue poisons) describe a proc DoT but aren't cast on the target (parseCoating).
-    if desc:find("[Cc]oats a weapon") then return nil end
+    if text:find("[Cc]oats a weapon") then return nil end
     -- Heals over time: Forever's Renew reads "Heals the target of 830 damage over 15 sec".
-    if desc:find("^Heals") then return nil end
+    if text:find("^Heals") then return nil end
+    -- Totems are never a DoT on the target: "Summons a Grounding Totem with 5 health ... every 10 seconds ...
+    -- Lasts 45 sec." read as a drain.
+    if text:find("^Summons") then return nil end
 
-    local total, school, duration = lastOverTime(desc)
+    local total, school, duration = lastOverTime(text)
     if total and duration > 0 then return total, school, duration end
 
-    local amount, words, every = desc:match("(%d+)%s*([%a ]-)%s*damage every (%d+%.?%d*) sec")
+    local amount, words, every = text:match("(%d+)%s*([%a ]-)%s*damage every (%d+%.?%d*) sec")
     if not amount then
-        amount, every = desc:match("(%d+) health.-every (%d+%.?%d*) sec")
+        -- Drains: "Transfers 15 health from the target to the caster every 3 sec." (Siphon Life), "Transfers 10
+        -- health every 1 second from the target to the caster." (Drain Life).
+        amount, every = text:match("Transfers (%d+) health.-every (%d+%.?%d*) sec")
         words = ""
     end
-    local lasts = desc:match("[Ll]asts (%d+%.?%d*) sec")
+    local lasts = text:match("[Ll]asts (%d+%.?%d*) sec")
     if amount and every and lasts then
         every, lasts = tonumber(every), tonumber(lasts)
         if every > 0 and lasts > 0 then
             return tonumber(amount) * math.floor(lasts / every + 0.5), schoolFromWords(words), lasts, every
         end
     end
+    -- Not English DoT wording: try the other languages (Locale.lua).
+    return ns.locale.parseDot(desc, comboPoints or 5)
 end
 
 -- A weapon coating's poison, from its description:
@@ -274,14 +300,24 @@ end
 -- Returns "dot", total, school, duration and the coating's lifetime in seconds; "direct" and the lifetime for one
 -- that strikes at once ("instantly inflicts 19 to 25 Nature damage", Instant Poison); nil for anything else.
 local function parseCoating(desc)
-    if type(desc) ~= "string" or isSecret(desc) or not desc:find("[Cc]oats a weapon") then return nil end
-    local minutes = tonumber(desc:match("[Ll]asts? for (%d+) min"))
+    if type(desc) ~= "string" or isSecret(desc) then return nil end
+    local text = plainSpaces(desc)
+    if not text:find("[Cc]oats a weapon") then return nil end
+    local minutes = tonumber(text:match("[Ll]asts? for (%d+)%s*min"))
     local lifetime = minutes and minutes * 60 or POISON_LIFETIME
-    local total, school, duration = lastOverTime(desc)
+    local total, school, duration = lastOverTime(text)
     if total and duration > 0 and school == SCHOOL_MASKS.Nature then
         return "dot", total, school, duration, lifetime
     end
-    if desc:find("Nature damage") then return "direct", lifetime end
+    if text:find("Nature damage") then return "direct", lifetime end
+end
+
+-- N from a combo builder's "Awards 1 combo point." (Sinister Strike) or "Awards 2 Combo Points." (Forever's
+-- Mutilate), else the other languages' reading, else nil.
+local function comboPointsAwarded(desc)
+    if type(desc) ~= "string" or isSecret(desc) then return nil end
+    local points = tonumber(plainSpaces(desc):match("[Aa]wards (%d+) [Cc]ombo [Pp]oint"))
+    return points or ns.locale.comboPointsAwarded(desc)
 end
 
 ---------------------------------------------------------------------------
@@ -395,7 +431,8 @@ local function rememberComboPoints()
 end
 
 local function isFinisherDescription(desc)
-    return type(desc) == "string" and not isSecret(desc) and desc:find("Finishing move") ~= nil
+    return type(desc) == "string" and not isSecret(desc)
+        and (desc:find("Finishing move") ~= nil or ns.locale.isFinisher(desc))
 end
 
 -- The mob a cast is going to. UNIT_SPELLCAST_SENT only names it, so a cast whose name matches the focus but not
@@ -662,7 +699,7 @@ local function onPlayerCast(spellID, castGUID)
     local ok, name, desc = pcall(spellNameAndDescription, spellID)
     if not ok or not name or isSecret(name) then return end
     if type(desc) == "string" and not isSecret(desc) then
-        local awarded = tonumber(desc:match("Awards (%d+) combo point"))
+        local awarded = comboPointsAwarded(desc)
         if awarded then onBuilderCast(key, awarded) end
         -- Only one Fire trap can be active: any new one (Explosive Trap too) replaces the armed one.
         if armedTrap and desc:find("Fire trap") then armedTrap = nil end
@@ -677,7 +714,12 @@ local function onPlayerCast(spellID, castGUID)
     if isFinisher then comboPoints, comboSource = comboPointsForCast() end
     -- Unknown points: parse the lowest entry (errs low), and don't use or teach learned tick sizes.
     local total, school, duration, statedInterval = parseDot(desc, comboPoints or 1)
-    if not total then return end
+    if not total then
+        if type(desc) == "string" and not isSecret(desc) and ns.locale.shouldLogUnread(spellID, desc) then
+            trace(string.format("NOT READ %s (id %d): %s", name, spellID, desc))
+        end
+        return
+    end
     -- A finisher's tick size depends on the points spent, so learned sizes are kept per point count.
     local tickKey = spellID
     if isFinisher then tickKey = comboPoints and (spellID .. "x" .. comboPoints) or nil end
@@ -1403,3 +1445,5 @@ end
 -- For the tests.
 Dots.parseDot = parseDot
 Dots.parseCoating = parseCoating
+Dots.comboPointsAwarded = comboPointsAwarded
+Dots.isFinisher = isFinisherDescription

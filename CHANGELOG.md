@@ -27,6 +27,11 @@ Sections are `### New` and `### Fixed`; skip one that would be empty.
   Nameplates get no kill icon or poison skulls.
 - The setup has a new last step for nameplates: enemy nameplates off, with
   the liquid, or with your DoTs too, and friendly nameplates on or off.
+- The DoT marker on French, German, Spanish, Portuguese, Russian, Korean
+  and Chinese clients: it reads your spells' text in those languages too,
+  checked against every class spell's tooltip in each language (not yet
+  tried in game; rogue poisons and Immolation Trap still need an English
+  client). `/sab dots` lists any spell text it could not read.
 - Bleeds bleed: on your target's DoT marker, a bleed's liquid beats like a
   heart, and with every beat blood spurts from the wound in glowing bursts
   that arc up and fall back, as from a cut artery. Between beats a few drops
@@ -38,6 +43,13 @@ Sections are `### New` and `### Fixed`; skip one that would be empty.
   add one (`/sab perf 12 mobs`), the zone and whether you were in combat.
   `/sab perf reset` starts the timing over; `/sab perf clear` forgets the
   saved reports.
+
+### Fixed
+- Rip and Rupture cast with 1 combo point no longer show the damage of a
+  5-point one on the DoT marker.
+- Grounding Totem no longer shows on the DoT marker.
+- Mutilate's 2 combo points are counted, so a Rip or Rupture after it shows
+  the right damage.
 
 ## 1.5.0
 

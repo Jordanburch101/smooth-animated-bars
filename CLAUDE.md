@@ -98,6 +98,17 @@ Facts found while building this, which the code relies on and which are not obvi
   the health liquid (`Liquid:SetSublevelOffset`; Liquid.lua uses sublevels 3 to 7 of -8..7, so there is no
   room for a third), and the health liquid's front is moved onto where the health will end (`Bars.Front`). The kill icon is the
   atlas `UI-HUD-UnitFrame-Target-HighLevelTarget_Icon` (Forever's `TargetFrame.xml`).
+- **Other client languages** (`Locale.lua`, `Locale_<tag>.lua`, ported from DoesItDie 0.9.3 without its options
+  translations): English patterns run first, then every language in toc order, whatever `GetLocale()` says
+  (DoesItDie saw it answer enUS on a German client). Not tried here on any non-English client, but checked against
+  Forever's own tooltips for all 1407 class spells (from WhatsTraining's `Classes/Camelot` data) in every language,
+  from Wowhead's tooltip API (`https://nether.wowhead.com/tooltip/spell/<id>?dataEnv=16&locale=<n>`, 16 is Forever;
+  locale 0 en, 1 ko, 2 fr, 3 de, 4 cn, 6 es, 7 ru, 8 pt; zhTW (5) comes back in English). Every reading matched
+  English; the fixed cases are in `tools/harness/language_cases.json`. Wowhead shows some numbers as formulas
+  (Rupture), and its text has non-breaking spaces (U+00A0) that `%s` does not match, so every reader turns them into
+  plain spaces first. In plain Lua 5.1, `%s`/`%p` follow the C locale and can match bytes inside Cyrillic letters, so
+  `Locale_ruRU.lua` lists ASCII bytes. The poison coatings, traps and `Heals.lua` still read English only.
+  `/sab dots` logs `NOT READ` for non-English text nothing read.
 - **Rogue poisons** (`Dots.lua`, `onPoisonCombat`): a coating procs on weapon strikes, so no cast event says when it
   lands. DoesItDie's saved log on Forever has `HIT (amount hidden) school 8`: the amount is secret but the school is
   not, so a Nature hit on a mob while the weapon carries a poison with damage over time is taken as its tick. The

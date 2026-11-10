@@ -67,7 +67,8 @@ will still burn away turns into liquid, eating into your target's health liquid:
 - **Your own DoTs only**, on your current target. Spells that do damage over time on the ground (Rain of Fire,
   Consecration) and channels (Drain Life, Mind Flay) are left out.
 
-It reads English spell text, so on other client languages it may not pick up your DoTs. If you use DoesItDie,
+It reads spell text in English, French, German, Spanish, Portuguese, Russian, Korean and Chinese (the other
+languages are not yet tried in game). Rogue poisons and Immolation Trap are read in English only. If you use DoesItDie,
 which draws its own marker, this one stays off while DoesItDie is loaded.
 
 ## Your heals on the way

@@ -4,6 +4,7 @@ against the WoW mock of the Forever client, where health and power are secret.
 Usage: python test.py <addon dir>
 Prints each check and exits 1 if any fails (a Lua error also fails with a traceback).
 """
+import json
 import os
 import sys
 
@@ -988,6 +989,72 @@ dp.execute("__nature()")
 run(dp, 0.3)
 check(dp.eval("(__ns.Dots.Target())") == 90 and not any("Error in" in m for m in chat(dp)),
       "and it stays off quietly")
+
+# Other client languages (Locale*.lua, from DoesItDie): their spell text reads as the English does.
+dl = session("{ setupDone = true, dots = true }")
+dl.execute("""
+    function __read(desc, points)
+        local total, school, duration = __ns.Dots.parseDot(desc, points)
+        return tostring(total) .. '/' .. tostring(school) .. '/' .. tostring(duration)
+    end
+""")
+LANGUAGE_DOTS = [
+    ("French", "Corrompt la cible et lui inflige 40 points de dégâts d'Ombre en 12 sec.", None, "40/32/12"),
+    ("French, a non-breaking space", "Immole la cible et lui inflige 11 points de dégâts de Feu, puis 20 points "
+     "de dégâts de Feu supplémentaires en 15 sec.", None, "20/4/15"),
+    ("French finisher", "Coup de grâce qui fait saigner la cible. 1 point : 44 points de dégâts en 12 sec. "
+     "5 points : 120 points de dégâts en 12 sec.", 5, "120/1/12"),
+    ("German", "Verdirbt das Ziel und verursacht 12 Sek. lang 40 Punkt(e) Schattenschaden.", None, "40/32/12"),
+    ("Spanish", "Corrompe al objetivo y le inflige 40 p. de daño de las Sombras durante 12 s.", None, "40/32/12"),
+    ("Portuguese", "Corrompe o alvo, causando 40 de dano de Sombra ao longo de 12 s.", None, "40/32/12"),
+    ("Russian", "Поражает цель порчей, нанося 40 ед. урона от темной магии за 12 сек.", None, "40/32/12"),
+    ("Korean", "대상을 타락시켜 12초에 걸쳐 총 40의 암흑 피해를 입힙니다.", None, "40/32/12"),
+    ("Chinese", "腐蚀目标，在12秒内造成总计40点暗影伤害。", None, "40/32/12"),
+]
+for label, desc, points, want in LANGUAGE_DOTS:
+    dl.globals()["__desc"] = desc
+    got = dl.eval(f"__read(__desc, {points or 'nil'})")
+    check(got == want, f"{label} spell text reads as a DoT ({got}, wanted {want})")
+# Forever's own tooltip text in every language (Wowhead's Forever data), each case a fix or a spell that matters:
+# "dot" is total/school/duration (null: must read as no DoT), "combo" the points a builder awards, "finisher"
+# whether it is a combo point finisher.
+with open(os.path.join(HERE, "language_cases.json"), encoding="utf-8") as f:
+    LANGUAGE_CASES = json.load(f)
+wrong = []
+for case in LANGUAGE_CASES:
+    dl.globals()["__desc"] = case["desc"]
+    if "dot" in case:
+        got = dl.eval(f"__read(__desc, {case['points'] or 'nil'})")
+        want = case["dot"] or "nil/nil/nil"
+    elif "combo" in case:
+        got, want = dl.eval("__ns.Dots.comboPointsAwarded(__desc)"), case["combo"]
+    else:
+        got, want = bool(dl.eval("__ns.Dots.isFinisher(__desc)")), case["finisher"]
+    if got != want:
+        wrong.append(f"{case['label']}: {got}, wanted {want}")
+check(not wrong, f"Forever's spell text in every language: {len(LANGUAGE_CASES)} cases"
+      + "".join("\n         " + w for w in wrong))
+dl.execute("""
+    __spells[172] = { 'Corruption', "Corrompt la cible et lui inflige 90 points de dégâts d'Ombre en 18 sec." }
+    __spells[1079] = { 'Déchirure', 'Coup de grâce qui fait saigner la cible. 1 point : 44 points de dégâts en 12 sec.' }
+    __spells[6603] = { 'Attaque', 'Attaque la cible.' }
+    function __cast(id, guid)
+        __fire('UNIT_SPELLCAST_SENT', 'player', __target.name, guid, id)
+        __fire('UNIT_SPELLCAST_SUCCEEDED', 'player', guid, id)
+    end
+    __target = { guid = 'Creature-0-1-2-3-524-0001', name = 'Sanglier rochecuir' }
+    __fire('PLAYER_TARGET_CHANGED')
+""")
+run(dl, 0.3)
+dl.execute("__cast(172, 'Cast-1'); __cast(6603, 'Cast-2')")
+run(dl, 0.3)
+dl.execute("SlashCmdList.SMOOTHANIMATEDBARS('dots')")
+check(dl.eval("(__ns.Dots.Target())") == 90 and dl.eval("__ns.Dots.parseDot('Attaque la cible.')") is None
+      and not any("Error in" in m for m in chat(dl)),
+      "a French Corruption cast shows on the marker; text that is not a DoT in any language reads as none")
+check(any("NOT READ Attaque (id 6603)" in m for m in chat(dl))
+      and not any("NOT READ Corruption" in m for m in chat(dl)),
+      "/sab dots lists a description no language read, so a player can send its wording")
 
 POISON_SETUP = """
     __spells[2823] = { 'Deadly Poison', 'Coats a weapon with poison that lasts for 30 min. Each strike has a 30% '

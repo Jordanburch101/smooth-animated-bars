@@ -121,7 +121,7 @@ Open the settings with `/sab`, from **Open Settings** when you right-click your 
 *   **WoW Forever only.** It draws on Forever's own unit frames.
 *   **Player, target, pet, focus and target-of-target frames.** Party frames keep the game's bars.
 *   **Always matches the game.** WoW Forever keeps health and power hidden from addons, so the game itself places the liquid on its own bar. That is also why a hit and someone else's heal both just stir the liquid.
-*   **English spell text.** The DoT and heal tracking read your spells' tooltips in English, so on other client languages they may not pick up your spells.
+*   **Spell text in eight languages.** The DoT tracking reads your spells' tooltips in English, French, German, Spanish, Portuguese, Russian, Korean and Chinese (rogue poisons in English only). The heal tracking reads English only, so on other client languages it may not pick up your heals.
 *   **Light on your game.** Once the bars settle, the liquid drops to a low update rate.
 *   **DoesItDie users:** while DoesItDie is loaded, the DoT marker stays off so you don't get two.
 
