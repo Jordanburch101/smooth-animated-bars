@@ -2,7 +2,7 @@
 
 # Smooth Animated Bars
 
-**Liquid health and power bars for your unit frames in WoW Forever: yours, your target's, your pet's, your focus's and your targets of target.** Waves, a swirl of magic, bubbles, sparkles and lightning now fill the bars you watch all fight long, and they show what is on the way: your heals, your bandages, your food and your drink pour into your bars, and your DoTs eat into your target's.
+**Liquid health and power bars for your unit frames in WoW Forever: yours, your target's, your pet's, your focus's and your targets of target, and nameplates too.** Waves, a swirl of magic, bubbles, sparkles and lightning now fill the bars you watch all fight long, and they show what is on the way: your heals, your bandages, your food and your drink pour into your bars, and your DoTs eat into your target's.
 
 Your frames stay the game's own. Only the fill changes, so nothing moves: log in and your bars are liquid. A short setup on your first login lets you choose the look, or skip it.
 
@@ -14,6 +14,7 @@ Your frames stay the game's own. Only the fill changes, so nothing moves: log in
 *   **Your heals on the way:** your own heals over time, bandages and the heal you are casting on yourself show ahead of your health as far as they will still bring it, and pour into it.
 *   **Food and drink:** what you are eating and drinking shows ahead of your health and mana, and food with a buff builds up to a burst of stars when you become well fed.
 *   **Your DoTs on the target (optional):** liquid in your DoTs' own colours eats into your target's health as far as they will still burn it, and the game's skull shows on its portrait when they will finish it.
+*   **Nameplates (optional):** the liquid in enemy and friendly nameplates too, with your DoTs on every mob that carries them.
 *   **25 themes:** keep the game's colours, or pick Class Color, Fire, Frost, Arcane, Shadow, Void and more, many with particles of their own. Each frame's health and power get their own choice, and Class Color shows each player's own class.
 *   **Your call on every effect:** waves, swirl, bubbles, sparkles, theme particles and lightning can each be switched off, and so can each bar.
 *   **Mana regen build-up:** your mana bar builds up through the five seconds after a spell, and lets go in a burst of stars as your mana starts to regenerate again.
@@ -77,6 +78,19 @@ Turn it on in the setup or under Damage Over Time in the settings. The health yo
 *   **Nature DoTs give off the game's own poison skulls,** poisons and stings alike, in a darker green than the Plague theme: a few skulls drift up while they run, and a burst comes with each tick.
 *   **Rogue poisons** that do damage over time, like Deadly Poison, show too: the poison is noted when you put it on your weapon and seen landing by its Nature ticks on your target. It counts one stack, so with more stacks the poison deals more than it shows.
 
+## Nameplates
+
+![Four nameplates in the game's own bronze style: the targeted Defias Pillager bleeding a beating red Rend ahead of its health, a Kobold Geomancer with Corruption and Immolate burning down as Shadow and Fire liquids, a neutral boar in yellow and a friendly guard in green](https://raw.githubusercontent.com/Jordanburch101/smooth-animated-bars/refs/heads/main/branding/gallery/plates.webp)
+
+_Nameplates: Rend beats ahead of the pillager's health, the geomancer burns down under Corruption and Immolate after you tab away, and the boar and the guard keep their own colours._
+
+Turn them on in the setup or under Nameplates in the settings, enemy and friendly plates each on their own:
+
+*   **Enemy nameplates** take the liquid in the nameplate's own colour (red, yellow for neutral) or your target's colour. In a big crowd the first 15 get it.
+*   **Friendly nameplates** have a colour of their own: the nameplate's, any theme, or Class Color for other players. Up to 10 get it, apart from the enemies, so a busy city cannot crowd out a fight. Friendly nameplates in dungeons keep the game's bar, as the game keeps them from addons.
+*   **Your DoTs on nameplates:** every mob carrying your damage over time shows it on its nameplate, as your target's frame does, and keeps it when you change target.
+*   **The game's nameplates stay its own:** health numbers turned on in the game's nameplate settings show over the liquid.
+
 ## Mana regen build-up
 
 ![A mage's mana bar after a Fireball: motes gather into the front of the blue liquid, which turns pale while lightning starts up, then a burst of stars as the mana starts to flow back](https://raw.githubusercontent.com/Jordanburch101/smooth-animated-bars/refs/heads/main/branding/gallery/mana.webp)
@@ -102,7 +116,8 @@ Open the settings with `/sab`, from **Open Settings** when you right-click your 
 *   **Damage Over Time:** DoT Marker and Kill Icon.
 *   **Healing:** Heal Marker, for your heals, bandages, food and drink.
 *   **Mana:** Mana Regen Build-Up.
-*   **Setup Wizard:** run the five-step setup again.
+*   **Nameplates:** Enemy Nameplates and their Colour, Your DoTs on Nameplates, and Friendly Nameplates with a Colour of their own.
+*   **Setup Wizard:** run the six-step setup again. **What's New:** what changed in the latest versions.
 
 ## Commands
 
@@ -111,15 +126,17 @@ Open the settings with `/sab`, from **Open Settings** when you right-click your 
 | `/sab` | Open the settings |
 | `/sab on` / `/sab off` | Liquid in all the bars, or back to the game's own bars |
 | `/sab setup` | Open the setup again |
+| `/sab changes` | What changed in the latest versions, as shown once after each update |
 | `/sab debug` | What each bar is doing, if something looks wrong |
 | `/sab dots` | Your DoTs on the target, and what the DoT tracking saw lately |
 | `/sab heals` | Your heals, food and drink on the way to you, and what the tracking saw lately |
 | `/sab mana` | The wait before your mana regenerates, and what it saw lately |
+| `/sab perf` | What the liquid costs each frame, the unit frames and the nameplates apart |
 
 ## Good to know
 
 *   **WoW Forever only.** It draws on Forever's own unit frames.
-*   **Player, target, pet, focus and target-of-target frames.** Party frames keep the game's bars.
+*   **Player, target, pet, focus and target-of-target frames, and nameplates.** Party frames keep the game's bars.
 *   **Always matches the game.** WoW Forever keeps health and power hidden from addons, so the game itself places the liquid on its own bar. That is also why a hit and someone else's heal both just stir the liquid.
 *   **Spell text in eight languages.** The DoT tracking reads your spells' tooltips in English, French, German, Spanish, Portuguese, Russian, Korean and Chinese (rogue poisons in English only). The heal tracking reads English only, so on other client languages it may not pick up your heals.
 *   **Light on your game.** Once the bars settle, the liquid drops to a low update rate.

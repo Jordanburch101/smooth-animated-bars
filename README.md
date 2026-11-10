@@ -3,7 +3,7 @@
 # Smooth Animated Bars
 
 Liquid health and power bars for your unit frames in **WoW Forever**: yours, your target's, your pet's, your
-focus's and your targets of target. The liquid from
+focus's and your targets of target, and nameplates too. The liquid from
 [Smooth Experience Bar](https://www.curseforge.com/wow/addons/smooth-experience-bar) — waves, a swirl of magic,
 bubbles, sparkles and lightning — now fills the bars you watch all fight long.
 
@@ -23,6 +23,8 @@ short setup on the first login lets you choose the look, or skip it.
   switched off, and so can each bar.
 - **Your DoTs on the target (optional):** liquid in your DoTs' own colours eats into your target's health as
   far as they will still burn it, and the game's skull shows on its portrait when they will finish it.
+- **Nameplates (optional):** the liquid in enemy and friendly nameplates too, with your DoTs on every mob that
+  carries them.
 - **Your heals on the way:** your own heals over time, bandages and the heal you are casting on yourself show
   ahead of your health as far as they will still bring it, and pour into it.
 - **Food and drink:** what you are eating and drinking shows ahead of your health and mana, and food with a buff
@@ -70,6 +72,23 @@ will still burn away turns into liquid, eating into your target's health liquid:
 It reads spell text in English, French, German, Spanish, Portuguese, Russian, Korean and Chinese (the other
 languages are not yet tried in game). Rogue poisons and Immolation Trap are read in English only. If you use DoesItDie,
 which draws its own marker, this one stays off while DoesItDie is loaded.
+
+## Nameplates
+
+<p align="center"><img src="https://raw.githubusercontent.com/Jordanburch101/smooth-animated-bars/refs/heads/main/branding/gallery/plates.webp" alt="Four nameplates in the game's own bronze style: the targeted Defias Pillager bleeding a beating red Rend ahead of its health, a Kobold Geomancer with Corruption and Immolate burning down as Shadow and Fire liquids, a neutral boar in yellow and a friendly guard in green"></p>
+<p align="center"><em>Nameplates: Rend beats ahead of the pillager's health, the geomancer burns down under Corruption and Immolate after you tab away, and the boar and the guard keep their own colours.</em></p>
+
+Turn them on in the setup or under Nameplates in the settings, enemy and friendly plates each on their own:
+
+- **Enemy nameplates** take the liquid in the nameplate's own colour (red, yellow for neutral) or your target's
+  colour. In a big crowd the first 15 get it.
+- **Friendly nameplates** have a colour of their own: the nameplate's, any theme, or Class Color for other
+  players. Up to 10 get it, apart from the enemies, so a busy city cannot crowd out a fight. Friendly nameplates
+  in dungeons keep the game's bar, as the game keeps them from addons.
+- **Your DoTs on nameplates:** every mob carrying your damage over time shows it on its nameplate, as your
+  target's frame does, and keeps it when you change target.
+- **The game's nameplates stay its own:** health numbers turned on in the game's nameplate settings show over the
+  liquid.
 
 ## Your heals on the way
 
@@ -147,11 +166,15 @@ your target's, pet's or focus's), or from Options > AddOns > Smooth Animated Bar
 - **Damage Over Time:** DoT Marker and Kill Icon.
 - **Healing:** Heal Marker, for your heals, bandages, food and drink.
 - **Mana:** Mana Regen Build-Up.
-- **Setup Wizard:** run the five-step setup again.
+- **Nameplates:** Enemy Nameplates and their Colour (the nameplate's own, any theme, or Same as Target), Your DoTs
+  on Nameplates, and Friendly Nameplates with a Colour of their own.
+- **Setup Wizard:** run the six-step setup again. **What's New:** what changed in the latest versions.
 
 The setup asks which bars you want (every frame, just yours and your pet's, or just health), picks your colours
-from a few favourites, then your target's, how lively the liquid should be (everything, gentle, or still), and
-whether to mark your DoTs (marker and skull, just the marker, or off). Skip puts everything back as it was.
+from a few favourites, then your target's, how lively the liquid should be (everything, gentle, or still),
+whether to mark your DoTs (marker and skull, just the marker, or off), and last, nameplates (enemy plates off,
+liquid, or with your DoTs; friendly plates on or off), each shown on example nameplates. Skip puts everything back
+as it was.
 
 ## Commands
 
@@ -170,7 +193,7 @@ whether to mark your DoTs (marker and skull, just the marker, or off). Skip puts
 ## Good to know
 
 - **WoW Forever only.** It draws on Forever's own unit frames.
-- **Player, target, pet, focus and target-of-target frames.** Party frames keep the game's bars. A target of
+- **Player, target, pet, focus and target-of-target frames, and nameplates.** Party frames keep the game's bars. A target of
   target's liquid follows its bar but is not stirred by changes, as the game sends no events for it.
 - **Always matches the game.** WoW Forever keeps health and power hidden from addons, so the addon never knows
   how full a bar is: the game itself places the liquid on its own bar. That is why it always matches the game

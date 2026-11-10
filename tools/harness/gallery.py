@@ -2,7 +2,7 @@
 
 Usage: python gallery.py <addon dir> [out dir] [scenario ...]
 Default out dir: branding/gallery. Writes each scenario as an animated WebP (hero is the warrior, then
-mage, rogue, then warlock and rend, whose targets carry the DoT marker, priest, with the heal marker, druid, with both, eating, a meal up to its buff, and mana, the build-up to mana regenerating), frames.png (a still of the warrior) and themes.png (the player frame in a few themes).
+mage, rogue, then warlock and rend, whose targets carry the DoT marker, priest, with the heal marker, druid, with both, eating, a meal up to its buff, and mana, the build-up to mana regenerating), frames.png (a still of the warrior), themes.png (the player frame in a few themes) and plates.webp (four nameplates, from the plate art capture_art.py --plates cut out).
 A full run takes about a quarter of an hour.
 
 The frame art comes from branding/art, which tools/capture_art.py cuts out of the screenshots /sab
@@ -622,10 +622,215 @@ def themes(art):
     print("wrote themes.png")
 
 
+# ---------------------------------------------------------------------------- nameplates
+
+# Forever's plates in the Normal style, from the pieces /sab capture plates captured (capture_art.py --plates), laid
+# out as measured on screenshots of the game's Normal plate: the bar 166 x 13; the bronze background's rim around it;
+# the target's yellow glow around that; the level box 5 right of the bar, 28 wide, from 3 above it to 2 below, with
+# its outline on the target; every plate but the target's darkened, and the name above the bar.
+PLATE_W, PLATE_H = 166, 13
+PLATE_BG = (2.8, 3.7, 3.2, 2.3)      # left, right, top, bottom
+PLATE_GLOW = (2.8, 0.5, 1.9, 1.4)
+PLATE_PIECES = ("plate-modern-bg", "plate-selected", "plate-deselected", "plate-level", "plate-level-selected")
+PLATE_RED, PLATE_YELLOW, PLATE_GREEN = "{ 0.9, 0.1, 0.1 }", "{ 0.95, 0.85, 0.1 }", "{ 0.1, 0.9, 0.1 }"
+LEVEL_GREEN, LEVEL_YELLOW, LEVEL_RED = (64, 191, 64), (255, 210, 0), (255, 64, 64)
+PLATE_LOOP = 9.0
+
+# Each plate: name, level and its colour, the unit, its health maximum, the target's (glow, not darkened), the spells
+# cast on it, events, and a script of (seconds, health fraction). DoTs go up through the addon's own tracking, so the
+# DoT liquids show what it reckons; at the loop's end a fresh mob of the same kind comes, as in the frames' scenarios.
+PLATES = [
+    # The target: Rend bleeds out of it while blows land, one a crit that makes the bleed gush.
+    dict(name="Defias Pillager", level="12", level_color=LEVEL_YELLOW, unit="reaction = 2, color = " + PLATE_RED,
+         max=210, target=True,
+         spells={6546: ("Rend", "Wounds the target causing them to bleed for 28 damage over 12 sec.")},
+         events=[(0.4, "__cast(6546, 'Cast-1')"), (1.0, "__hit(30, 1)"), (2.2, "__hit(45, 1)"),
+                 (3.4, "__hit(7, 1)"), (3.6, "__crit(30, 1)"), (5.0, "__hit(40, 1)"), (6.4, "__hit(7, 1)"),
+                 (8.4, "__newMob('Creature-0-1-2-3-40-0002')")],
+         script=[(0.0, 1.000), (1.0, 0.857), (2.2, 0.643), (3.4, 0.610), (3.6, 0.467), (5.0, 0.276), (6.4, 0.243),
+                 (8.4, 1.000)]),
+    # Tabbed away from with Corruption and Immolate on it: both DoTs' liquids, Shadow and Fire, burn down with it.
+    dict(name="Kobold Geomancer", level="11", level_color=LEVEL_GREEN, unit="reaction = 2, color = " + PLATE_RED,
+         max=480, target=False,
+         spells={172: ("Corruption", "Corrupts the target, causing 90 Shadow damage over 18 sec."),
+                 348: ("Immolate", "Burns the enemy for 30 Fire damage and then an additional 90 Fire damage "
+                                   "over 15 sec.")},
+         events=[(0.3, "__cast(172, 'Cast-1')"), (1.6, "__cast(348, 'Cast-2'); __hit(30, 4)"),
+                 (3.3, "__hit(15, 32)"), (4.6, "__hit(18, 4)"), (6.3, "__hit(15, 32)"), (7.6, "__hit(18, 4)"),
+                 (8.6, "__newMob('Creature-0-1-2-3-40-0004')")],
+         script=[(0.0, 1.000), (1.6, 0.938), (3.3, 0.906), (4.6, 0.869), (6.3, 0.838), (7.6, 0.800),
+                 (8.6, 1.000)]),
+    # Neutral, minding its own business.
+    dict(name="Mottled Boar", level="10", level_color=LEVEL_GREEN, unit="reaction = 4, color = " + PLATE_YELLOW,
+         max=180, target=False, script=[(0.0, 1.0)]),
+    # Friendly plates have their own liquid, here the nameplate's green.
+    dict(name="Stormwind Guard", level="25", level_color=LEVEL_RED,
+         unit="friendly = true, reaction = 5, color = " + PLATE_GREEN, max=1500, target=False,
+         settings={"plateFriendly": "true"}, script=[(0.0, 1.0)]),
+]
+
+
+def plate_pieces():
+    """The captured pieces, trimmed to what shows: the atlas's transparent margin goes, so each piece is placed by
+    the edges measured on the screenshots."""
+    out = {}
+    for name in PLATE_PIECES:
+        path = os.path.join(ART, name + ".png")
+        if not os.path.exists(path):
+            sys.exit(f"No nameplate art in {ART}: run /sab capture plates in game, then capture_art.py --plates.")
+        im = Image.open(path).convert("RGBA")
+        box = im.getchannel("A").point(lambda a: 255 if a > 64 else 0).getbbox()
+        out[name] = im.crop(box) if box else im
+    return out
+
+
+def plate_session(p):
+    """The addon in the mock with one nameplate, p's mob, as the target if p has spells (DoTs are cast at the
+    target); its liquid's frame becomes __hMover and its DoT marker __marker()."""
+    spells = p.get("spells", {})
+    lines = [f"__spells[{sid}] = {{ {name!r}, {desc!r} }}" for sid, (name, desc) in spells.items()]
+    settings = dict({"plateHealth": "true", "plateDots": "true"}, **p.get("settings", {}))
+    return render.Session(ADDON, settings=settings, before_login="SmoothAnimatedBarsDB.setupDone = true",
+                          scenario=p.get("events", []), after_login="\n".join(lines) + """
+        MOB = { %s, guid = 'Creature-0-1-2-3-40-0001', name = %r }
+        __showPlate('nameplate1', MOB)
+        if %s then __target = MOB; __fire('PLAYER_TARGET_CHANGED') end
+        function __cast(id, guid)
+            __fire('UNIT_SPELLCAST_SENT', 'player', MOB.name, guid, id)
+            __fire('UNIT_SPELLCAST_SUCCEEDED', 'player', guid, id)
+        end
+        function __hit(amount, school) __fire('UNIT_COMBAT', 'target', 'WOUND', '', amount, school) end
+        function __crit(amount, school) __fire('UNIT_COMBAT', 'target', 'WOUND', 'CRITICAL', amount, school) end
+        -- A fresh mob of the same kind on the same plate, the old one's DoTs gone with it.
+        function __newMob(guid) MOB.guid = guid; __fire('PLAYER_TARGET_CHANGED'); __fire('UNIT_HEALTH', 'nameplate1') end
+        local bar = __plates.nameplate1.UnitFrame.HealthBarsContainer.healthBar
+        bar.w, bar.h = %d, %d  -- Forever's bar; the liquid follows the bar's size
+        for _, clip in ipairs(__frames) do
+            if clip.parent == bar and not clip.SetValue and clip.clipsChildren then
+                for _, f in ipairs(__frames) do if f.parent == clip and not f.SetValue then __hMover = __hMover or f end end
+            end
+        end
+        function __marker() local _, _, m = __ns.Marker.State(); return m and m[bar] end
+        -- The mock gives masks no size, so the renderer would blank what they cut; the plate's mask is drawn here.
+        for _, r in ipairs(__regions) do r.masks = nil end
+    """ % (p["unit"], p["name"], "true" if spells else "false", PLATE_W, PLATE_H))
+
+
+def draw_plate(session, pieces, plate_mask, cell, p, health):
+    """One plate onto a copy of cell (RGBA): background, the liquid and DoT liquids at health (a fraction), then
+    the darkening or the target's glow, the level box and the name."""
+    def place(img, piece, left, top, w, h):
+        im = resize_rgba(pieces[piece], (max(1, round(w * K)), max(1, round(h * K))))
+        img.alpha_composite(im, (round(left * K), round(top * K)))
+
+    bx, by = 10, 24
+    img = cell.copy()
+    gx, gy = bx - PLATE_BG[0], by - PLATE_BG[2]
+    gw, gh = PLATE_W + PLATE_BG[0] + PLATE_BG[1], PLATE_H + PLATE_BG[2] + PLATE_BG[3]
+    place(img, "plate-modern-bg", gx, gy, gw, gh)
+
+    base = img.convert("RGB")
+    box = (round(bx * K), round(by * K), round((bx + PLATE_W) * K), round((by + PLATE_H) * K))
+    mask = plate_mask.resize((box[2] - box[0], box[3] - box[1]), Image.LANCZOS)
+
+    def layer(image, frame, right, lcut, rcut):
+        # The liquid's frame ends at right (bar units); it shows from lcut to rcut, under the plate's mask.
+        session.frame = frame
+        session.lua.execute(f"{frame}.h = {PLATE_H}")
+        full = session.render(image, bx * K + (right - PLATE_W) * K, by * K, K)
+        left, r = max(box[0], round((bx + lcut) * K)), min(box[2], round((bx + rcut) * K))
+        out = image.copy()
+        if r > left:
+            out.paste(full.crop((left, box[1], r, box[3])), (left, box[1]),
+                      mask.crop((left - box[0], 0, r - box[0], mask.height)))
+        return out
+
+    # Back to front: each DoT liquid from where it will end to the edge in front of it, then the health over them,
+    # its front moved back to where the health will end (Bars.Front).
+    # The DoT marker's liquids come later, with masks of their own; the mock gives masks no size.
+    session.lua.execute("for _, r in ipairs(__regions) do r.masks = nil end")
+    edge = end = health * PLATE_W
+    m = session.lua.eval("__marker()")
+    if m is not None and m.clip.shown:
+        session.lua.execute("__d1, __d2 = __marker().liquids[1].mover, __marker().liquids[2].mover")
+        e1 = edge - (m.liquids[1].shown if m.liquids[1].pool.shown else 0) / p["max"] * PLATE_W
+        end = e1
+        if m.liquids[2].pool.shown:
+            e2 = e1 - m.liquids[2].shown / p["max"] * PLATE_W
+            base = layer(base, "__d2", e1, e2 - OVERLAP, e1 + ROOM)
+            end = e2
+        if m.liquids[1].pool.shown:
+            base = layer(base, "__d1", edge, e1 - OVERLAP, edge + ROOM)
+    base = layer(base, "__hMover", end, 0, end + ROOM)
+    img = base.convert("RGBA")
+
+    if p["target"]:
+        place(img, "plate-selected", gx - PLATE_GLOW[0], gy - PLATE_GLOW[2], gw + PLATE_GLOW[0] + PLATE_GLOW[1],
+              gh + PLATE_GLOW[2] + PLATE_GLOW[3])
+    else:
+        place(img, "plate-deselected", bx, by, PLATE_W, PLATE_H)
+    lx, ly, lw, lh = bx + PLATE_W + 5, by - 3, 28, PLATE_H + 5
+    place(img, "plate-level", lx, ly, lw, lh)
+    if p["target"]:
+        place(img, "plate-level-selected", lx - 3, ly - 3, lw + 6, lh + 7)
+    draw = ImageDraw.Draw(img)
+    for s, xy, size, color, anchor in ((p["level"], (lx + lw / 2, ly + lh / 2), 10, p["level_color"], "mm"),
+                                       (p["name"], (bx + PLATE_W / 2, by - 2), 12, (255, 255, 255), "md")):
+        draw.text((xy[0] * K, xy[1] * K), s, font=render.font(size * K), fill=color + (255,), anchor=anchor,
+                  stroke_width=max(1, round(K)), stroke_fill=(0, 0, 0, 255))
+    return img
+
+
+def plates():
+    """Four nameplates through a loop, in a 2 x 2 grid: plates.webp."""
+    pieces = plate_pieces()
+    plate_mask = Image.open(os.path.join(ADDON, "Media", "PlateMask.tga")).getchannel("A")
+    cell_w, cell_h = round((PLATE_W + 48) * K), round(46 * K)
+    pad = round(10 * K)
+    cols = 2
+    rows = math.ceil(len(PLATES) / cols)
+    back = backdrop(pad * 2 + cols * cell_w, pad * 2 + rows * cell_h).convert("RGBA")
+    n = round(PLATE_LOOP * FPS)
+    tracks = []
+    for j, p in enumerate(PLATES):
+        x, y = pad + (j % cols) * cell_w, pad + (j // cols) * cell_h
+        cell = back.crop((x, y, x + cell_w, y + cell_h))
+        session = plate_session(p)
+        fill, shown = p["script"][0][1], p["script"][0][1]
+        cells, t, dt = [], 0.0, 1 / FPS
+        for _ in range(n):
+            goal = [h for when, h in p["script"] if when <= t][-1]
+            if round(goal * p["max"]) != round(shown * p["max"]):
+                session.lua.execute("__fire('UNIT_HEALTH', 'nameplate1')")
+                if goal > shown + 0.5:
+                    fill = goal  # a fresh mob: its bar does not ease up
+            shown = goal
+            session.run_until(t)
+            fill += (goal - fill) * (1 - math.exp(-8 * dt))
+            cells.append(draw_plate(session, pieces, plate_mask, cell, p, fill))
+            t += dt
+        tracks.append(cells)
+        print(f"  rendered {p['name']}")
+    frames = []
+    for i in range(n):
+        img = back.copy()
+        for j, cells in enumerate(tracks):
+            img.paste(cells[i], (pad + (j % cols) * cell_w, pad + (j // cols) * cell_h))
+        frames.append(img.convert("RGB"))
+    os.makedirs(OUT, exist_ok=True)
+    webp = os.path.join(OUT, "plates.webp")
+    frames[0].save(webp, save_all=True, append_images=frames[1:], duration=round(1000 / FPS), loop=0,
+                   quality=92, method=6)
+    print(f"wrote plates.webp ({os.path.getsize(webp) // 1024} KB)")
+
+
 if __name__ == "__main__":
-    art = load_art()
-    for key in SCENARIOS:
-        if not ONLY or key in ONLY:
-            scenario(art, key)
-    if not ONLY or "themes" in ONLY:
-        themes(art)
+    if not ONLY or any(k in ONLY for k in list(SCENARIOS) + ["themes"]):
+        art = load_art()
+        for key in SCENARIOS:
+            if not ONLY or key in ONLY:
+                scenario(art, key)
+        if not ONLY or "themes" in ONLY:
+            themes(art)
+    if not ONLY or "plates" in ONLY:
+        plates()
