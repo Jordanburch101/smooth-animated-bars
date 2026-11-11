@@ -1812,6 +1812,36 @@ end)()"""), "health text the game's settings turn on is copied over the liquid, 
 np.execute(plate_bar("nameplate1") + ".Text:Hide()")
 run(np, 0.2)
 check(not np.eval(TEXTS + "[1].shown"), "and goes when the game hides it")
+# Block and Modern: the game puts the name inside the bar and says so. The client may keep the plate's position from
+# addons (the mock gives none), which hid the name for players while the copy went by where the name sat.
+np.execute(f"""NamePlateSetupOptions.unitNameAnchorStyle = NamePlateConstants.NAME_ANCHOR_STYLES.InsideHealthBar
+local uf = {plate_bar("nameplate1")}:GetParent():GetParent()
+uf.name:SetText(__secret()); uf.name:SetWordWrap(true); uf.name:Show()""")
+run(np, 0.2)
+check(np.eval(f"""(function()
+    local mine, theirs = {TEXTS}.name, {plate_bar("nameplate1")}:GetParent():GetParent().name
+    local l, r = mine.points.LEFT, mine.points.RIGHT
+    return mine.shown and issecretvalue(mine.text) and l and l.rel == theirs and r and r.rel == theirs
+        and mine.points.TOPLEFT == nil and mine.fontHeight == mine:GetLineHeight()
+        and mine.wordWrap == false and mine.maxLines == 1
+end)()"""), "a style with the name inside the bar (Block, Modern): the name is copied over the liquid, wherever the "
+      "plate sits, between the game's name's ends with its height left to the text and its font height set to its line "
+      "height, as the game does its own, on one line whatever the game's name says of wrapping (a long name wrapped or "
+      "came out cut short)")
+# Whether the game shows its name can be a secret (IsVisible, SecretReturnsForAspect Shown): in an instance the game
+# may decide it from whether the mob is the target.
+np.execute(plate_bar("nameplate1") + ":GetParent():GetParent().name.IsVisible = function() return __secret(false) end")
+run(np, 0.2)
+check(np.eval(TEXTS + ".name.shown") and np.eval("issecretvalue(" + TEXTS + ".name.alpha)")
+      and np.eval("__reveal(" + TEXTS + ".name.alpha)") == 0 and not any("Error" in m for m in chat(np)),
+      "a secret answer whether the game shows its name: the copy is faded by it (here hidden), without an error")
+np.execute(plate_bar("nameplate1") + ":GetParent():GetParent().name.IsVisible = nil")
+run(np, 0.2)
+check(np.eval(TEXTS + ".name.shown") and np.eval(TEXTS + ".name.alpha") == 1, "and a plain answer again: fully shown")
+np.execute(plate_bar("nameplate1") + ":GetParent():GetParent().name:Hide()")
+run(np, 0.2)
+check(not np.eval(TEXTS + ".name.shown"), "and goes when the game hides it (a simplified mob not targeted)")
+np.execute("NamePlateSetupOptions.unitNameAnchorStyle = NamePlateConstants.NAME_ANCHOR_STYLES.AboveHealthBar")
 np.execute("__showPlate('nameplate2', { friendly = true, reaction = 5 })")
 run(np, 0.2)
 check(np.eval("(select(2, __liquid(" + plate_bar("nameplate2") + ")))") == 0

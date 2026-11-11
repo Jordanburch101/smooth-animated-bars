@@ -4,6 +4,13 @@ Player-facing notes for each release. Write for players: what they can now
 do or see, and what was broken and now works. Leave out internal changes.
 Sections are `### New` and `### Fixed`; skip one that would be empty.
 
+## 1.7.1
+
+### Fixed
+- Names on enemy nameplates in the Block and Large styles, which the game
+  draws inside the health bar, no longer disappear under the liquid, and
+  long names are no longer cut shorter than the game cuts them.
+
 ## 1.7.0
 
 ### New

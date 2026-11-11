@@ -197,12 +197,25 @@ Facts found while building this, which the code relies on and which are not obvi
   health's faded edges, a brighter block behind its front (in game too, and in the gallery's render); seen in game
   and right. The plate's text inside the bar was then under the liquid (seen in game: health numbers turned on in the
   game's nameplate settings were hidden), so `Bars.lua` (`PlateTexts`) copies the bar's `Text`/`LeftText`/`RightText`,
-  and the name while it sits inside the bar, into FontStrings of its own above the liquids and shading, every 0.1 s: text
+  and the name while the game puts it inside the bar (`NamePlateSetupOptions.unitNameAnchorStyle`, InsideHealthBar for the
+  Modern and Block styles; going by the name's position instead hid it for players on Block and Large plates, seen in
+  game), into FontStrings of its own above the liquids and shading, every 0.1 s: text
   (secret, through `SetText`), font, colour and place; the game's are left alone. The game sizes these texts with
   `SetTextHeight(NamePlateSetupOptions.healthBarFontHeight)`, which `GetFont` does not report: copying `GetFont` drew
   the copy bigger, so in game it showed doubled over the game's (seen through the liquid's faded edge) and cut short
   ("10..."). The copies take the font object and that height, and the health texts are pinned at their justified side
-  rather than laid over their text-sized box; seen in game and right. Seen in
+  rather than laid over their text-sized box; seen in game and right. The name's copy is laid out as the game lays out
+  its own (`UpdateAnchors`): between the name's left and right ends, its height left to the text, its font height set
+  to its line height, and always one line (the XML's `wordwrap="false"`). Seen in game: the copy wrapped a long name
+  ("Befouled Water / Elemental") once its height was free, and over the name's one-line box the wrapped line had been
+  cut short instead, so the copy was wrapping all along. The cause, from Forever's API docs
+  (`SimpleFontStringAPIDocumentation`): FontString has no `GetWordWrap` (its getter is `CanWordWrap`), so copying the
+  wrap always failed and left the default, wrapping on; the mock had a `GetWordWrap` and now has `CanWordWrap` only.
+  The docs also mark `GetCenter`/`GetRect` `SecretWhenAnchoringSecret`, which is why going by the name's position
+  failed, and `IsShown`/`IsVisible` `SecretReturnsForAspect` Shown: a secret answer is never compared, and the copy is
+  faded by it with `SetAlphaFromBoolean` (allowed when tainted; `SetShown` takes a secret only when untainted). Putting the liquids back
+  at the bar's level under the game's texts was tried again in game (the darkening of plates that are not the target,
+  `deselectedOverlay`, OVERLAY, then lies over them): raised was still preferred. Seen in
   game with two DoTs (Fire and Shadow) on a raised plate, each in its own colour inside the rim. The setup's nameplate
   step shows four example plates instead of the unit frames (`Preview.CreatePlates`), built from those atlases in
   the Normal style and following the plate settings; seen in game and right.

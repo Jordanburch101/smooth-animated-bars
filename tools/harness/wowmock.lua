@@ -90,6 +90,12 @@ function Region:GetVerticalScrollRange()
     local child = self.scrollChild
     return child and math.max(0, (child.h or 0) - (self.h or 0)) or 0
 end
+-- Alpha from a boolean, which may be a secret (SimpleRegionAPI: AllowedWhenTainted); the mock keeps what it stands for.
+function Region:SetAlphaFromBoolean(v, ifTrue, ifFalse)
+    assert(type(v) == "boolean" or issecretvalue(v), "Usage: SetAlphaFromBoolean(value [, alphaIfTrue, alphaIfFalse])")
+    local on = __reveal(v)
+    self.alpha = __secret(on and (ifTrue or 1) or (ifFalse or 0))
+end
 -- A number, or a secret (Forever's SetAlpha takes one, from a curve, say).
 function Region:SetAlpha(a)
     assert(type(a) == "number" or issecretvalue(a), "Usage: SetAlpha(alpha)")
@@ -171,6 +177,12 @@ function Region:SetFontObject(object)
 end
 function Region:GetFontObject() return self.fontObject end
 function Region:SetTextHeight(h) self.textHeight = h end
+-- The height of a line as drawn (SetTextHeight's, else the font's), and the font's size set to a number of pixels.
+function Region:GetLineHeight() return self.fontHeight or self.textHeight or self.fontSize or 12 end
+function Region:SetFontHeight(h)
+    assert(type(h) == "number" and h > 0, "SetFontHeight needs a height")
+    self.fontHeight = h
+end
 function Region:SetShadowColor(r, g, b, a) self.shadowColor = { r, g, b, a or 1 } end
 function Region:GetShadowColor() return unpack(self.shadowColor or { 0, 0, 0, 1 }) end
 function Region:SetShadowOffset(x, y) self.shadowOffset = { x, y } end
@@ -182,7 +194,9 @@ function Region:GetJustifyH() return self.justifyH or "CENTER" end
 function Region:SetJustifyV(j) self.justifyV = j end
 function Region:GetJustifyV() return self.justifyV or "MIDDLE" end
 function Region:SetWordWrap(v) self.wordWrap = v end
-function Region:GetWordWrap() return self.wordWrap ~= false end
+function Region:SetMaxLines(n) self.maxLines = n end
+-- Forever's FontString answers with CanWordWrap; it has no GetWordWrap (SimpleFontStringAPIDocumentation).
+function Region:CanWordWrap() return self.wordWrap ~= false end
 function Region:SetToplevel() end
 function Region:SetChecked(v) self.checked = not not v end
 function Region:GetChecked() return self.checked end
@@ -749,7 +763,9 @@ PowerBarColor = { MANA = { r = 0, g = 0, b = 1 }, RAGE = { r = 1, g = 0, b = 0 }
 GameFontNormal = { GetFont = function() return "Fonts\\FRIZQT__.TTF", 12, "" end }
 SystemFont_NamePlate = { GetFont = function() return "Fonts\\FRIZQT__.TTF", 9, "" end }
 -- What the plates are laid out with (Blizzard_NamePlates.lua); the texts' height comes from here.
-NamePlateSetupOptions = { healthBarFontHeight = 11 }
+-- unitNameAnchorStyle: where the name goes (NamePlateConstants.NAME_ANCHOR_STYLES), above the bar unless set.
+NamePlateConstants = { NAME_ANCHOR_STYLES = { InsideHealthBar = 1, AboveHealthBar = 2, CenteredAboveHealthBar = 3 } }
+NamePlateSetupOptions = { healthBarFontHeight = 11, unitNameAnchorStyle = 2 }
 
 __combat = false
 function InCombatLockdown() return __combat end

@@ -472,6 +472,19 @@ local function Inside(region, bar)
     return x >= left and x <= left + width and y >= bottom and y <= bottom + height
 end
 
+-- Whether the game puts the plates' names inside the health bar, where the liquid would cover them: it does for its
+-- Modern and Block styles (Blizzard_NamePlates.lua, GetUnitNameAnchorStyle) and says so in NamePlateSetupOptions. nil
+-- when it does not say. Players saw names gone from Block and Large plates while the copy went by where the name sat
+-- (Inside), so the game's own setting comes first.
+local function NameInsideBar()
+    local options = NamePlateSetupOptions
+    local style = type(options) == "table" and options.unitNameAnchorStyle
+    if type(style) ~= "number" or Secret(style) then return nil end
+    local styles = type(NamePlateConstants) == "table" and NamePlateConstants.NAME_ANCHOR_STYLES
+    local inside = type(styles) == "table" and styles.InsideHealthBar or 1
+    return style == inside
+end
+
 -- The size the game draws its plate texts at: it gives them their font object and then SetTextHeight with this
 -- (Blizzard_NamePlateUnitFrame.lua), which GetFont does not report.
 local function PlateTextHeight()
@@ -485,48 +498,88 @@ local function CopyFont(mine, theirs)
     local height = PlateTextHeight()
     if ok and type(object) == "table" then
         if mine.fontObject ~= object then
-            mine.fontObject, mine.textHeight = object, nil
+            mine.fontObject, mine.textHeight, mine.lineHeight = object, nil, nil
             mine:SetFontObject(object)
         end
     else
         local okFont, path, size, flags = pcall(theirs.GetFont, theirs)
         local key = okFont and path and (path .. size .. (flags or ""))
         if key and mine.fontFrom ~= key then
-            mine.textHeight = nil
+            mine.textHeight, mine.lineHeight = nil, nil
             if mine:SetFont(path, size, flags) then mine.fontFrom = key end
         end
     end
     if height and mine.textHeight ~= height and mine.SetTextHeight then
-        mine.textHeight = height
+        mine.textHeight, mine.lineHeight = height, nil
         mine:SetTextHeight(height)
     end
 end
 
+-- The game's last step for the name (Blizzard_NamePlateUnitFrame.lua, UpdateAnchors): its font height set to its own
+-- line height, done to the copy as well so it is drawn as the game draws the name.
+local function CopyNameHeight(mine)
+    if mine.lineHeight or not (mine.GetLineHeight and mine.SetFontHeight) then return end
+    local ok, h = pcall(mine.GetLineHeight, mine)
+    if ok and type(h) == "number" and not Secret(h) and h > 0 then
+        mine:SetFontHeight(h)
+        mine.lineHeight = h
+    end
+end
+
+-- shown: true, false, or a secret (IsShown and IsVisible can answer with one, SecretReturnsForAspect Shown). A secret
+-- cannot be tested, and SetShown takes one only from untainted code, but SetAlphaFromBoolean takes one from addons
+-- (SimpleRegionAPI), so the copy then shows and the client fades it in or out by the game's own answer.
 local function CopyText(mine, theirs, shown, whole)
-    if not shown then
+    local secret = Secret(shown)
+    if not secret and not shown then
         mine:Hide()
         return
     end
     CopyFont(mine, theirs)
-    pcall(function()
-        mine:SetTextColor(theirs:GetTextColor())
-        mine:SetShadowColor(theirs:GetShadowColor())
-        mine:SetShadowOffset(theirs:GetShadowOffset())
-        mine:SetJustifyH(theirs:GetJustifyH())
-        mine:SetJustifyV(theirs:GetJustifyV())
-        mine:SetWordWrap(theirs:GetWordWrap())
-    end)
+    if whole then CopyNameHeight(mine) end
+    -- Each on its own, so one the client refuses cannot keep the rest from being copied.
+    pcall(function() mine:SetTextColor(theirs:GetTextColor()) end)
+    pcall(function() mine:SetShadowColor(theirs:GetShadowColor()) end)
+    pcall(function() mine:SetShadowOffset(theirs:GetShadowOffset()) end)
+    pcall(function() mine:SetJustifyH(theirs:GetJustifyH()) end)
+    pcall(function() mine:SetJustifyV(theirs:GetJustifyV()) end)
+    if whole then
+        -- The name is one line, cut short to its width (wordwrap="false" in Blizzard_NamePlates.xml). The copy took
+        -- wrapping from the game's name and wrapped a long name onto a second line in game, or, laid over the name's
+        -- one-line box, cut it short there.
+        mine:SetWordWrap(false)
+        if mine.SetMaxLines then pcall(mine.SetMaxLines, mine, 1) end
+    else
+        -- Forever's FontString has no GetWordWrap; CanWordWrap answers.
+        pcall(function() mine:SetWordWrap(theirs:CanWordWrap()) end)
+    end
     -- The health texts are sized by their text, so a copy laid over their box would be cut short by any difference
     -- in width; it is pinned at the side its text is justified to instead. The name has a width of the game's (it is
-    -- cut short to fit), so its copy takes the same box.
+    -- cut short to fit), so its copy takes the same left and right ends, its height left to its text, as the game lays
+    -- out its own.
     local ok, justify = pcall(theirs.GetJustifyH, theirs)
-    local point = whole and "ALL" or (ok and (justify == "LEFT" or justify == "RIGHT") and justify) or "CENTER"
+    local point = whole and "ENDS" or (ok and (justify == "LEFT" or justify == "RIGHT") and justify) or "CENTER"
     if mine.over ~= theirs or mine.overPoint ~= point then
         mine.over, mine.overPoint = theirs, point
         mine:ClearAllPoints()
-        if point == "ALL" then mine:SetAllPoints(theirs) else mine:SetPoint(point, theirs, point) end
+        if point == "ENDS" then
+            mine:SetPoint("LEFT", theirs, "LEFT")
+            mine:SetPoint("RIGHT", theirs, "RIGHT")
+        else
+            mine:SetPoint(point, theirs, point)
+        end
     end
     mine:SetText(theirs:GetText())
+    if secret then
+        if not (mine.SetAlphaFromBoolean and pcall(mine.SetAlphaFromBoolean, mine, shown, 1, 0)) then
+            mine:Hide()
+            return
+        end
+        mine.fromBoolean = true
+    elseif mine.fromBoolean then
+        mine.fromBoolean = nil
+        mine:SetAlpha(1)
+    end
     mine:Show()
 end
 
@@ -537,13 +590,16 @@ local function SyncPlateTexts(b)
         local theirs = b.bar[key]
         if type(theirs) == "table" and theirs.GetText then
             local ok, shown = pcall(theirs.IsShown, theirs)
-            CopyText(t[i], theirs, ok and shown == true)
+            CopyText(t[i], theirs, ok and (Secret(shown) and shown or shown == true))
         end
     end
     local name = b.unitFrame and b.unitFrame.name
     if type(name) == "table" and name.GetText then
         local ok, shown = pcall(name.IsVisible, name)
-        CopyText(t.name, name, ok and shown == true and Inside(name, b.bar), true)
+        local inside = NameInsideBar()
+        if inside == nil then inside = Inside(name, b.bar) end
+        if not ok or not inside then shown = false elseif not Secret(shown) then shown = shown == true end
+        CopyText(t.name, name, shown, true)
     end
 end
 
