@@ -41,6 +41,8 @@ local PLATE_IDLE_FPS = 20
 local PLATE_W, PLATE_H = 110, 10  -- a plate's bar, until the client says (its size can be secret)
 local PLATE_COLOR_EVERY = 0.5     -- seconds between looks at a plate's own colour (it greys once tapped)
 local PLATE_MASK = "Interface\\AddOns\\SmoothAnimatedBars\\Media\\PlateMask"
+-- The game's fill darkens toward its top and bottom edges; this darkens every plate liquid under it the same way.
+local PLATE_SHADE_TEX = "Interface\\AddOns\\SmoothAnimatedBars\\Media\\PlateShade"
 local PLATE_WAIT = 1              -- how long a new plate may take to get its unit frame, seconds
 
 -- Inflow (Bars.Inflow): while something is on the way into a bar, its particles drift back from the front into
@@ -337,6 +339,7 @@ local function SetLive(b, live)
     b.live = live
     b.clip:SetShown(live)
     if b.texts then b.texts.frame:SetShown(live) end
+    if b.shadeFrame then b.shadeFrame:SetShown(live) end
     HideGameFill(b.bar, live and 0 or 1)
     if live then
         Feed(b, false)
@@ -360,12 +363,18 @@ end
 -- dark and shadowed; tried both ways in game, and above was much better. The plate's text inside the bar (health
 -- numbers, the Large style's name) would be under it, so copies of it go above (PlateTexts). Where the client keeps
 -- the bar's level secret it stays at the bar's level.
+-- Two levels up, one over the plate's DoT liquids (Marker.lua, RaisePlateMarker, one up): at the same level the game
+-- kept no fixed order between them, and with a DoT liquid on top its straight cut, under the health's front, showed
+-- over it (seen in game, now and then).
+local PLATE_RAISE = 2
 local function RaisePlate(b)
     local clip = b.clip
     local ok, level = pcall(b.bar.GetFrameLevel, b.bar)
+    local shade = b.shadeFrame
     if ok and type(level) == "number" and not Secret(level) then
         if clip.SetUsingParentLevel then clip:SetUsingParentLevel(false) end
-        clip:SetFrameLevel(level + 1)
+        clip:SetFrameLevel(level + PLATE_RAISE)
+        if shade then shade:SetFrameLevel(level + PLATE_RAISE + 1) end
     else
         AtParentLevel(clip, b.bar)
     end
@@ -479,7 +488,7 @@ local function PlateTexts(b)
     end
     local frame = b.texts.frame
     local ok, level = pcall(b.bar.GetFrameLevel, b.bar)
-    if ok and type(level) == "number" and not Secret(level) then frame:SetFrameLevel(level + 2) end
+    if ok and type(level) == "number" and not Secret(level) then frame:SetFrameLevel(level + PLATE_RAISE + 2) end
     frame:SetShown(b.live)
     b.textIn = 0
 end
@@ -528,6 +537,16 @@ local function NewBar(spot, bar)
         b.mask = clip:CreateMaskTexture()
         b.mask:SetTexture(PLATE_MASK, "CLAMPTOBLACKADDITIVE", "CLAMPTOBLACKADDITIVE")
         b.mask:SetAllPoints(bar)
+        -- The fill's shading, over the health liquid and the DoT liquids under it alike (RaisePlate puts it a level
+        -- above the health). The mask itself is only the shape: fading the liquids let a DoT liquid under the health
+        -- show through the health's faded edges, a brighter block behind its front.
+        local shade = CreateFrame("Frame", nil, bar)
+        shade:SetAllPoints(bar)
+        local tex = shade:CreateTexture(nil, "ARTWORK")
+        tex:SetTexture(PLATE_SHADE_TEX)
+        tex:SetAllPoints(bar)
+        shade:Hide()
+        b.shadeFrame, b.shadeTex = shade, tex
     else
         b.mask = BarMask(bar, spot.kind)
     end

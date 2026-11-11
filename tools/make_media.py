@@ -530,33 +530,48 @@ PLATE_FADE = [(0.0, 0.0), (0.041, 0.13), (0.082, 0.37), (0.123, 0.59), (0.164, 0
               (0.288, 1.0)]
 
 
-def make_plate_mask(path, w=256, h=32):
-    """The shape of a nameplate's health bar, for the liquid there (the game's plate bar has no mask of its own): the
-    fill Forever draws (UI-HUD-CoolDownManager-Bar, captured with /sab capture plates) with its four corners cut at
-    45 degrees, 1.5% of the width across and a quarter of the height down, as the captured fill is at 128 x 10, and
-    fading out toward its top and bottom edges as the fill does (PLATE_FADE), so the liquid stays off the rim as the
-    game's red does. It is stretched over the bar as the game stretches the fill, so it matches at any plate size."""
+def plate_shape(w, h, samples=4):
+    """How much of each pixel of a w x h nameplate bar lies inside the game's fill (UI-HUD-CoolDownManager-Bar,
+    captured with /sab capture plates): the bar with its four corners cut at 45 degrees, 1.5% of the width across and
+    a quarter of the height down, as the captured fill is at 128 x 10."""
     cx, cy = 0.015 * w, 0.25 * h
-    samples = 4
 
     def inside(x, y):
         dx = min(x, w - x)
         dy = min(y, h - y)
         return dx / cx + dy / cy >= 1 if dx < cx and dy < cy else True
 
-    def fade(y):
-        d = min(y, h - y) / h
-        for (d0, v0), (d1, v1) in zip(PLATE_FADE, PLATE_FADE[1:]):
-            if d <= d1:
-                return v0 + (v1 - v0) * (d - d0) / (d1 - d0)
-        return 1.0
+    def coverage(x, y):
+        return sum(inside(x + (i + 0.5) / samples, y + (j + 0.5) / samples)
+                   for i in range(samples) for j in range(samples)) / samples ** 2
+    return coverage
 
-    def pixel(x, y):
-        hits = sum(inside(x + (i + 0.5) / samples, y + (j + 0.5) / samples)
-                   for i in range(samples) for j in range(samples))
-        return (1, 1, 1, hits / samples ** 2 * fade(y + 0.5))
 
-    write_tga(path, w, h, pixel)
+def plate_fade(y, h):
+    """The captured fill's brightness at row y of h, as a share of its middle (PLATE_FADE)."""
+    d = min(y, h - y) / h
+    for (d0, v0), (d1, v1) in zip(PLATE_FADE, PLATE_FADE[1:]):
+        if d <= d1:
+            return v0 + (v1 - v0) * (d - d0) / (d1 - d0)
+    return 1.0
+
+
+def make_plate_mask(path, w=256, h=32):
+    """The shape of a nameplate's health bar (plate_shape), for the liquids there (the game's plate bar has no mask of
+    its own). Opaque inside: the fill's fade toward its top and bottom is PlateShade's, drawn over all the plate's
+    liquids. Fading the liquids themselves let a DoT liquid under the health show through the health's faded edges, a
+    brighter block behind its front. It is stretched over the bar as the game stretches the fill, so it matches at
+    any plate size."""
+    coverage = plate_shape(w, h)
+    write_tga(path, w, h, lambda x, y: (1, 1, 1, coverage(x, y)))
+
+
+def make_plate_shade(path, w=256, h=32):
+    """Black over a nameplate's bar, as opaque as the game's fill is dark there: nothing in the middle, darkening
+    toward the top and bottom edges as the fill fades (PLATE_FADE), so the liquids under it take the game's shading
+    and stay off the rim as the game's red does. In the bar's shape, as PlateMask."""
+    coverage = plate_shape(w, h)
+    write_tga(path, w, h, lambda x, y: (0, 0, 0, coverage(x, y) * (1 - plate_fade(y + 0.5, h))))
 
 
 def make_skull(path, size=64):
@@ -662,6 +677,7 @@ def main():
     make_plus(os.path.join(out, "Plus.tga"))
     make_skull(os.path.join(out, "Skull.tga"))
     make_plate_mask(os.path.join(out, "PlateMask.tga"))
+    make_plate_shade(os.path.join(out, "PlateShade.tga"))
     print("wrote", sorted(os.listdir(out)))
 
 

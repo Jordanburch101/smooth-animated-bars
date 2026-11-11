@@ -179,12 +179,17 @@ Facts found while building this, which the code relies on and which are not obvi
   the unit frames. Drawing them at half size and brighter, with more lightning, was tried in game and the plain look
   was preferred, so plates draw the liquid exactly as the unit frames do. The game darkens every plate but the target's
   (`deselectedOverlay`, the bar's OVERLAY layer, likely over the liquid as the text is; not checked); that is
-  the game's frame, so it stays. Plate liquids (and the plate's DoT liquids) sit one frame level above the bar
-  (`RaisePlate`, `RaisePlateMarker`), the one exception to the frame level rule: at the bar's level the plate's
-  background, dark inside with a shadow along its edges, drew over the liquid. Both were tried in game and above was
-  much better. The plate's text inside the bar was then under the liquid (seen in game: health numbers turned on in the
+  the game's frame, so it stays. Plate liquids sit above the bar (`RaisePlate`, `RaisePlateMarker`), the one
+  exception to the frame level rule: at the bar's level the plate's background, dark inside with a shadow along its
+  edges, drew over the liquid. Both were tried in game and above was much better. The levels, up from the bar: DoT
+  liquids +1, health liquid +2 (at the same level the game kept no fixed order, and a DoT liquid on top showed its
+  straight cut over the health's front now and then), the fill's shading +3 (`PlateShade.tga`), text copies +4.
+  `PlateMask.tga` is only the fill's shape; the fade toward the top and bottom is `PlateShade`, black drawn over all
+  the plate's liquids, because fading the liquids themselves let a DoT liquid under the health show through the
+  health's faded edges, a brighter block behind its front (in game too, and in the gallery's render); seen in game
+  and right. The plate's text inside the bar was then under the liquid (seen in game: health numbers turned on in the
   game's nameplate settings were hidden), so `Bars.lua` (`PlateTexts`) copies the bar's `Text`/`LeftText`/`RightText`,
-  and the name while it sits inside the bar, into FontStrings of its own two levels above the bar, every 0.1 s: text
+  and the name while it sits inside the bar, into FontStrings of its own above the liquids and shading, every 0.1 s: text
   (secret, through `SetText`), font, colour and place; the game's are left alone. The game sizes these texts with
   `SetTextHeight(NamePlateSetupOptions.healthBarFontHeight)`, which `GetFont` does not report: copying `GetFont` drew
   the copy bigger, so in game it showed doubled over the game's (seen through the liquid's faded edge) and cut short
@@ -217,9 +222,9 @@ Facts found while building this, which the code relies on and which are not obvi
   secret). With 57% the plate looked right in game. The mock draws the added light layers fainter than the game
   (10 green against 45 in game for the same plate), so plate colours have to be judged on screenshots from the game,
   with the effects off and on.
-  The fill also fades to dark over its top and bottom quarter, so the game's red sits inside the rim; `PlateMask.tga`
-  fades the liquid the same way (`make_media.py`, `PLATE_FADE`, measured on the captured fill). Not yet seen in game:
-  the plate's size and colour (`GetStatusBarColor`) being readable, the liquid under the plate's text and
+  The fill also fades to dark over its top and bottom quarter, so the game's red sits inside the rim; `PlateShade.tga`
+  darkens the liquids the same way (`make_media.py`, `PLATE_FADE`, measured on the captured fill). Not yet seen in
+  game: the plate's size being readable, the liquid under the plate's
   deselected overlay, and the cost in a crowd.
 - **Unit frame menus** (`Options.lua`, `AddToUnitMenus`): `Menu.ModifyMenu("MENU_UNIT_" .. which, ...)` adds Open
   Settings; the frames pass themselves as `contextData.ownerFrame` (Mainline `PlayerFrame.lua`, `TargetFrame.lua`,

@@ -12,6 +12,8 @@ Sections are `### New` and `### Fixed`; skip one that would be empty.
   name in the Large nameplate style.
 - Nameplates in their own colour now match the game's: an enemy's red is
   as deep as the game's, no longer greyed out and darker looking.
+- Your DoTs on nameplates no longer show a brighter block just behind the
+  health's edge.
 
 ## 1.6.0
 

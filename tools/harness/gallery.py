@@ -764,6 +764,9 @@ def draw_plate(session, pieces, plate_mask, cell, p, health):
             base = layer(base, "__d1", edge, e1 - OVERLAP, edge + ROOM)
     base = layer(base, "__hMover", end, 0, end + ROOM)
     img = base.convert("RGBA")
+    # The fill's shading over all the liquids (Bars.lua, PlateShade, a level above the health).
+    shade = Image.open(os.path.join(ADDON, "Media", "PlateShade.tga")).convert("RGBA")
+    img.alpha_composite(resize_rgba(shade, (box[2] - box[0], box[3] - box[1])), (box[0], box[1]))
 
     if p["target"]:
         place(img, "plate-selected", gx - PLATE_GLOW[0], gy - PLATE_GLOW[2], gw + PLATE_GLOW[0] + PLATE_GLOW[1],

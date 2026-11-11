@@ -1663,8 +1663,22 @@ check(np.eval("(select(2, __liquid(" + plate_bar("nameplate1") + ")))") == 0
 np.execute(plate_bar("nameplate1") + ".level = 7; __settings.plateHealth:SetValue(true)")
 run(np, 0.3)
 check(np.eval("(select(2, __ours(" + plate_bar("nameplate1") + "))).useParentLevel") is False
-      and np.eval("(select(2, __ours(" + plate_bar("nameplate1") + "))).level") == 8,
-      "a plate's liquid sits a level above its bar, over the plate's dark background")
+      and np.eval("(select(2, __ours(" + plate_bar("nameplate1") + "))).level") == 9,
+      "a plate's liquid sits above its bar, over the plate's dark background, and a level over its DoT liquids")
+check(np.eval(f"""(function()
+    local bar = {plate_bar("nameplate1")}
+    local _, clip = __ours(bar)
+    for _, f in ipairs(__frames) do
+        if f.parent == bar and f ~= clip and f.level == clip.level + 1 and f.shown then
+            for _, r in ipairs(__regions) do
+                if r.parent == f and r.kind == "Texture" and r.file and r.file:sub(-10) == "PlateShade"
+                    and r.points.TOPLEFT.rel == bar then return true end
+            end
+        end
+    end
+    return false
+end)()"""), "the fill's shading lies over the plate's liquids, a level above the health, so a DoT liquid under the health "
+      "never shows through its faded edges")
 n, shown, alpha, masked, free = np.eval("__liquid(" + plate_bar("nameplate1") + ")")
 check(shown > 0 and alpha == 0, f"turned on: a plate already showing gets the liquid, game fill hidden ({shown}/{n})")
 check(masked > 0 and free == 64 and np.eval("""(function()
@@ -1705,7 +1719,7 @@ check(np.eval(f"""(function()
     return mine.shown and issecretvalue(mine.text) and mine:GetFontObject() == SystemFont_NamePlate
         and mine.textHeight == NamePlateSetupOptions.healthBarFontHeight
         and r == 1 and g == 0.9 and p and p.rel == theirs and mine.points.TOPLEFT == nil
-        and frame.level == {plate_bar("nameplate1")}:GetFrameLevel() + 2
+        and frame.level == {plate_bar("nameplate1")}:GetFrameLevel() + 4
 end)()"""), "health text the game's settings turn on is copied over the liquid, secret, in the plates' font at the "
       "plates' text height (which GetFont does not tell), colour, pinned on it rather than squeezed into its box")
 np.execute(plate_bar("nameplate1") + ".Text:Hide()")
@@ -1872,7 +1886,9 @@ check(not pd.eval("__pm('nameplate1').window.shown") and not pd.eval("__pm('name
 check(pd.eval("__pm('nameplate1').liquids[1].liquid.body.sub") == -7, "under the plate's health liquid")
 check(pd.eval("__pm('nameplate1').clip.useParentLevel") is False
       and pd.eval("__pm('nameplate1').clip.level") == pd.eval("__pbar('nameplate1'):GetFrameLevel()") + 1,
-      "the plate's DoT liquids a level above the bar too")
+      "the plate's DoT liquids a level above the bar too, and under the plate's health liquid, a level higher")
+check(pd.eval("(select(2, __ours(__pbar('nameplate1')))).level") == pd.eval("__pm('nameplate1').clip.level") + 1,
+      "the plate's health liquid a level over its DoT liquids, so the game cannot draw them over its front")
 check(not pd.eval("(__ns.Marker.State())"), "the target frame's marker is not built while DoT Marker is off")
 pd.execute("__aim(WOLF); __cast(348, 'Cast-2')")
 run(pd, 1)

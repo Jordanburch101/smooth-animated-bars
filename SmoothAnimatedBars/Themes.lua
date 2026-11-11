@@ -75,7 +75,9 @@ local function FromColor(c, template, deep)
         t = {
             -- Nearly flat along the bar, as the game's fill is (its shading runs top to bottom only).
             fillA = Scale(c, 0.9), fillB = c,
-            tip = c, glow = c, swirlA = c, swirlB = c, bubble = c, splashFrom = c, splashTo = c,
+            -- The front line is added light: in the colour itself it saturated into a solid bright block ahead of
+            -- whatever lies behind the health (a DoT liquid), so it is half as strong.
+            tip = Scale(c, 0.5), glow = c, swirlA = c, swirlB = c, bubble = c, splashFrom = c, splashTo = c,
             -- The light clouds and dark pockets otherwise drift to hues round the wheel (orange and magenta from a
             -- red), which in game still greyed it to (119, 37, 36) with the white gone.
             swirlC = c, deepColor = c,
