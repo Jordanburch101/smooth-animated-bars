@@ -90,23 +90,49 @@ class Session:
         # The frame's regions, and its text on a child frame (the bar over the game's has its text on
         # one, raised above the game's art).
         # Each frame's regions are found once: scanning them all for each draw is what a long run spends its time on.
+        # Frames of ours inside the frame (the rage bar's fury over its liquid) are drawn with it: each laid over the
+        # whole frame, faded by its own alpha and its parents' (secret ones as the mock knows them), and in each draw
+        # layer after the frame itself (frameRank), as a later frame at the same level drew over in game.
         self._visible = self.lua.eval("""(function()
             local mine = {}
+            local function nested(f)
+                local inner, rank = {}, { [f] = 0 }
+                for _, c in ipairs(__frames) do
+                    local p, depth = c.parent, 1
+                    while p and p ~= f and depth < 4 do p, depth = p.parent, depth + 1 end
+                    if p == f then inner[#inner + 1] = c end
+                end
+                for i, c in ipairs(inner) do rank[c] = i end
+                return inner, rank
+            end
             return function(name)
                 local f = _G[name]
-                local list = mine[f]
-                if not list then
-                    list = {}
+                local entry = mine[f]
+                -- Built again when regions were made since (a frame built on the bar's first update).
+                if not entry or entry.count ~= #__regions then
+                    local inner, rank = nested(f)
+                    local list = {}
                     for _, r in ipairs(__regions) do
-                        if r.parent == f or (r.kind == "FontString" and r.parent and r.parent.parent == f) then
+                        if r.parent == f or (r.kind == "FontString" and r.parent and r.parent.parent == f)
+                            or (r.kind == "Texture" and rank[r.parent] and r.parent ~= f) then
+                            r.frameRank = rank[r.parent] or 0
                             list[#list + 1] = r
                         end
                     end
-                    mine[f] = list
+                    entry = { list = list, inner = inner, count = #__regions }
+                    mine[f] = entry
                 end
+                for _, c in ipairs(entry.inner) do c.w, c.h = f.w, f.h end
                 local out = {}
-                for _, r in ipairs(list) do
-                    if r.shown and r.alpha > 0.001 then out[#out + 1] = r end
+                for _, r in ipairs(entry.list) do
+                    local a, p, on = __reveal(r.alpha) or 0, r.parent, r.shown
+                    while on and p and p ~= f do
+                        a, on, p = a * (__reveal(p.alpha) or 0), p.shown, p.parent
+                    end
+                    if on and a > 0.001 then
+                        r.drawAlpha = a
+                        out[#out + 1] = r
+                    end
                 end
                 return out
             end
@@ -138,7 +164,7 @@ class Session:
         regions = [v[i + 1] for i in range(len(v))]
         if only:
             regions = [r for r in regions if only(r)]
-        regions.sort(key=lambda r: (LAYERS.get(r.layer, 2), r.sub, r.order))
+        regions.sort(key=lambda r: (LAYERS.get(r.layer, 2), r.frameRank or 0, r.sub, r.order))
         return regions
 
     def _sample(self, img, r, pw, ph):
@@ -180,7 +206,7 @@ class Session:
             src = src * (c1 + (c2 - c1) * ((np.arange(pw) + 0.5) / pw)[None, :, None])
         else:
             src = src * np.array([r.vc[i] for i in range(1, 5)], np.float32)
-        alpha = src[..., 3:4] * r.alpha
+        alpha = src[..., 3:4] * r.drawAlpha
         masks = r.masks
         for i in range(len(masks) if masks else 0):
             m = masks[i + 1]

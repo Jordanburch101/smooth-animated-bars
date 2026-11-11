@@ -90,7 +90,11 @@ function Region:GetVerticalScrollRange()
     local child = self.scrollChild
     return child and math.max(0, (child.h or 0) - (self.h or 0)) or 0
 end
-function Region:SetAlpha(a) self.alpha = a end
+-- A number, or a secret (Forever's SetAlpha takes one, from a curve, say).
+function Region:SetAlpha(a)
+    assert(type(a) == "number" or issecretvalue(a), "Usage: SetAlpha(alpha)")
+    self.alpha = a
+end
 function Region:SetScale(s) self.scale = s end
 local STRATA = { BACKGROUND = true, LOW = true, MEDIUM = true, HIGH = true, DIALOG = true,
                  FULLSCREEN = true, FULLSCREEN_DIALOG = true, TOOLTIP = true }
@@ -371,8 +375,19 @@ RAID_CLASS_COLORS = {
 -- combat. __secret() makes one. As in the client, arithmetic, ordering and math functions on them
 -- fail. Lua 5.1 cannot make == or a truth test fail on a table, so those slip through here.
 local SecretValue = {}
-function __secret() return setmetatable({}, SecretValue) end
+-- A secret can carry the value it stands for, which only the mock reads back (__reveal), for drawing what the client
+-- would draw from it (a frame's alpha from a curve).
+local secretValues = setmetatable({}, { __mode = "k" })
+function __secret(v)
+    local s = setmetatable({}, SecretValue)
+    secretValues[s] = v
+    return s
+end
 function issecretvalue(v) return getmetatable(v) == SecretValue end
+function __reveal(v)
+    if issecretvalue(v) then return secretValues[v] end
+    return v
+end
 
 function GetTime() return __now end
 floor = math.floor
@@ -684,7 +699,51 @@ function UnitHealthMax() return __secret() end
 function UnitPower() return __secret() end
 function UnitPowerMax() return __secret() end
 -- The client's own StatusBar smoothing (Forever).
-Enum = { StatusBarInterpolation = { Immediate = 0, ExponentialEaseOut = 1 } }
+Enum = { StatusBarInterpolation = { Immediate = 0, ExponentialEaseOut = 1 }, LuaCurveType = { Linear = 0, Step = 1 } }
+
+-- Curves (C_CurveUtil): plain points, evaluated on a value the client keeps secret into another secret, which widgets
+-- take (Region:SetAlpha). UnitPowerPercent evaluates one on the unit's share of its power, __powerPercent[unit]
+-- (0..1, the mock's own; addons only ever get a secret).
+local Curve = {}
+Curve.__index = Curve
+local function evaluate(c, x)
+    local pts = c.points
+    if #pts == 0 then return 0 end
+    if x <= pts[1][1] then return pts[1][2] end
+    for i = #pts, 1, -1 do
+        local p = pts[i]
+        if x >= p[1] then
+            local q = pts[i + 1]
+            if not q or c.type == Enum.LuaCurveType.Step then return p[2] end
+            return p[2] + (q[2] - p[2]) * (x - p[1]) / (q[1] - p[1])
+        end
+    end
+end
+function Curve:SetType(t)
+    assert(t == Enum.LuaCurveType.Linear or t == Enum.LuaCurveType.Step, "SetType: bad curve type")
+    self.type = t
+end
+function Curve:AddPoint(x, y)
+    assert(type(x) == "number" and type(y) == "number", "Usage: curve:AddPoint(x, y)")
+    local pts = self.points
+    pts[#pts + 1] = { x, y }
+    table.sort(pts, function(a, b) return a[1] < b[1] end)
+end
+function Curve:Evaluate(x)
+    if issecretvalue(x) then return __secret(evaluate(self, secretValues[x] or 0)) end
+    assert(type(x) == "number", "Usage: curve:Evaluate(x)")
+    return evaluate(self, x)
+end
+C_CurveUtil = {
+    CreateCurve = function() return setmetatable({ points = {}, type = Enum.LuaCurveType.Linear }, Curve) end,
+}
+__powerPercent = {}
+function UnitPowerPercent(unit, powerType, unmodified, curve)
+    assert(type(unit) == "string", "Usage: UnitPowerPercent(unit [, powerType, unmodified, curve])")
+    assert(curve == nil or getmetatable(curve) == Curve, "bad argument #4 to 'UnitPowerPercent' (curve expected)")
+    local p = __powerPercent[unit] or 0
+    return __secret(curve and evaluate(curve, p) or p)
+end
 PowerBarColor = { MANA = { r = 0, g = 0, b = 1 }, RAGE = { r = 1, g = 0, b = 0 }, ENERGY = { r = 1, g = 1, b = 0 } }
 
 GameFontNormal = { GetFont = function() return "Fonts\\FRIZQT__.TTF", 12, "" end }

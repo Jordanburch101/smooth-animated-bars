@@ -473,8 +473,8 @@ function Liquid:Splash(intensity, fromX, toX)
     -- Lightning charge: one small gain barely registers, a run of them or a big one builds a storm.
     self.charge = min(2, self.charge + 0.1 + intensity * 1.2)
 
-    -- Ripple out from a random point on the front.
-    if self.opts.waves then
+    -- Ripple out from a random point on the front (a follower's front is its leader's).
+    if self.opts.waves and not self.leader then
         local n = CFG.rows
         local centre = random(1, n)
         local kick = (40 + 160 * intensity) * (1 - self.steady)
@@ -534,21 +534,40 @@ function Liquid:SetSteady(level)
     self.steady = level
 end
 
+-- Draw this liquid's front where another's is, so the two lie over each other as one (Bars.lua's fury over the rage
+-- bar's liquid): its waves are the leader's, and it only adds a quick tremble of its own, tremble px. nil lets it
+-- move by itself again.
+function Liquid:Follow(leader, tremble)
+    self.leader, self.tremble = leader, tremble or 0
+    if not leader then
+        for i = 1, CFG.rows do self.pos[i], self.vel[i] = 0, 0 end
+    end
+end
+
+function Liquid:SetTremble(tremble)
+    self.tremble = tremble
+end
+
 -- The idle wobble's size, px: livelier with energy, unless the front is holding steady.
 function Liquid:Wobble()
+    if self.leader then return self.leader:Wobble() + self.tremble end
     return self.phys.ambient * (0.6 + self.energy * (1 - self.steady))
 end
 
 -- How far slice i of the front (1 = top) stands past the liquid's edge right now, px.
 function Liquid:FrontOffset(i)
-    local wobble = self.opts.waves and self:Wobble() or 0
     local t = self.t
+    if self.leader then
+        local tr = self.opts.waves and self.tremble or 0
+        return self.leader:FrontOffset(i) + tr * (0.6 * sin(t * 37 + i * 1.7) + 0.4 * sin(t * 53 - i * 2.9))
+    end
+    local wobble = self.opts.waves and self:Wobble() or 0
     return self.pos[i] + wobble * (sin(t * 2.3 + i * 0.6) + 0.5 * sin(t * 3.7 - i * 1.1))
 end
 
 -- A ripple along the front only: no motes, no bubbles, no lightning charge. intensity 0..1.
 function Liquid:Ripple(intensity)
-    if not self.opts.waves then return end
+    if not self.opts.waves or self.leader then return end
     local n = CFG.rows
     local centre = random(1, n)
     local kick = (40 + 160 * intensity) * (1 - self.steady)
@@ -864,6 +883,7 @@ end
 --------------------------------------------------------------------------------
 
 function Liquid:Simulate(dt)
+    if self.leader then return end
     local pos, vel, n, phys = self.pos, self.vel, CFG.rows, self.phys
     local lean, shape = self.lean, self.leanShape
     local k, d, c, limit = phys.stiffness, phys.damping + STEADY_DAMPING * self.steady, phys.coupling, phys.amplitude * 1.2
@@ -899,7 +919,7 @@ function Liquid:Update(dt, edge)
     local speed = (edge - self.edge) / dt
     local dv = speed - self.speed
     self.edge, self.speed = edge, speed
-    if dv ~= 0 and self.opts.waves then
+    if dv ~= 0 and self.opts.waves and not self.leader then
         local kick = -dv * self.phys.slosh
         local n = CFG.rows
         for i = 1, n do
@@ -1025,7 +1045,7 @@ function Liquid:Draw(dt)
             row:Show()
             if right < w - 1 then
                 tip:SetPoint("TOPLEFT", parent, "TOPLEFT", right - 0.5 - CFG.edgeCore * CFG.edgeW, y + tip.dy)
-                tip:SetAlpha(min(1, tipAlpha + abs(self.vel[i]) * 0.01))
+                tip:SetAlpha(min(1, tipAlpha + abs((self.leader or self).vel[i]) * 0.01))
                 tip:Show()
             else
                 tip:Hide()

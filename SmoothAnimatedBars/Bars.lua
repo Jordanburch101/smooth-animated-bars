@@ -80,6 +80,37 @@ local BUILD_FLASH_SECONDS = 0.9
 local BUILD_STEADY_IN = 0.15        -- the front is holding still this far through the wait
 local BUILD_STEADY_SECONDS = 2.5    -- and eases off over this after it
 
+-- Rage (the rageFury setting): as rage fills its bar the liquid turns furious, hotter, churning, crackling and spitting
+-- sparks, its front trembling; full, it throbs, ready to burst, and spending rage lets it go. Rage is secret like the
+-- rest, so the addon never knows how full the bar is. The fury is a second liquid over the bar's whose front is the bar
+-- liquid's (Liquid:Follow), on a frame whose alpha the client sets from the rage itself: UnitPowerPercent evaluates a
+-- curve on the unit's share of its power, and SetAlpha takes the secret it gives. The fury runs whenever a bar shows
+-- rage, and shows only as far as the curve lets it.
+local FURY_CURVE = { { 0, 0 }, { 0.5, 0 }, { 0.75, 0.3 }, { 0.95, 1 } } -- rage share -> how much of the fury shows
+local READY_CURVE = { { 0, 0 }, { 0.97, 0 }, { 0.99, 1 } }               -- and of the full bar's throb
+local FURY_EVERY = 0.05     -- seconds between asking the client for those
+local FURY_FPS = 30         -- the fury's update rate, unless it is bursting
+local FURY_ENERGY = 0.5
+local FURY_STORM = 1.2
+local FURY_TREMBLE = 0.7    -- px of quick tremble on the fury's front
+local FURY_SPARKS = 14      -- sparks a second off the top of the liquid
+local READY_BEAT = 0.8      -- seconds between the full bar's throbs
+local READY_SPARKS = 14     -- sparks spat from the front with each throb
+local RELEASE_HOLD = 0.35   -- seconds the burst shows at the rage there was, before it fades
+local RELEASE_FADE = 0.45
+local RELEASE_BACK = 0.3    -- the fury fading back in at the rage that is left
+local RELEASE_LAG = 0.3     -- how long ago the rage is read for the burst, s: it may be spent before the cast's event
+local RELEASE_SPARKS = 40
+local SPEND_SPARKS = 22     -- sparks off the bar's own liquid at every rage spend, whatever the rage
+local SPEND_SPLASH = 0.35
+local FURY_HOT = { 1.00, 0.42, 0.08 }   -- what the fury heats toward
+local FURY_TIP = { 1.00, 0.95, 0.80 }   -- its white-hot front
+local FURY_EMBER = { 0.85, 0.12, 0.00 }
+local FURY_SPARK = { area = "surface", rate = FURY_SPARKS, texture = "Spark", blend = "ADD", orient = true, wander = 120,
+                     size = { 9, 14 }, life = { 0.5, 1.0 }, vx = { -12, 12 }, vy = { 35, 75 }, buoyancy = 25, drag = 0.9,
+                     twinkle = 9, from = FURY_TIP, to = FURY_EMBER }
+local SPARK = { texture = "Spark", blend = "ADD", orient = true, wander = 90, buoyancy = 40, drag = 1.1 }
+
 local HEALTH_COLOR = { 0.10, 0.90, 0.10 }
 -- PowerBarColor's values, for when the client has no PowerBarColor.
 local POWER_COLORS = {
@@ -283,6 +314,44 @@ local function ThemeFor(b, choice)
     return setmetatable({ physics = SmallPhysics(theme.physics) }, { __index = theme })
 end
 
+local function MixColor(a, b, t)
+    return { a[1] + (b[1] - a[1]) * t, a[2] + (b[2] - a[2]) * t, a[3] + (b[3] - a[3]) * t }
+end
+
+local function Merged(over, base)
+    local t = {}
+    for k, v in pairs(base or {}) do t[k] = v end
+    for k, v in pairs(over) do t[k] = v end
+    return t
+end
+
+-- The fury over a rage bar: the bar's own colours boiling over. Brighter all along and hotter toward a white-hot front,
+-- flames licking up inside over a hot base, flickering like a fire, its core throbbing, lightning going off and sparks
+-- spat off the top, with the theme's own particles as well.
+local function FuryTheme(theme)
+    local ambient = { FURY_SPARK }
+    if type(theme.ambient) == "table" then
+        for _, em in ipairs(theme.ambient) do ambient[#ambient + 1] = em end
+    end
+    local fl = theme.flicker or {}
+    return setmetatable({
+        fillA = MixColor(theme.fillA, theme.fillB, 0.3),
+        fillB = MixColor(theme.fillB, FURY_HOT, 0.3),
+        tip = FURY_TIP,
+        glow = MixColor(theme.glow, FURY_HOT, 0.6),
+        swirlA = MixColor(theme.swirlA, FURY_HOT, 0.7),
+        swirlB = MixColor(theme.swirlB, FURY_EMBER, 0.5),
+        splashFrom = FURY_TIP,
+        splashTo = MixColor(theme.splashTo, FURY_EMBER, 0.5),
+        swirl = { texture = "Flames", flow = { 0.05, -1 }, rise = 26, alpha = 1.4, pulse = 0.2, pulseRate = 1.3 },
+        shade = { dark = 0.45, color = MixColor(theme.fillA, { 0, 0, 0 }, 0.75), hot = 0.3, hotColor = FURY_HOT },
+        core = Merged({ alpha = 1.2, pulseRate = 1.3 }, theme.core),
+        flicker = { amount = math.max(fl.amount or 0, 0.25), rate = math.max(fl.rate or 0, 9) },
+        crackle = Merged({ rate = 1.2, energyRate = 7 }, theme.crackle),
+        ambient = ambient,
+    }, { __index = theme })
+end
+
 -- A bar's colour choice: its frame's, which can be to follow the player's (target, pet) or the target's (focus,
 -- targets of target). A preview's bars are the player's or the target's.
 local function ChoiceFor(b)
@@ -305,6 +374,7 @@ local function ApplyColor(b, force)
     if key == b.colorKey and not force then return end
     b.colorKey = key
     b.liquid:SetTheme(ThemeFor(b, choice))
+    if b.fury then b.fury.liquid:SetTheme(FuryTheme(b.liquid.theme)) end
 end
 
 --------------------------------------------------------------------------------
@@ -333,6 +403,8 @@ local function HideGameFill(bar, alpha)
     if lossFill and lossFill:GetAlpha() ~= alpha then lossFill:SetAlpha(alpha) end
 end
 
+local FuryOff -- the rage bar's fury going (below)
+
 -- The game's fill shows while the liquid does not, and the other way round.
 local function SetLive(b, live)
     if live == b.live then return end
@@ -346,6 +418,7 @@ local function SetLive(b, live)
         b.liquid:Snap(b.width) -- the liquid is always full on its frame
     else
         b.liquid:HideAll()
+        if b.fury then FuryOff(b) end
     end
 end
 
@@ -693,6 +766,232 @@ local function BuildUp(b, dt, w, h)
     end
 end
 
+-- Rage's fury (see FURY_CURVE at the top).
+local MEDIA = "Interface\\AddOns\\SmoothAnimatedBars\\Media\\"
+local curves -- { fury, ready }, or false where the client has no curves or no UnitPowerPercent
+
+local function MakeCurve(points)
+    local c = C_CurveUtil.CreateCurve()
+    c:SetType(Enum.LuaCurveType.Linear)
+    for _, p in ipairs(points) do c:AddPoint(p[1], p[2]) end
+    return c
+end
+
+local function Curves()
+    if curves == nil then
+        local ok, fury, ready = pcall(function() return MakeCurve(FURY_CURVE), MakeCurve(READY_CURVE) end)
+        curves = ok and type(UnitPowerPercent) == "function" and { fury = fury, ready = ready } or false
+    end
+    return curves or nil
+end
+
+-- Whether the bar shows rage: a warrior's, a druid's in Bear Form, a target's.
+local function ShowsRage(b)
+    if b.kind ~= "power" or b.spot.plate or b.spot.preview then return false end
+    local _, token = UnitPowerType(b.unit)
+    return not Secret(token) and token == "RAGE"
+end
+
+local function NewFury(b)
+    local f = { samples = {}, feed = 0, acc = 0, beat = 0, flash = 0, innerAlpha = 1 }
+    -- Laid over the bar's liquid; frame takes the fury's alpha, inner the burst's fades, ready the full bar's throb.
+    f.frame = CreateFrame("Frame", nil, b.mover)
+    f.inner = CreateFrame("Frame", nil, f.frame)
+    f.ready = CreateFrame("Frame", nil, f.inner)
+    for _, frame in ipairs({ f.frame, f.inner, f.ready }) do
+        AtParentLevel(frame, frame:GetParent())
+        frame:SetAllPoints(frame:GetParent())
+    end
+    f.frame:SetAlpha(0)
+    f.ready:SetAlpha(0)
+    f.liquid = ns.Liquid.New(f.inner, math.max(b.width, 1) + ROOM, math.max(b.height, 1), FuryTheme(b.liquid.theme),
+        ns.Core.db)
+    f.liquid:Follow(b.liquid, FURY_TREMBLE)
+    -- The full bar's throb: a glow on the front at the bar's end and the whole liquid lighting up with it.
+    f.wash = f.ready:CreateTexture(nil, "ARTWORK", nil, 6)
+    f.wash:SetColorTexture(1, 1, 1, 1)
+    f.wash:SetBlendMode("ADD")
+    f.wash:SetAllPoints(f.ready)
+    f.glow = f.ready:CreateTexture(nil, "ARTWORK", nil, 7)
+    f.glow:SetTexture(MEDIA .. "Glow")
+    f.glow:SetBlendMode("ADD")
+    f.glow:SetPoint("CENTER", f.ready, "RIGHT")
+    if b.mask then
+        local free = {}
+        for _, m in ipairs(f.liquid.motes) do free[m.tex] = true end
+        for _, t in ipairs(f.liquid.textures) do
+            if not free[t] then t:AddMaskTexture(b.mask) end
+        end
+        f.wash:AddMaskTexture(b.mask)
+        f.glow:AddMaskTexture(b.mask)
+    end
+    return f
+end
+
+-- The fury's colours, for the throb.
+local function FuryColors(f)
+    local theme = f.liquid.theme
+    return theme.glow, theme.tip, theme.splashTo
+end
+
+-- Spending rage: the bar's own liquid throws hot sparks off its front, at any rage. The fury, as far as it showed,
+-- bursts at the rage there was, then fades, and comes back in at what is left.
+local function Release(b)
+    local w, h = b.width, b.height
+    local base = b.liquid
+    local theme = base.theme
+    local hot = MixColor(theme.tip, FURY_HOT, 0.5)
+    base:Splash(SPEND_SPLASH, w - 8, w)
+    for _ = 1, SPEND_SPARKS do
+        base:EmitMote(w - Rand(0, 8), Rand(1, math.max(1, h - 1)), Rand(-20, 110), Rand(-30, 80), Rand(0.4, 0.9),
+            Rand(7, 11), hot, FURY_EMBER, SPARK)
+    end
+
+    local f = b.fury
+    local s = f and f.on and f.samples[1]
+    if not s then return end
+    f.frame:SetAlpha(s[2])
+    f.ready:SetAlpha(s[3])
+    f.held, f.releaseAt, f.flash = true, GetTime(), 1
+    local liquid = f.liquid
+    liquid:Splash(0.4, w - 8, w)
+    liquid:Warm(0.7)
+    liquid:Storm(2)
+    local _, tip, to = FuryColors(f)
+    local from = MixColor(tip, FURY_HOT, 0.5)
+    for _ = 1, RELEASE_SPARKS do
+        liquid:EmitMote(w - Rand(0, 12), Rand(1, math.max(1, h - 1)), Rand(-30, 130), Rand(-40, 90), Rand(0.5, 1.1),
+            Rand(7, 12), from, to, SPARK)
+    end
+end
+
+-- The player's casts are listened to only while the player's bar shows the fury, for the bursts.
+local function ListenForSpends()
+    local want = false
+    for _, b in pairs(bars) do
+        if b.unit == "player" and b.live and b.fury and b.fury.on then want = true end
+    end
+    if driver then
+        if want then driver:RegisterEvent("UNIT_SPELLCAST_SUCCEEDED") else driver:UnregisterEvent("UNIT_SPELLCAST_SUCCEEDED") end
+    end
+end
+
+FuryOff = function(b)
+    local f = b.fury
+    if f and f.on then
+        f.on = false
+        f.frame:Hide()
+        f.liquid:HideAll()
+        ListenForSpends()
+    end
+end
+
+local function Fury(b, dt, w, h)
+    local c = ns.Core.Get("rageFury") and ShowsRage(b) and Curves()
+    local f = b.fury
+    if not c then
+        FuryOff(b)
+        return
+    end
+    if not f then
+        f = NewFury(b)
+        b.fury = f
+    end
+    if not f.on then
+        f.on, f.held, f.releaseAt, f.feed = true, false, nil, 0
+        f.frame:Show()
+        f.liquid:Snap(w)
+        ListenForSpends()
+    end
+    if w ~= f.liquid.width - ROOM or h ~= f.liquid.height then f.liquid:SetSize(w + ROOM, h) end
+    local now = GetTime()
+
+    -- How much shows, from the rage itself. The last RELEASE_LAG seconds of it are kept for a burst.
+    f.feed = f.feed - dt
+    if f.feed <= 0 then
+        f.feed = FURY_EVERY
+        local ok, fury = pcall(UnitPowerPercent, b.unit, nil, false, c.fury)
+        local ok2, ready = pcall(UnitPowerPercent, b.unit, nil, false, c.ready)
+        if ok and ok2 then
+            local samples = f.samples
+            samples[#samples + 1] = { now, fury, ready }
+            while #samples > 1 and samples[2][1] <= now - RELEASE_LAG do table.remove(samples, 1) end
+            if not f.held then
+                f.frame:SetAlpha(fury)
+                f.ready:SetAlpha(ready)
+            end
+        end
+    end
+
+    -- A burst holds at the rage there was and fades, then the fury comes back in at what is left.
+    local inner, bursting = 1, f.releaseAt ~= nil
+    if bursting then
+        local age = now - f.releaseAt
+        if age < RELEASE_HOLD + RELEASE_FADE then
+            inner = min(1, 1 - (age - RELEASE_HOLD) / RELEASE_FADE)
+        else
+            if f.held then
+                f.held = false
+                local s = f.samples[#f.samples]
+                if s then
+                    f.frame:SetAlpha(s[2])
+                    f.ready:SetAlpha(s[3])
+                end
+            end
+            inner = min(1, (age - RELEASE_HOLD - RELEASE_FADE) / RELEASE_BACK)
+            if inner >= 1 then f.releaseAt = nil end
+        end
+    end
+    if inner ~= f.innerAlpha then
+        f.innerAlpha = inner
+        f.inner:SetAlpha(math.max(0, inner))
+    end
+
+    -- Always furious inside, and the full bar throbs like a heartbeat, two beats close together, each time spitting
+    -- sparks from the front and making it tremble harder.
+    local liquid = f.liquid
+    liquid:Warm(FURY_ENERGY)
+    liquid:Storm(FURY_STORM)
+    f.beat = f.beat + dt
+    if f.beat >= READY_BEAT then
+        f.beat = f.beat - READY_BEAT
+        local _, tip, to = FuryColors(f)
+        for _ = 1, READY_SPARKS do
+            liquid:EmitMote(w - Rand(0, 6), Rand(2, math.max(2, h - 2)), Rand(-10, 50), Rand(20, 80), Rand(0.4, 0.9),
+                Rand(7, 11), tip, to, SPARK)
+        end
+    end
+    local p = f.beat / READY_BEAT
+    local throb = math.exp(-p * 10) + (p > 0.22 and 0.6 * math.exp(-(p - 0.22) * 10) or 0)
+    f.flash = math.max(0, f.flash - dt / (RELEASE_HOLD + RELEASE_FADE))
+    local glow = FuryColors(f)
+    f.glow:SetVertexColor(glow[1], glow[2], glow[3])
+    f.glow:SetSize(h * 7 * (1 + 0.3 * throb + 0.5 * f.flash), h * 2.4)
+    f.glow:SetAlpha(min(1, 0.4 + 0.5 * throb + 0.4 * f.flash))
+    f.wash:SetVertexColor(glow[1], glow[2], glow[3])
+    f.wash:SetAlpha(min(1, 0.05 + 0.2 * throb + 0.2 * f.flash))
+    liquid:SetTremble(FURY_TREMBLE * (1 + 1.5 * throb))
+
+    f.acc = f.acc + dt
+    if not bursting and f.acc < 1 / FURY_FPS then return end
+    liquid:Update(f.acc, w)
+    f.acc = 0
+end
+
+-- Whether a spell costs rage. A cost the client keeps secret counts.
+local function CostsRage(spellID)
+    local read = C_Spell and C_Spell.GetSpellPowerCost
+    local ok, costs = pcall(read, spellID)
+    if not ok or type(costs) ~= "table" then return false end
+    for _, c in ipairs(costs) do
+        if Secret(c.name, c.type) then return true end
+        if c.name == "RAGE" or c.type == 1 then
+            return Secret(c.cost) or (type(c.cost) == "number" and c.cost > 0)
+        end
+    end
+    return false
+end
+
 local function UpdateBar(b, dt)
     local bar = b.bar
     if not bar:IsVisible() then return end
@@ -729,6 +1028,7 @@ local function UpdateBar(b, dt)
     else
         Inflow(b, dt, w, h)
         BuildUp(b, dt, w, h)
+        if b.kind == "power" then Fury(b, dt, w, h) end
     end
 
     -- Once settled only the idle wobble remains, so it drops to the idle rate.
@@ -968,7 +1268,19 @@ local function OnPlateEvent(event, unit)
     end
 end
 
-local function OnEvent(_, event, unit)
+local function OnEvent(_, event, unit, ...)
+    if event == "UNIT_SPELLCAST_SUCCEEDED" then
+        if unit ~= "player" then return end
+        local _, spellID = ...
+        local spent
+        for _, b in pairs(bars) do
+            if b.live and b.unit == "player" and b.fury and b.fury.on then
+                if spent == nil then spent = CostsRage(spellID) end
+                if spent then Release(b) end
+            end
+        end
+        return
+    end
     if type(unit) == "string" and unit:match("^nameplate%d+$") then
         local pb = plateOf[unit]
         if pb and pb.live and STIR_EVENTS[event] == "health" then Stir(pb) end
@@ -1203,6 +1515,12 @@ function Bars.Liquid(bar)
     return b and b.liquid
 end
 
+-- The fury's liquid on a rage bar, once built.
+function Bars.FuryLiquid(bar)
+    local b = StateFor(bar)
+    return b and b.fury and b.fury.liquid
+end
+
 -- Stir a bar's liquid, as a change to its value does.
 function Bars.StirBar(bar)
     local b = StateFor(bar)
@@ -1221,7 +1539,10 @@ end
 
 -- After an effect toggle: clear what was just switched off.
 function Bars.ApplyOptions()
-    Each(function(b) b.liquid:ApplyOptions() end)
+    Each(function(b)
+        b.liquid:ApplyOptions()
+        if b.fury then b.fury.liquid:ApplyOptions() end
+    end)
 end
 
 local function YesNo(v) return v and "yes" or "no" end
@@ -1250,6 +1571,8 @@ function Bars.Debug()
                 b.err and (", error: " .. b.err) or "")
         end
     end
+    out[#out + 1] = string.format("rage fury: %s, curves %s", ns.Core.Get("rageFury") and "on" or "off",
+        YesNo(Curves()))
     out[#out + 1] = string.format("enemy nameplates: %s, %d with the liquid (at most %d); friendly: %s, %d (at most %d); "
         .. "%d built, %d waiting", ns.Core.Get("plateHealth") and "on" or "off", CountSide("enemy"), MAX_PLATES,
         ns.Core.Get("plateFriendly") and "on" or "off", CountSide("friend"), MAX_FRIENDLY, Count(plates), Count(pending))

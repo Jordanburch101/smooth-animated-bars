@@ -57,6 +57,8 @@ local DEFAULTS = {
     heals       = true,
     -- The build-up on the mana bar through the wait before mana regenerates (ManaRule.lua)
     manaBuild   = true,
+    -- The rage bar growing furious as it fills, and bursting when rage is spent (Bars.lua, Fury)
+    rageFury    = true,
 }
 
 local db

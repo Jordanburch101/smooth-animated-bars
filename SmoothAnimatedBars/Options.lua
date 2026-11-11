@@ -291,6 +291,11 @@ function Options.Register(savedDB, defaultValues)
         "After a spell that costs mana, your mana stops regenerating from Spirit for five seconds. Your mana bar builds "
         .. "up through that wait and lets go in a burst of stars as regeneration returns.")
 
+    Header("Rage")
+    Checkbox("rageFury", "Rage Fury",
+        "Your rage bar grows more furious as it fills: hotter, churning and crackling, and at full rage it throbs, "
+        .. "ready to burst. Spending rage lets it go in a burst of sparks.")
+
     Header("Setup")
     Button("What's New", "Open", function() ns.WhatsNew.Open() end,
         "What changed in the latest versions, as shown once after each update.")

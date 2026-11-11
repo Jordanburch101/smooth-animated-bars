@@ -4,6 +4,14 @@ Player-facing notes for each release. Write for players: what they can now
 do or see, and what was broken and now works. Leave out internal changes.
 Sections are `### New` and `### Fixed`; skip one that would be empty.
 
+## 1.7.0
+
+### New
+- **Rage Fury**: your rage bar grows more furious as it fills. From about
+  half full it heats up, flames licking inside, lightning and sparks
+  flying, and at full rage it throbs, ready to burst. Spending rage lets
+  it go in a spray of sparks. Turn it off under Rage in the settings.
+
 ## 1.6.1
 
 ### Fixed

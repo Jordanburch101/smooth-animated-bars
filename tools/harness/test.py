@@ -193,7 +193,7 @@ check(keys == ["playerHealth", "healthColor", "playerPower", "powerColor", "targ
                "targetPower", "targetPowerColor", "mobClassColor", "petHealth", "petHealthColor", "petPower",
                "petPowerColor", "focusHealth", "focusHealthColor", "focusPower", "focusPowerColor", "totHealth",
                "totHealthColor", "totPower", "totPowerColor", "plateHealth", "plateHealthColor", "plateDots", "plateFriendly", "plateFriendlyColor", "mobClassColor",
-               "waves", "swirl", "bubbles", "sparkles", "ambient", "lightning", "dots", "dotKillIcon", "heals", "manaBuild"],
+               "waves", "swirl", "bubbles", "sparkles", "ambient", "lightning", "dots", "dotKillIcon", "heals", "manaBuild", "rageFury"],
       f"settings page rows: {keys}")
 check(not lua.eval("__sharedListTainted"), "nothing added to the game's shared settings list (Forever: Social blocked)")
 options = [o for o in rows if o.key == "healthColor"][0].options
@@ -669,7 +669,7 @@ check(pm.eval("SmoothAnimatedBarsSetup.shown") and pm.eval("(select(2, __liquid(
       "a missing atlas leaves that piece out: no mask, liquid uncut, no error")
 
 print("== DoT marker")
-dm = session("{ setupDone = true, heals = false, manaBuild = false }")
+dm = session("{ setupDone = true, heals = false, manaBuild = false, rageFury = false }")
 run(dm, 0.5)
 check(dm.eval("SmoothAnimatedBarsDB.dots") is False and not dm.eval("__ns.Dots.IsEnabled()")
       and dm.eval("(__ns.Marker.State())") is None, "off by default: no tracking, no marker built")
@@ -1556,6 +1556,93 @@ mr.execute("__fire('PLAYER_DEAD')")
 check(mr.eval("__ns.ManaRule.Left()") is None, "dying ends the wait")
 check(not any("Error" in m for m in chat(mr)), "no errors")
 
+print("== rage fury")
+check(lua.eval("SmoothAnimatedBarsDB.rageFury") is True, "on by default")
+rf = session("{ setupDone = true, heals = false, dots = false, manaBuild = false }")
+rf.execute("""
+    __spellCosts[78] = { { type = 1, name = 'RAGE', cost = 15 } }
+    __spellCosts[6673] = {}
+    function __fury() return __ns.Bars.Liquid(PlayerFrame.manabar) and __furyOf(PlayerFrame.manabar) end
+    -- The fury's frames: under the bar liquid's frame, the first holding the fury's alpha.
+    function __furyOf(bar)
+        local _, _, mover = __ours(bar)
+        for _, f in ipairs(__frames) do
+            if f.parent == mover then return f end
+        end
+    end
+    function __listens(e)
+        for _, f in ipairs(__frames) do if f.events[e] then return true end end
+        return false
+    end
+""")
+rf.execute("__powerPercent.player = 0.3")
+run(rf, 0.5)
+check(rf.eval("__fury() ~= nil and __fury().shown"), "a fury over the rage bar")
+check(rf.eval("issecretvalue(__fury().alpha)"), "its alpha is the client's secret, from a curve on the rage")
+check(rf.eval("__reveal(__fury().alpha)") == 0, "at 30% rage it does not show")
+rf.execute("__powerPercent.player = 0.75")
+run(rf, 0.2)
+mid = rf.eval("__reveal(__fury().alpha)")
+check(0.1 < mid < 0.6, f"at 75% it shows in part ({mid:.2f})")
+rf.execute("__powerPercent.player = 1")
+run(rf, 0.2)
+check(rf.eval("__reveal(__fury().alpha)") == 1, "at full it is all there is")
+check(rf.eval("""(function()
+    local base = __ns.Bars.Liquid(PlayerFrame.manabar)
+    local fl = __ns.Bars.FuryLiquid(PlayerFrame.manabar)
+    if not fl or fl.leader ~= base then return false end
+    for i = 1, #base.pos do
+        if math.abs(fl:FrontOffset(i) - base:FrontOffset(i)) > 2 then return false end
+    end
+    return true
+end)()"""), "its front lies on the bar liquid's, but for a tremble")
+check(rf.eval("__listens('UNIT_SPELLCAST_SUCCEEDED')"), "listens for the player's casts while it shows")
+
+rf.execute("__fire('UNIT_SPELLCAST_SUCCEEDED', 'player', 'Cast-1', 6673)")
+run(rf, 0.5)
+quiet = rf.eval("__motes(PlayerFrame.manabar)")
+rf.execute("__powerPercent.player = 0.5; __fire('UNIT_SPELLCAST_SUCCEEDED', 'player', 'Cast-2', 78)")
+run(rf, 0.15)
+burst = rf.eval("""(function()
+    local n = 0
+    for _, r in ipairs(__regions) do
+        if r.parent and r.parent.parent == __fury() and r.shown and r.layer == 'OVERLAY' and r.sub == 4 then n = n + 1 end
+    end
+    return n
+end)()""")
+check(burst >= 30, f"spending rage bursts in sparks ({burst})")
+check(rf.eval("__reveal(__fury().alpha)") == 1, "at the rage there was, though it has dropped")
+run(rf, 1.2)
+check(rf.eval("__reveal(__fury().alpha)") == 0, "then the fury comes back in at the rage that is left")
+rf.execute("__fire('UNIT_SPELLCAST_SUCCEEDED', 'player', 'Cast-3', 6673)")
+check(rf.eval("__ns.Bars.FuryLiquid(PlayerFrame.manabar).energy") < 1.0, "a cast that costs no rage does not burst")
+run(rf, 1.5)
+rf.execute("__powerPercent.player = 0.2; __fire('UNIT_SPELLCAST_SUCCEEDED', 'player', 'Cast-4', 78)")
+run(rf, 0.1)
+low = rf.eval("__motes(PlayerFrame.manabar)")
+check(rf.eval("__reveal(__fury().alpha)") == 0 and low >= 15,
+      f"a spend at low rage, the fury out of sight, still throws sparks off the bar's own liquid ({low})")
+check(not any("Error" in m for m in chat(rf)), "no errors (the rage stayed secret)")
+
+rf.execute("__player.power = 0; __fire('UNIT_DISPLAYPOWER', 'player')")
+run(rf, 0.2)
+check(not rf.eval("__fury().shown") and not rf.eval("__listens('UNIT_SPELLCAST_SUCCEEDED')"),
+      "not on mana, and no casts listened to")
+rf.execute("__player.power = 1")
+run(rf, 0.2)
+check(rf.eval("__fury().shown"), "back on rage (a druid leaving Bear Form and back)")
+rf.execute("__settings.rageFury:SetValue(false)")
+run(rf, 0.2)
+check(not rf.eval("__fury().shown") and not rf.eval("__listens('UNIT_SPELLCAST_SUCCEEDED')"), "off: gone")
+dbg = rf.eval("__ns.Bars.Debug()")
+check(any("rage fury: off, curves yes" in dbg[i] for i in range(1, len(dbg) + 1)), "/sab debug reports it")
+
+nc = session(setup="C_CurveUtil = nil")
+run(nc, 0.5)
+check(not any("Error" in m for m in chat(nc))
+      and nc.eval("(select(2, __liquid(PlayerFrame.manabar)))") > 0,
+      "a client without curves keeps the plain liquid, without an error")
+
 print("== /sab capture (gallery art)")
 cap = session()
 run(cap, 0.5)
@@ -2027,8 +2114,11 @@ r1, g1, b1 = fp.eval("__tint(__pbar('nameplate1'))")
 check(g > 0.4 and r < 0.2 and r1 > 0.6, f"friends keep their own colour while the enemies take Fire ({r:.2f}, {g:.2f}, {b:.2f})")
 fp.execute("__settings.plateFriendlyColor:SetValue('same')")
 run(fp, 0.7)
-r, g, b = fp.eval("__tint(__pbar('nameplate2'))")
-check(abs(r - r1) < 0.05 and abs(g - g1) < 0.05, f"Same as Enemy Nameplates: Fire too ({r:.2f}, {g:.2f}, {b:.2f})")
+# Their themes, not a moment of their tint: Fire flickers at random, so two plates' fronts drift apart.
+r, g, b = fp.eval("unpack(__ns.Bars.Liquid(__pbar('nameplate2')).theme.fillB)")
+r1, g1, b1 = fp.eval("unpack(__ns.Bars.Liquid(__pbar('nameplate1')).theme.fillB)")
+check((r, g, b) == (r1, g1, b1) and r > 0.9 and g < 0.6,
+      f"Same as Enemy Nameplates: Fire too ({r:.2f}, {g:.2f}, {b:.2f})")
 def mob_rows(lua):
     rows = lua.eval("__settingsRows()")
     return [rows[i] for i in range(1, len(rows) + 1) if rows[i].key == "mobClassColor"]
