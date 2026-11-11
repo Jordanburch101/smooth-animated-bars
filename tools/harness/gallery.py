@@ -2,7 +2,7 @@
 
 Usage: python gallery.py <addon dir> [out dir] [scenario ...]
 Default out dir: branding/gallery. Writes each scenario as an animated WebP (hero is the warrior, then
-mage, rogue, then warlock and rend, whose targets carry the DoT marker, priest, with the heal marker, druid, with both, eating, a meal up to its buff, and mana, the build-up to mana regenerating), frames.png (a still of the warrior), themes.png (the player frame in a few themes) and plates.webp (four nameplates, from the plate art capture_art.py --plates cut out).
+mage, rogue, then warlock and rend, whose targets carry the DoT marker, priest, with the heal marker, druid, with both, eating, a meal up to its buff, mana, the build-up to mana regenerating, and fury, a warrior's rage building to full and spent), frames.png (a still of the warrior), themes.png (the player frame in a few themes) and plates.webp (four nameplates, from the plate art capture_art.py --plates cut out).
 A full run takes about a quarter of an hour.
 
 The frame art comes from branding/art, which tools/capture_art.py cuts out of the screenshots /sab
@@ -42,19 +42,27 @@ BANNER = (0.8, 0.1, 0.1)  # the target's name banner, hostile
 ORDER = [("player", "health"), ("player", "power"), ("target", "health"), ("target", "power")]
 POWER = {"MANA": 0, "RAGE": 1, "FOCUS": 2, "ENERGY": 3}
 
+# Spells that cost rage (Heroic Strike, Hamstring), and __rage(id, guid) casting one, for Rage Fury's bursts.
+RAGE_SETUP = """
+    __spellCosts[78] = { { type = 1, name = 'RAGE', cost = 15 } }
+    __spellCosts[1715] = { { type = 1, name = 'RAGE', cost = 10 } }
+    function __rage(id, guid) __fire('UNIT_SPELLCAST_SUCCEEDED', 'player', guid, id) end
+"""
+
 # Each scenario: the player (name, level, power type), the target, bar maxima (player health and
 # power, target health and power), and a loop of { seconds, the four bars as fractions }. A new
 # target comes in at full health. With regen (a fraction of the bar per second), the player's power refills
 # continuously, as energy and mana do on Forever, rather than in steps: each drop in its column is a spend, and
 # its rises are ignored. spends: (seconds, fraction) in place of the column, with power_start where it begins.
 SCENARIOS = {
-    # Rage builds as blows land and is spent on strikes.
+    # Rage builds as blows land, the bar heating up (Rage Fury), and two Heroic Strikes burst it back down.
     "hero": dict(
         player="Hollywood Hootsman", level="12", power="RAGE", target="Defias Pillager", target_level="12",
-        maxes=(349, 100, 210, 350), loop=8.4,
-        script=[(0.0, 1.00, 0.10, 1.00, 0.90), (1.2, 0.72, 0.30, 0.80, 0.90), (2.2, 0.72, 0.30, 0.55, 0.75),
-                (3.0, 0.48, 0.55, 0.55, 0.75), (4.0, 0.48, 0.25, 0.25, 0.60), (5.0, 0.85, 0.25, 0.25, 0.60),
-                (6.0, 0.85, 0.50, 0.00, 0.60), (7.2, 1.00, 0.10, 1.00, 0.90)]),
+        maxes=(349, 100, 210, 350), loop=8.4, setup=RAGE_SETUP,
+        script=[(0.0, 1.00, 0.10, 1.00, 0.90), (1.2, 0.72, 0.35, 0.80, 0.90), (2.2, 0.72, 0.60, 0.55, 0.75),
+                (3.0, 0.48, 0.85, 0.55, 0.75), (4.0, 0.48, 0.70, 0.40, 0.60), (4.4, 0.48, 0.55, 0.25, 0.60),
+                (5.0, 0.85, 0.55, 0.25, 0.60), (6.0, 0.85, 0.80, 0.00, 0.60), (7.2, 1.00, 0.10, 1.00, 0.90)],
+        events=[(4.0, "__rage(78, 'Cast-1')"), (4.4, "__rage(78, 'Cast-2')")]),
     # Each Fireball takes a big bite of mana and of the target; the kobold gets one swing in.
     "mage": dict(
         player="Mailbox Hootsman", level="12", power="MANA", target="Kobold Geomancer", target_level="11",
@@ -142,6 +150,19 @@ SCENARIOS = {
                 (3.4, "__hit(4, 64)"), (4.8, "__healStart(5185, 'Cast-3')"), (6.4, "__hit(4, 64)"),
                 (7.3, "__healDone(5185, 'Cast-3')"), (9.4, "__hit(4, 64)"),
                 (9.6, "__dotsCast(8921, 'Cast-4'); __hit(11, 64)"), (12.6, "__hit(4, 64)")]),
+    # Rage Fury: a warrior trading blows, rage climbing with every hit taken and landed until the bar is full and
+    # furious, throbbing there a while; then Heroic Strikes and a Hamstring spend it back to 40%, each spend a burst,
+    # the pillager falls and the next one comes in.
+    "fury": dict(
+        player="Hollywood Hootsman", level="12", power="RAGE", target="Defias Pillager", target_level="12",
+        maxes=(349, 100, 210, 350), loop=12.0, portrait="hero", setup=RAGE_SETUP,
+        script=[(0.0, 1.00, 0.40, 1.00, 0.90), (0.8, 0.93, 0.52, 1.00, 0.90), (1.6, 0.93, 0.61, 0.92, 0.90),
+                (2.4, 0.86, 0.72, 0.92, 0.90), (3.2, 0.86, 0.83, 0.84, 0.90), (4.0, 0.79, 0.92, 0.84, 0.90),
+                (4.8, 0.79, 1.00, 0.76, 0.90), (6.0, 0.72, 1.00, 0.76, 0.90), (7.2, 0.72, 0.85, 0.60, 0.90),
+                (8.0, 0.72, 0.70, 0.44, 0.90), (8.8, 0.66, 0.60, 0.38, 0.90), (9.6, 0.66, 0.45, 0.20, 0.90),
+                (10.4, 0.66, 0.40, 0.00, 0.90), (11.2, 1.00, 0.40, 1.00, 0.90)],
+        events=[(7.2, "__rage(78, 'Cast-1')"), (8.0, "__rage(78, 'Cast-2')"), (8.8, "__rage(1715, 'Cast-3')"),
+                (9.6, "__rage(78, 'Cast-4')")]),
     # Eating, on the player frame alone: from 20% health the food goes up as Honey, the health rising into it tick by
     # tick. The bar builds up for ten seconds and lets go in stars as the druid becomes well fed; slow stars
     # follow until it stands up.
@@ -330,8 +351,14 @@ def start(settings, power="RAGE", dots="", events=()):
                 end
             end
         end
-        -- The bar masks have no art in the mock; the captured ones are applied here instead.
-        for _, r in ipairs(__regions) do r.masks = nil end
+        -- The bar masks have no art in the mock; the captured ones are applied here instead. Regions made later (the
+        -- rage fury, built on the bar's first update) lose theirs as they come.
+        local unmasked = 0
+        function __unmask()
+            for i = unmasked + 1, #__regions do __regions[i].masks = nil end
+            unmasked = #__regions
+        end
+        __unmask()
     """
     return render.Session(ADDON, settings=settings, before_login=before, after_login=after, scenario=events)
 
@@ -521,7 +548,7 @@ def portrait_for(art, key):
     name = f"portrait-{key}"
     if name in art:
         return name
-    if key in ("hero", "rend"):
+    if key in ("hero", "rend", "fury"):
         return "player-portrait"
     print(f"  no {name}.png yet: using the capturing character's portrait")
     return "player-portrait"
@@ -534,6 +561,7 @@ def scenario(art, key):
     if "heals" in sc:
         dots += heals_setup(sc["cls"], sc["heals"])
     events = sc.get("events", ())
+    dots += sc.get("setup", "")
     if "rule_wait" in sc:
         dots += rule_setup()
         events = [(when, f"__spend('Cast-{i}')") for i, (when, _) in enumerate(sc["spends"])]
@@ -569,7 +597,10 @@ def scenario(art, key):
                 if which == "target" and kind == "health" and goal[k] > shown[k] + 0.5:
                     fills[k] = goal[k]  # a new target: its bar does not ease up
         shown = goal
+        # The client's share of the player's power, for the rage fury's curve (it eases nothing, unlike the bar).
+        session.lua.execute(f"__powerPercent.player = {goal[('player', 'power')]}")
         session.run_until(t)
+        session.lua.execute("__unmask()")
         for k in ORDER:
             fills[k] += (goal[k] - fills[k]) * (1 - math.exp(-8 * dt))
         values = {k: round(goal[k] * maxes[k]) for k in ORDER}

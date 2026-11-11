@@ -1,4 +1,4 @@
-![Smooth Animated Bars: liquid health and power bars on the player and target frames](https://raw.githubusercontent.com/Jordanburch101/smooth-animated-bars/refs/heads/main/branding/gallery/hero.webp)
+![Smooth Animated Bars: liquid health and power bars on the player and target frames, the rage heating to a fiery orange as it climbs and bursting in sparks with each Heroic Strike](https://raw.githubusercontent.com/Jordanburch101/smooth-animated-bars/refs/heads/main/branding/gallery/hero.webp)
 
 # Smooth Animated Bars
 
@@ -18,6 +18,7 @@ Your frames stay the game's own. Only the fill changes, so nothing moves: log in
 *   **25 themes:** keep the game's colours, or pick Class Color, Fire, Frost, Arcane, Shadow, Void and more, many with particles of their own. Each frame's health and power get their own choice, and Class Color shows each player's own class.
 *   **Your call on every effect:** waves, swirl, bubbles, sparkles, theme particles and lightning can each be switched off, and so can each bar.
 *   **Mana regen build-up:** your mana bar builds up through the five seconds after a spell, and lets go in a burst of stars as your mana starts to regenerate again.
+*   **Rage Fury:** your rage bar grows more furious as it fills, throbs at full rage, ready to burst, and bursts in sparks when you spend it.
 *   **A quick setup** the first time you log in, with preview frames that show each choice as you pick it, and the settings a right-click away on your frames.
 
 ![A mage's mana dropping in big bites with each Fireball, and the kobold's health with it](https://raw.githubusercontent.com/Jordanburch101/smooth-animated-bars/refs/heads/main/branding/gallery/mage.webp)
@@ -104,6 +105,20 @@ On by default, under Mana in the settings. After a spell that costs mana, your m
 *   **Another spell that costs mana starts the wait again.** Spells that cost none, like Shoot, do not.
 *   **It goes by your casts,** as WoW Forever keeps your mana hidden from addons. The burst still plays if your mana is already full, and Meditation and mp5 gear keep some mana coming back during the wait.
 
+
+## Rage Fury
+
+![A warrior trading blows, the red rage bar climbing and heating to a fiery orange crackling with lightning and spitting sparks, throbbing at full rage, then bursting in sparks with each Heroic Strike and Hamstring as it drops back to 40](https://raw.githubusercontent.com/Jordanburch101/smooth-animated-bars/refs/heads/main/branding/gallery/fury.webp)
+
+_Rage: the bar grows more furious as it fills, throbs at full, and bursts each time you spend it._
+
+On by default, under Rage in the settings.
+
+*   **It heats up** from about half rage: the red turns to a fiery orange, flames lick up inside, lightning crackles and sparks fly off the top, and its front trembles.
+*   **At full rage it throbs** like a heartbeat, ready to burst, throwing sparks from its front with each beat.
+*   **Spending rage lets it go:** every ability that costs rage throws sparks off the front, and while the bar was hot the whole fury flares and cools back to red at what is left.
+*   **It goes by your rage itself,** which WoW Forever keeps hidden from addons: the game fades the fury in, so it shows exactly as far as your rage has climbed. It shows on any rage bar: yours, a druid's in Bear Form, your target's.
+
 ## Make it yours
 
 ![The player frame's health in eight colours: Game Colour, Class Color, Fire, Frost, Arcane, Fel, Cosmic and Void](https://raw.githubusercontent.com/Jordanburch101/smooth-animated-bars/refs/heads/main/branding/gallery/themes.png)
@@ -116,6 +131,7 @@ Open the settings with `/sab`, from **Open Settings** when you right-click your 
 *   **Damage Over Time:** DoT Marker and Kill Icon.
 *   **Healing:** Heal Marker, for your heals, bandages, food and drink.
 *   **Mana:** Mana Regen Build-Up.
+*   **Rage:** Rage Fury.
 *   **Nameplates:** Enemy Nameplates and their Colour, Your DoTs on Nameplates, and Friendly Nameplates with a Colour of their own.
 *   **Setup Wizard:** run the six-step setup again. **What's New:** what changed in the latest versions.
 

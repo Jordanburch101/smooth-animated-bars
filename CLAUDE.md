@@ -23,7 +23,7 @@ for players; `docs/DEVELOPMENT.md` covers the layout and tools; this file holds 
 - **Visual changes:** render a preview (`tools/harness/preview.py`) and look at it. Rebuild the gallery
   (`tools/harness/gallery.py`) when the liquid's look changes, and look at it before committing.
 - **Gallery:** `branding/gallery/` holds the README's images: animated WebP for each scenario (`hero`,
-  `mage`, `rogue`, `warlock` and `rend` with the DoT marker, `priest` with the heal marker, `druid` with both, `eating`, a meal up to its buff, `mana`, the build-up to mana regenerating, and `plates`, four Normal-style nameplates drawn from the captured plate art (`gallery.py`, `PLATES`), two with DoTs) and PNG stills (`frames.png`, `themes.png`), at full quality (`K = 3.0`, 20 fps). No GIFs.
+  `mage`, `rogue`, `warlock` and `rend` with the DoT marker, `priest` with the heal marker, `druid` with both, `eating`, a meal up to its buff, `mana`, the build-up to mana regenerating, `fury`, a warrior's rage building to full and spent back to 40%, and `plates`, four Normal-style nameplates drawn from the captured plate art (`gallery.py`, `PLATES`), two with DoTs) and PNG stills (`frames.png`, `themes.png`), at full quality (`K = 3.0`, 20 fps). No GIFs.
   A full run takes about a quarter of an hour, so run it in the background.
 - **Frame art:** `branding/art/` is Forever's own unit frame art, captured in game with `/sab capture` and
   cut out by `tools/capture_art.py`. It is only for the gallery and is never packaged. The layout numbers
