@@ -626,7 +626,8 @@ local function Refresh(m)
 end
 
 local function Update(m, dt)
-    if not m.bar:IsVisible() then return Hide(m) end
+    local visible = m.bar:IsVisible() -- a secret answer is taken as visible
+    if not Secret(visible) and not visible then return Hide(m) end
     m.feed = m.feed + dt
     if m.feed >= FEED_EVERY then
         m.feed = 0

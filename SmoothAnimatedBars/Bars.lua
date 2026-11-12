@@ -43,6 +43,7 @@ local PLATE_COLOR_EVERY = 0.5     -- seconds between looks at a plate's own colo
 local PLATE_MASK = "Interface\\AddOns\\SmoothAnimatedBars\\Media\\PlateMask"
 -- The game's fill darkens toward its top and bottom edges; this darkens every plate liquid under it the same way.
 local PLATE_SHADE_TEX = "Interface\\AddOns\\SmoothAnimatedBars\\Media\\PlateShade"
+local TINT_PAST = 4               -- px the tint of a secret plate colour reaches past the health's edge (PlateColor)
 local PLATE_WAIT = 1              -- how long a new plate may take to get its unit frame, seconds
 
 -- Inflow (Bars.Inflow): while something is on the way into a bar, its particles drift back from the front into
@@ -249,12 +250,24 @@ local INTERPOLATION = Enum and Enum.StatusBarInterpolation and Enum.StatusBarInt
 -- guide here: it draws the added light layers fainter.
 local PLATE_SHADE = 0.57
 
+-- In a battleground the game colours enemy players' plates by class from a class it keeps secret, so the bar's colour
+-- comes back secret (GetStatusBarColor, SecretReturnsForAspect VertexColor) and the liquid showed plain hostile red.
+-- Then the liquid is drawn white at the fill's brightness and a texture tinted with the secret colour multiplies it
+-- (PlateTint): SetVertexColor takes a secret from addons, so the client does the colouring.
+local WHITE = { 1, 1, 1 }
+
 local function PlateColor(b)
     local bar = b.bar
     local c
+    b.plateSecret = nil
     if bar.GetStatusBarColor then
         local ok, r, g, bl = pcall(bar.GetStatusBarColor, bar)
-        if ok and type(r) == "number" and not Secret(r, g, bl) then c = { r, g, bl } end
+        if ok and Secret(r, g, bl) then
+            b.plateSecret = { r, g, bl }
+            c = WHITE
+        elseif ok and type(r) == "number" then
+            c = { r, g, bl }
+        end
     end
     -- Where the bar's colour is kept from us, the colour the game gives a plate of that reaction.
     c = c or ns.Themes.ReactionColor(b.unit, true) or { 1, 0, 0 }
@@ -301,14 +314,19 @@ end
 local function ThemeFor(b, choice)
     local Themes = ns.Themes
     local theme
+    if b then b.fromGame = false end
     if choice == "game" or not Themes.list[choice] or PlateReaction(b, choice) then
+        if b then b.fromGame = true end
         -- A nameplate's own colour stays as deep as the game's fill.
         theme = Themes.FromColor(GameColor(b), Themes.Get(Themes.default), b and b.spot.plate)
     else
         theme = Themes.Get(choice)
         if theme.Resolve then -- class and faction colours
             theme = theme:Resolve(b and b.unit, b and b.spot.preview)
-                or Themes.FromColor(GameColor(b), Themes.Get(Themes.default), b and b.spot.plate)
+            if not theme then
+                if b then b.fromGame = true end
+                theme = Themes.FromColor(GameColor(b), Themes.Get(Themes.default), b and b.spot.plate)
+            end
         end
     end
     return setmetatable({ physics = SmallPhysics(theme.physics) }, { __index = theme })
@@ -364,17 +382,27 @@ local function ApplyColor(b, force)
     -- Power colours change with the power type only when the bar takes the game's colour, and Class Color with the
     -- unit's colour, falling back on the game's. A nameplate's own colour changes with the unit (tapped, hostile).
     local key = choice
-    if b.spot.plate then token = string.format("%.3f,%.3f,%.3f", own[1], own[2], own[3]) end
+    if b.spot.plate then
+        token = b.plateSecret and "secret" or string.format("%.3f,%.3f,%.3f", own[1], own[2], own[3])
+    end
     if choice == "game" then
         key = "game:" .. token
     elseif choice == "class" then
         local c = ns.Themes.UnitColor(b.unit, b.spot.preview)
         key = c and string.format("class:%.3f,%.3f,%.3f", c[1], c[2], c[3]) or ("class:none:" .. token)
     end
-    if key == b.colorKey and not force then return end
-    b.colorKey = key
-    b.liquid:SetTheme(ThemeFor(b, choice))
-    if b.fury then b.fury.liquid:SetTheme(FuryTheme(b.liquid.theme)) end
+    if key ~= b.colorKey or force then
+        b.colorKey = key
+        b.liquid:SetTheme(ThemeFor(b, choice))
+        if b.fury then b.fury.liquid:SetTheme(FuryTheme(b.liquid.theme)) end
+    end
+    -- A plate's secret colour goes onto its tint each time it is read, as it can change without our knowing.
+    local tint = b.plateTint
+    if tint then
+        local secret = b.fromGame and b.plateSecret
+        if secret then tint:SetVertexColor(secret[1], secret[2], secret[3]) end
+        tint:SetShown(secret and true or false)
+    end
 end
 
 --------------------------------------------------------------------------------
@@ -392,15 +420,30 @@ local function Feed(b, smooth)
     end
 end
 
+-- A region's alpha made this, whatever it was. The game can set its own fill's alpha from a secret (seen on nameplates in
+-- a battleground: "attempt to compare a secret number value"), and GetAlpha then answers with one
+-- (SecretReturnsForAspect Alpha), which cannot be compared, so it is then set without looking.
+local function AlphaTo(region, alpha)
+    local now = region:GetAlpha()
+    if Secret(now) or now ~= alpha then region:SetAlpha(alpha) end
+end
+
+-- Whether a region is visible; IsVisible can answer with a secret (SecretReturnsForAspect Shown), taken as visible.
+local function Visible(region)
+    local v = region:IsVisible()
+    if Secret(v) then return true end
+    return v and true or false
+end
+
 -- What the game draws in the bar that the liquid replaces: the fill, and on the player's health bar
 -- the red bar of the health-loss animation. That one sits behind the game's fill, but once shown it
 -- draws over the liquid at the same frame level, so it hides with the fill.
 local function HideGameFill(bar, alpha)
     local fill = bar:GetStatusBarTexture()
-    if fill and fill:GetAlpha() ~= alpha then fill:SetAlpha(alpha) end
+    if fill then AlphaTo(fill, alpha) end
     local loss = bar.AnimatedLossBar
     local lossFill = type(loss) == "table" and loss.GetStatusBarTexture and loss:GetStatusBarTexture()
-    if lossFill and lossFill:GetAlpha() ~= alpha then lossFill:SetAlpha(alpha) end
+    if lossFill then AlphaTo(lossFill, alpha) end
 end
 
 local FuryOff -- the rage bar's fury going (below)
@@ -674,8 +717,18 @@ local function NewBar(spot, bar)
         local tex = shade:CreateTexture(nil, "ARTWORK")
         tex:SetTexture(PLATE_SHADE_TEX)
         tex:SetAllPoints(bar)
+        -- PlateTint: the plate's colour when the game keeps it secret, multiplying the white liquid under it, from the
+        -- bar's left edge to a little past the health's edge (the front wobbles about that far), in the same frame as
+        -- the shading and under it.
+        local tint = shade:CreateTexture(nil, "ARTWORK", nil, -1)
+        tint:SetColorTexture(1, 1, 1, 1)
+        tint:SetBlendMode("MOD")
+        tint:SetPoint("TOPLEFT", bar, "TOPLEFT")
+        tint:SetPoint("BOTTOMRIGHT", proxy:GetStatusBarTexture(), "BOTTOMRIGHT", TINT_PAST, 0)
+        tint:AddMaskTexture(b.mask)
+        tint:Hide()
         shade:Hide()
-        b.shadeFrame, b.shadeTex = shade, tex
+        b.shadeFrame, b.shadeTex, b.plateTint = shade, tex, tint
     else
         b.mask = BarMask(bar, spot.kind)
     end
@@ -1050,7 +1103,7 @@ end
 
 local function UpdateBar(b, dt)
     local bar = b.bar
-    if not bar:IsVisible() then return end
+    if not Visible(bar) then return end
     -- The game can swap or reset its fill textures; keep them hidden under the liquid.
     HideGameFill(bar, 0)
 
@@ -1279,7 +1332,7 @@ local function RunBar(b, dt)
         if b.token then plateOf[b.token] = nil end
     end
     -- Counted for /sab perf only while it shows: a hidden frame's bar (no focus, no pet) costs next to nothing.
-    return ok and b.bar:IsVisible() and true or false
+    return ok and Visible(b.bar)
 end
 
 -- An error in one bar is kept for /sab debug and reported once, and that bar goes back to the
@@ -1621,9 +1674,9 @@ function Bars.Debug()
             local name = bar.GetDebugName and bar:GetDebugName() or "?"
             out[#out + 1] = string.format("%s (%s, %dx%d): visible %s, value secret %s, mask %s, live %s, "
                 .. "game fill alpha %s, liquid textures shown %d/%d%s",
-                label, name, math.floor(b.width + 0.5), math.floor(b.height + 0.5), YesNo(bar:IsVisible()),
+                label, name, math.floor(b.width + 0.5), math.floor(b.height + 0.5), YesNo(Visible(bar)),
                 YesNo(Secret(bar:GetValue())), YesNo(b.mask), YesNo(b.live),
-                fill and tostring(fill:GetAlpha()) or "none", shown, #b.liquid.textures,
+                fill and (Secret(fill:GetAlpha()) and "secret" or tostring(fill:GetAlpha())) or "none", shown, #b.liquid.textures,
                 b.err and (", error: " .. b.err) or "")
         end
     end

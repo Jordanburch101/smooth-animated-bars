@@ -1842,6 +1842,43 @@ np.execute(plate_bar("nameplate1") + ":GetParent():GetParent().name:Hide()")
 run(np, 0.2)
 check(not np.eval(TEXTS + ".name.shown"), "and goes when the game hides it (a simplified mob not targeted)")
 np.execute("NamePlateSetupOptions.unitNameAnchorStyle = NamePlateConstants.NAME_ANCHOR_STYLES.AboveHealthBar")
+# In a battleground the game set a plate fill's alpha from a secret, and GetAlpha answered with one: comparing it raised
+# "attempt to compare a secret number value" and every plate went back to the game's bar. (Lua 5.1 cannot make the mock
+# fail on == or ~= with a secret; this checks the plate carries on.)
+np.execute(f"""local bar = {plate_bar("nameplate1")}
+bar.fill:SetAlpha(__secret(1))
+bar.IsVisible = function() return __secret(true) end""")
+run(np, 0.3)
+check(np.eval(plate_bar("nameplate1") + ".fill.alpha") == 0
+      and np.eval("(select(2, __liquid(" + plate_bar("nameplate1") + ")))") > 0
+      and not any("Error in" in m for m in chat(np)),
+      "the game's fill alpha and the bar's visibility answered as secrets (a battleground): the fill is hidden again "
+      "without comparing them, and the liquid carries on")
+np.execute(plate_bar("nameplate1") + ".IsVisible = nil")
+# In a battleground the game colours enemy players' plates by a class it keeps secret, so the bar's colour comes back
+# secret: the liquid is drawn grey and a tint in the game's own (secret) colour multiplies it.
+np.execute(plate_bar("nameplate1") + ":SetStatusBarColor(__secret(0.78), __secret(0.61), __secret(0.43))")
+run(np, 0.7)
+check(np.eval(f"""(function()
+    local bar = {plate_bar("nameplate1")}
+    local fb = __ns.Bars.Liquid(bar).theme.fillB
+    for _, r in ipairs(__regions) do
+        if r.blend == "MOD" and r.parent and r.parent.parent == bar then
+            return r.shown and issecretvalue(r.vc[1]) and __reveal(r.vc[1]) == 0.78 and fb[1] == fb[2] and fb[2] == fb[3]
+                and r.masks and #r.masks == 1
+        end
+    end
+    return false
+end)()"""), "a plate colour the game keeps secret (a class in a battleground): a grey liquid, multiplied by a tint in the "
+      "game's own colour, cut to the plate's shape")
+np.execute(plate_bar("nameplate1") + ":SetStatusBarColor(0.9, 0.1, 0.1)")
+run(np, 0.7)
+check(np.eval(f"""(function()
+    local bar = {plate_bar("nameplate1")}
+    for _, r in ipairs(__regions) do
+        if r.blend == "MOD" and r.parent and r.parent.parent == bar then return not r.shown end
+    end
+end)()"""), "and a colour that can be read again takes the liquid's own colour, with no tint")
 np.execute("__showPlate('nameplate2', { friendly = true, reaction = 5 })")
 run(np, 0.2)
 check(np.eval("(select(2, __liquid(" + plate_bar("nameplate2") + ")))") == 0
@@ -2301,8 +2338,15 @@ end)()""")
 want = sum(len(n) for v in real[:2] for _, n in v["sections"])
 check(heads == f"{real[0]['version']},{real[1]['version']}" and notes == want,
       f"updating from {older}: every version since, newest first, each note ({heads}, {notes} notes)")
-# The titled notes in the versions shown (the newest alone may have none, as a fix release often does).
-titles = [n[0] for v in real[:2] for _, ns_ in v["sections"] for n in ns_ if isinstance(n, tuple)]
+# Titled notes: shown from the version before the newest one that has any, as fix releases (often several in a row)
+# have none.
+def titled(v):
+    return [n[0] for _, ns_ in v["sections"] for n in ns_ if isinstance(n, tuple)]
+upto = next(i for i, v in enumerate(real) if titled(v))
+titles = [t for v in real[:upto + 1] for t in titled(v)]
+wn = wn_session(f"{{ setupDone = true, whatsNewSeen = {real[upto + 1]['version']!r} }}", newest)
+wn.execute("__fire('PLAYER_LOGIN')")
+run(wn, 7)
 shown_titles = wn.eval("""(function()
     local out = {}
     for _, fs in ipairs(SmoothAnimatedBarsWhatsNew.pools.GameFontNormal or {}) do
@@ -2311,8 +2355,8 @@ shown_titles = wn.eval("""(function()
     return out
 end)()""")
 check(titles and all(shown_titles[t] for t in titles),
-      f"a note's title shows on a line of its own ({len(titles)} titles in {real[0]['version']} and "
-      f"{real[1]['version']})")
+      f"a note's title shows on a line of its own ({len(titles)} titles from {real[0]['version']} to "
+      f"{real[upto]['version']})")
 
 wn = wn_session(f"{{ setupDone = true, whatsNewSeen = {newest!r} }}", newest)
 wn.execute("__fire('PLAYER_LOGIN')")

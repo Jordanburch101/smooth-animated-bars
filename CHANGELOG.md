@@ -4,6 +4,13 @@ Player-facing notes for each release. Write for players: what they can now
 do or see, and what was broken and now works. Leave out internal changes.
 Sections are `### New` and `### Fixed`; skip one that would be empty.
 
+## 1.7.2
+
+### Fixed
+- Nameplates in battlegrounds no longer stop with an error ("attempt to
+  compare a secret number value") and go back to the game's bar, and
+  enemy players' nameplates there keep their class colours.
+
 ## 1.7.1
 
 ### Fixed

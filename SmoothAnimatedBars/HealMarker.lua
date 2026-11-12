@@ -223,7 +223,9 @@ end
 -- Hidden while ours shows (0), back when it does not (1). The game may reset it, so it is kept up each update.
 local function GameFill(m, alpha)
     local fill = GamePrediction(m.bar)
-    if fill and fill:GetAlpha() ~= alpha then fill:SetAlpha(alpha) end
+    if not fill then return end
+    local now = fill:GetAlpha() -- a secret if the game set it from one, which cannot be compared
+    if Secret(now) or now ~= alpha then fill:SetAlpha(alpha) end
 end
 
 -- Each seam, while its liquid shows under the liquid before it: that liquid's colour from just behind the heal
@@ -414,7 +416,8 @@ local function Refresh(m)
 end
 
 local function Update(m, dt)
-    if not m.bar:IsVisible() then return Hide(m) end
+    local visible = m.bar:IsVisible() -- a secret answer is taken as visible
+    if not Secret(visible) and not visible then return Hide(m) end
     m.feed = m.feed + dt
     if m.feed >= FEED_EVERY then
         m.feed = 0
@@ -575,7 +578,7 @@ function HealMarker.Debug()
             m.clip:IsShown() and "showing" or "hidden", #shown > 0 and table.concat(shown, " then ") or "none",
             m.under and " under the bar's liquid" or " over the game's fill", m.spec.mask and "yes" or "no",
             m.name == "health" and (", game's own prediction " .. (not game and "not found"
-                or game:GetAlpha() == 0 and "hidden" or "shown")) or "",
+                or Secret(game:GetAlpha()) and "secret" or game:GetAlpha() == 0 and "hidden" or "shown")) or "",
             m.err and (", error: " .. m.err) or "")
     end)
     return out

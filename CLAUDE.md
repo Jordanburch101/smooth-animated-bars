@@ -213,7 +213,18 @@ Facts found while building this, which the code relies on and which are not obvi
   wrap always failed and left the default, wrapping on; the mock had a `GetWordWrap` and now has `CanWordWrap` only.
   The docs also mark `GetCenter`/`GetRect` `SecretWhenAnchoringSecret`, which is why going by the name's position
   failed, and `IsShown`/`IsVisible` `SecretReturnsForAspect` Shown: a secret answer is never compared, and the copy is
-  faded by it with `SetAlphaFromBoolean` (allowed when tainted; `SetShown` takes a secret only when untainted). Putting the liquids back
+  faded by it with `SetAlphaFromBoolean` (allowed when tainted; `SetShown` takes a secret only when untainted).
+  In a battleground the game set its plate fills' alpha from a secret, and `GetAlpha` (`SecretReturnsForAspect`
+  Alpha) answered with one: comparing it to hide the fill errored on every plate (seen in game). Alphas read back
+  from the game's regions are never compared when secret (`Bars.lua`, `AlphaTo`), and a secret `IsVisible` is taken
+  as visible (`Visible`). The mock cannot catch these: Lua 5.1 lets `==`, `~=` and truth tests on a table through.
+  With that fixed the battleground plates kept the liquid but lost the class colour the game's own bar had shown: there
+  the game colours enemy players' plates by a class it keeps secret (`UnitClass` is `SecretWhenUnitIdentityRestricted`),
+  so `GetStatusBarColor` answers with secrets. A colour can still be handed on: `SetVertexColor` takes secrets from
+  addons. So the liquid is drawn white (grey, at `PLATE_SHADE`) and a texture tinted with the secret colour, `MOD`
+  blended, multiplies it (`Bars.lua`, `PlateColor`, `plateTint`), from the bar's left edge to `TINT_PAST` past the
+  health's edge, in the shading's frame under the shading. Only when the theme comes from the plate's colour
+  (`fromGame`); a fixed theme keeps its own look. Seen in game in a battleground: class colours on the liquid, no errors. Putting the liquids back
   at the bar's level under the game's texts was tried again in game (the darkening of plates that are not the target,
   `deselectedOverlay`, OVERLAY, then lies over them): raised was still preferred. Seen in
   game with two DoTs (Fire and Shadow) on a raised plate, each in its own colour inside the rim. The setup's nameplate
