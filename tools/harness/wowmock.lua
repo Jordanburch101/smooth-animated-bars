@@ -357,8 +357,18 @@ __player.name, __player.realm = "Testchar", "Mockrealm"
 -- the second value is the character's surname: set __player.surname for that.
 function UnitName(unit)
     if unit == "player" then return __player.name, __player.surname end
+    if __identitySecret[unit] then return __secret() end
     if unit == "target" and __target then return __target.name end
 end
+-- Units whose identity is secret (in an instance or battleground): __identitySecret[unit] = true. Their names are
+-- secret, and so is the width of a menu title showing one (see __openUnitMenu).
+__identitySecret = {}
+C_Secrets = {
+    ShouldUnitIdentityBeSecret = function(unit)
+        assert(type(unit) == "string", "ShouldUnitIdentityBeSecret(unit)")
+        return __identitySecret[unit] == true
+    end,
+}
 function GetRealmName() return __player.realm end
 -- Other units than the player: the target is __target, the rest __units[unit] (focus, targettarget, pet...). Each
 -- has its class (__secret() for one kept secret), reaction and isOtherPlayer.
@@ -898,6 +908,12 @@ function __openUnitMenu(which, contextData)
     function root:CreateTitle(text) return add("title", text) end
     function root:CreateButton(text, fn) return add("button", text, fn) end
     for _, cb in ipairs(__menuCallbacks["MENU_UNIT_" .. which] or {}) do cb(contextData.ownerFrame, root, contextData) end
+    -- As in the client: a unit with a secret identity gives the menu a title with a secret width, which the layout
+    -- can measure only untainted, and anything an addon added taints it.
+    if #root.elements > 0 and contextData.unit and __identitySecret[contextData.unit] then
+        error("FrameUtil.lua:223: attempt to perform arithmetic on local 'frameLeft' (a secret number value, "
+              .. "while execution tainted by 'SmoothAnimatedBars')")
+    end
     return root.elements
 end
 function Settings.RegisterAddOnCategory(cat) __settingsCategory = cat end

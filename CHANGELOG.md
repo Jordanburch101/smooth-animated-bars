@@ -4,6 +4,14 @@ Player-facing notes for each release. Write for players: what they can now
 do or see, and what was broken and now works. Leave out internal changes.
 Sections are `### New` and `### Fixed`; skip one that would be empty.
 
+## 1.7.3
+
+### Fixed
+- Right-clicking your target in a dungeon, raid or battleground shows the
+  game's menu properly again. Before, its lines were drawn on top of each
+  other with an error, so you couldn't set a target marker. In those places
+  the menu no longer has Open Settings.
+
 ## 1.7.2
 
 ### Fixed

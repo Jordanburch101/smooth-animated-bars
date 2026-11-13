@@ -181,6 +181,19 @@ local MENU_FRAMES = { "PlayerFrame", "TargetFrame", "PetFrame", "FocusFrame" }
 -- The section of the settings each frame's menu opens at.
 local MENU_SECTIONS = { PlayerFrame = "Player", TargetFrame = "Target", PetFrame = "Pet", FocusFrame = "Focus" }
 
+-- Whether the menu's unit has a secret identity (a mob or player in an instance or battleground). The menu's title is
+-- then its secret name, and the game can lay that out only while untainted: with our entries in it, the layout ran
+-- tainted, failed on the title's secret width ("attempt to perform arithmetic on local 'frameLeft' (a secret number
+-- value, while execution tainted by 'SmoothAnimatedBars')", FrameUtil.lua GetUnscaledFrameRect) and drew the whole
+-- menu on one line without its background (seen in game). Such a menu is left alone.
+local function SecretIdentity(unit)
+    if type(unit) ~= "string" then return false end
+    if C_Secrets and C_Secrets.ShouldUnitIdentityBeSecret and C_Secrets.ShouldUnitIdentityBeSecret(unit) then
+        return true
+    end
+    return issecretvalue ~= nil and issecretvalue((UnitName(unit))) or false
+end
+
 local function AddToUnitMenus()
     if not (Menu and Menu.ModifyMenu) then return end
     local frames = {}
@@ -191,6 +204,7 @@ local function AddToUnitMenus()
     for _, which in ipairs(UNIT_MENUS) do
         Menu.ModifyMenu("MENU_UNIT_" .. which, function(_, rootDescription, contextData)
             if not (type(contextData) == "table" and frames[contextData.ownerFrame]) then return end
+            if SecretIdentity(contextData.unit) then return end
             rootDescription:CreateDivider()
             rootDescription:CreateTitle("Smooth Animated Bars")
             rootDescription:CreateButton("Open Settings", function()

@@ -423,6 +423,11 @@ check(um.eval("__openedCategory") == "Smooth Animated Bars", "and opens once com
 for which, frame in (("TARGET", "TargetFrame"), ("ENEMY_PLAYER", "TargetFrame"), ("PET", "PetFrame"), ("FOCUS", "FocusFrame")):
     got = um.eval(f"#__openUnitMenu('{which}', {{ ownerFrame = {frame}, unit = 'target' }})")
     check(got == 3, f"{which} menu from {frame}: added")
+um.execute("__identitySecret.target = true")
+check(um.eval("#__openUnitMenu('TARGET', { ownerFrame = TargetFrame, unit = 'target', name = 'Target Marker Icon' })") == 0
+      and um.eval("#__openUnitMenu('ENEMY_PLAYER', { ownerFrame = TargetFrame, unit = 'target' })") == 0,
+      "the target's menu in an instance (its name secret): left alone, so the game can lay it out")
+um.execute("__identitySecret.target = nil")
 check(um.eval("#__openUnitMenu('PLAYER', { name = 'Somebody' })") == 0
       and um.eval("#__openUnitMenu('PARTY', { ownerFrame = UIParent, unit = 'party1' })") == 0,
       "a player's menu from a chat name or a party frame: left alone")

@@ -261,7 +261,12 @@ Facts found while building this, which the code relies on and which are not obvi
 - **Unit frame menus** (`Options.lua`, `AddToUnitMenus`): `Menu.ModifyMenu("MENU_UNIT_" .. which, ...)` adds Open
   Settings; the frames pass themselves as `contextData.ownerFrame` (Mainline `PlayerFrame.lua`, `TargetFrame.lua`,
   `PetFrame.lua`), which tells them from chat names and party frames. Seen in game, and the menus' protected actions
-  (Set Focus, Target Marker Icon) still work with it, in and out of combat.
+  (Set Focus, Target Marker Icon) still work with it, in and out of combat. But not in an instance: there a mob's
+  name is secret, so the menu's title has a secret width, which the game can lay out only untainted. Anything added
+  taints the layout, which errors (`FrameUtil.lua` `GetUnscaledFrameRect`, "a secret number value, while execution
+  tainted by 'SmoothAnimatedBars'") and draws the menu on one line without its background (reported by players,
+  error seen in game). So a menu whose unit has a secret identity (`C_Secrets.ShouldUnitIdentityBeSecret`, or a
+  secret `UnitName`) is left alone; seen in game in a dungeon, the menu right again.
 - **Toc changes** (a new file) need a full game restart; `/reload` does not pick them up.
 - **Capture:** `/sab capture` uses `Screenshot()` and the `screenshotFormat` CVar (TGA, put back after).
   The screenshot is the full render resolution (an ultrawide 3440x1440 here), and the red "?" target
