@@ -181,6 +181,15 @@ local MENU_FRAMES = { "PlayerFrame", "TargetFrame", "PetFrame", "FocusFrame" }
 -- The section of the settings each frame's menu opens at.
 local MENU_SECTIONS = { PlayerFrame = "Player", TargetFrame = "Target", PetFrame = "Pet", FocusFrame = "Focus" }
 
+-- The section a menu's owner opens the settings at, or nil if the liquid is not on it. The party's member frames are
+-- pooled buttons without names (PartyFrame.lua), told by their parent.
+local function MenuSection(owner, frames)
+    if type(owner) ~= "table" then return nil end
+    if frames[owner] then return MENU_SECTIONS[owner:GetName() or ""] or "" end
+    local party = rawget(_G, "PartyFrame")
+    if party and owner.GetParent and owner:GetParent() == party then return "Party" end
+end
+
 -- Whether the menu's unit has a secret identity (a mob or player in an instance or battleground). The menu's title is
 -- then its secret name, and the game can lay that out only while untainted: with our entries in it, the layout ran
 -- tainted, failed on the title's secret width ("attempt to perform arithmetic on local 'frameLeft' (a secret number
@@ -203,12 +212,12 @@ local function AddToUnitMenus()
     end
     for _, which in ipairs(UNIT_MENUS) do
         Menu.ModifyMenu("MENU_UNIT_" .. which, function(_, rootDescription, contextData)
-            if not (type(contextData) == "table" and frames[contextData.ownerFrame]) then return end
-            if SecretIdentity(contextData.unit) then return end
+            local section = type(contextData) == "table" and MenuSection(contextData.ownerFrame, frames)
+            if not section or SecretIdentity(contextData.unit) then return end
             rootDescription:CreateDivider()
             rootDescription:CreateTitle("Smooth Animated Bars")
             rootDescription:CreateButton("Open Settings", function()
-                ns.Core.OpenSettings(MENU_SECTIONS[contextData.ownerFrame:GetName() or ""])
+                ns.Core.OpenSettings(section ~= "" and section or nil)
             end)
         end)
     end
@@ -254,6 +263,11 @@ function Options.Register(savedDB, defaultValues)
         whose = "your focus's", health = SAME_TARGET, power = SAME_TARGET })
     Frame("Target of Target", "tot", "totHealthColor", "totPowerColor", SameAsOptions("Same as Target"), {
         whose = "your target's target's and your focus's target's", health = SAME_TARGET, power = SAME_TARGET })
+    Frame("Party", "party", "partyHealthColor", "partyPowerColor", SameAsOptions("Same as Yours"), {
+        whose = "your party members'",
+        health = "Same as Yours follows your own health colour. Class Color shows each member's class. While a member "
+            .. "is offline the game's grey bar comes back.",
+        power = "Same as Yours follows your own power colour, so Game Colour shows each member's power type." })
     Frame("Personal Resource Display", "prd", "prdHealthColor", "prdPowerColor", SameAsOptions("Same as Yours"), {
         whose = "the Personal Resource Display's",
         health = "The extra bars the game shows with its Personal Resource Display option on, placed with Edit Mode. "

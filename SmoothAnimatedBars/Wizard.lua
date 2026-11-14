@@ -1,5 +1,5 @@
--- First-time setup in six short steps: which bars, their colours, the target's, how lively they are, whether to mark
--- the player's DoTs on the target (Marker.lua) and the liquid on nameplates, enemy and friendly. Each pick
+-- First-time setup in seven short steps: which bars, their colours, the target's, the party's, how lively they are,
+-- whether to mark the player's DoTs on the target (Marker.lua) and the liquid on nameplates, enemy and friendly. Each pick
 -- is applied at once, on the real frames and on the preview player and target frames at the top of
 -- the window (Preview.lua); Skip (or closing the window) puts the settings back as they were, Finish
 -- keeps them. Opens once, on the first login with the addon,
@@ -18,6 +18,7 @@ local GOLD = { 1, 0.82, 0 }
 local EDGE = { 0.32, 0.30, 0.36 }
 
 -- Each pick sets every frame's bars: the pet goes with the player, the focus and targets of target with the target.
+-- The party has a step of its own.
 local function BarSet(mine, others, power)
     local set = {}
     for _, frame in ipairs({ "player", "pet" }) do
@@ -67,7 +68,15 @@ local FRIENDS = {
     { key = "off", label = "Off", set = { plateFriendly = false } },
     { key = "on", label = "On", set = { plateFriendly = true } },
 }
-local PAGES = { "bars", "colors", "targetColors", "effects", "dots", "plates" }
+-- The party frames: their bars, and the health colour (power keeps each member's power type unless changed in the
+-- settings).
+local PARTY = {
+    { key = "both", label = "Health and power", set = { partyHealth = true, partyPower = true } },
+    { key = "health", label = "Just health", set = { partyHealth = true, partyPower = false } },
+    { key = "off", label = "Off", set = { partyHealth = false, partyPower = false } },
+}
+local PARTY_COLORS = { "same", "game", "class", "fire", "frost", "void" }
+local PAGES = { "bars", "colors", "targetColors", "party", "effects", "dots", "plates" }
 
 local frame, ui, page, saved, closing
 
@@ -154,6 +163,16 @@ local function Card(parent, w, h, title, desc, onPick)
     return c
 end
 
+-- A note in the game's gold, under another text.
+local function Warning(parent, text, below)
+    local w = Font(parent, "GameFontNormalSmall", text, "LEFT")
+    w:SetTextColor(GOLD[1], GOLD[2], GOLD[3])
+    w:SetPoint("TOPLEFT", below, "BOTTOMLEFT", 0, -8)
+    w:SetWidth(W - 72)
+    w:SetWordWrap(true)
+    return w
+end
+
 local function Heading(parent, title, sub)
     local h = Font(parent, "GameFontNormalLarge", title, "LEFT")
     h:SetPoint("TOPLEFT", 0, 0)
@@ -228,6 +247,30 @@ function BUILD.targetColors(p)
     ui.mobLabel = Row("Mobs", "mobClassColor", -186, MOBS, true)
 end
 
+function BUILD.party(p)
+    Heading(p, "Your party too?", "Party members' bars, as above: a warrior, a priest, a mage and a rogue.")
+    local function Row(label, key, y, list)
+        Font(p, "GameFontNormal", label, "LEFT"):SetPoint("TOPLEFT", 0, y)
+        ui.cards[key] = {}
+        for i, item in ipairs(list) do
+            local value = item.key or item
+            local set = item.set or { partyHealthColor = item }
+            local col, line = (i - 1) % 3, math.floor((i - 1) / 3)
+            local c = Card(p, 150, 30, item.label or ColorName(item), nil, function() Set(set) end)
+            c:SetPoint("TOPLEFT", 70 + col * 160, y + 6 - line * 36)
+            ui.cards[key][value] = c
+        end
+    end
+    Row("Bars", "party", -56, PARTY)
+    Row("Colour", "partyHealthColor", -102, PARTY_COLORS)
+    local note = Font(p, "GameFontHighlightSmall", "Class Color shows each member's class. Power keeps each member's "
+        .. "own power colour; every theme is in the settings.", "LEFT")
+    note:SetPoint("TOPLEFT", 0, -178)
+    note:SetWidth(W - 72)
+    note:SetWordWrap(true)
+    ui.partyWarning = Warning(p, "This may affect performance: a full party adds up to eight more liquids.", note)
+end
+
 function BUILD.effects(p)
     Heading(p, "How lively?", "Each effect can be turned on or off in the settings later.")
     ui.cards.effects = Cards(p, EFFECTS, -46)
@@ -257,6 +300,7 @@ function BUILD.plates(p)
     note:SetPoint("TOPLEFT", 0, -150)
     note:SetWidth(W - 72)
     note:SetWordWrap(true)
+    ui.plateWarning = Warning(p, "This may affect performance, most in big crowds of nameplates.", note)
 end
 
 --------------------------------------------------------------------------------
@@ -272,7 +316,8 @@ end
 function Refresh()
     local picked = {
         bars = Matching(BARS), effects = Matching(EFFECTS), dots = Matching(DOTS),
-        plates = Matching(PLATES), friends = Matching(FRIENDS),
+        plates = Matching(PLATES), friends = Matching(FRIENDS), party = Matching(PARTY),
+        partyHealthColor = ns.Core.Get("partyHealthColor"),
         healthColor = ns.Core.Get("healthColor"), powerColor = ns.Core.Get("powerColor"),
         targetHealthColor = ns.Core.Get("targetHealthColor"), targetPowerColor = ns.Core.Get("targetPowerColor"),
         mobClassColor = ns.Core.Get("mobClassColor"),
@@ -291,6 +336,9 @@ function Refresh()
     ui.step:SetText(string.format("Step %d of %d", index, #PAGES))
 end
 
+-- The steps with a preview of their own, and the Preview function that builds it.
+local STRIPS = { plates = "CreatePlates", party = "CreateParty" }
+
 local function ShowPage(name)
     page = name
     if not ui.pages[name] then
@@ -300,14 +348,15 @@ local function ShowPage(name)
         BUILD[name](p)
     end
     for key, p in pairs(ui.pages) do p:SetShown(key == name) end
-    -- The nameplate step shows example nameplates in the preview strip, the others the unit frames.
-    local plates = name == "plates"
-    if plates and not ui.platePreview then
-        ui.platePreview = ns.Preview.CreatePlates(ui.strip)
-        ui.platePreview:SetPoint("CENTER")
+    -- The nameplate and party steps show example nameplates and party frames in the preview strip, the others the unit
+    -- frames. Each is built the first time its step shows.
+    local own = STRIPS[name]
+    if own and not ui.strips[name] then
+        ui.strips[name] = ns.Preview[own](ui.strip)
+        ui.strips[name]:SetPoint("CENTER")
     end
-    ui.preview:SetShown(not plates)
-    if ui.platePreview then ui.platePreview:SetShown(plates) end
+    ui.preview:SetShown(not own)
+    for key, strip in pairs(ui.strips) do strip:SetShown(key == name) end
     Refresh()
 end
 
@@ -367,7 +416,7 @@ local function Build()
         Font(frame, "GameFontNormal", "Smooth Animated Bars Setup", "CENTER"):SetPoint("TOP", 0, -6)
     end
 
-    ui = { cards = {}, pages = {} }
+    ui = { cards = {}, pages = {}, strips = {} }
     -- Preview frames on a dark strip under the title, the steps below them.
     local strip = CreateFrame("Frame", nil, frame)
     strip:SetPoint("TOPLEFT", 36, -34)

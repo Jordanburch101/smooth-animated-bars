@@ -19,6 +19,9 @@ local DEFAULTS = {
     focusPower   = true,
     totHealth    = true,
     totPower     = true,
+    -- The party frames' bars, all four members'
+    partyHealth  = true,
+    partyPower   = true,
     -- The Personal Resource Display's bars (the game shows them with its Personal Resource Display option on)
     prdHealth    = true,
     prdPower     = true,
@@ -31,8 +34,8 @@ local DEFAULTS = {
     -- Colours: "game" for the bar's own colour, or a theme key (Themes.lua)
     healthColor  = "game",
     powerColor   = "game",
-    -- The other frames' bars: "same" (the pet's as the player's, the focus's and targets of target's as the
-    -- target's), "game" or a theme key
+    -- The other frames' bars: "same" (the pet's and the party's as the player's, the focus's and targets of target's as
+    -- the target's), "game" or a theme key
     targetHealthColor = "same",
     targetPowerColor  = "same",
     petHealthColor    = "same",
@@ -41,6 +44,8 @@ local DEFAULTS = {
     focusPowerColor   = "same",
     totHealthColor    = "same",
     totPowerColor     = "same",
+    partyHealthColor  = "same",
+    partyPowerColor   = "same",
     prdHealthColor    = "same",
     prdPowerColor     = "same",
     plateHealthColor  = "same",
@@ -87,11 +92,12 @@ local COLOR_KEYS = {
     pet    = { health = "petHealthColor", power = "petPowerColor" },
     focus  = { health = "focusHealthColor", power = "focusPowerColor" },
     tot    = { health = "totHealthColor", power = "totPowerColor" },
+    party  = { health = "partyHealthColor", power = "partyPowerColor" },
     prd    = { health = "prdHealthColor", power = "prdPowerColor" },
     plate  = { health = "plateHealthColor" },
     friend = { health = "plateFriendlyColor" },
 }
-local FOLLOWS = { target = "player", pet = "player", focus = "target", tot = "target", prd = "player",
+local FOLLOWS = { target = "player", pet = "player", focus = "target", tot = "target", party = "player", prd = "player",
                   plate = "target", friend = "plate" }
 
 -- The colour a frame's bar of this kind ("health" or "power") shows: "game" or a theme key, "same" followed through.
@@ -128,7 +134,7 @@ function Core.PlatesUseClass()
 end
 
 local BAR_KEYS = { "playerHealth", "playerPower", "targetHealth", "targetPower", "petHealth", "petPower", "focusHealth",
-                   "focusPower", "totHealth", "totPower", "prdHealth", "prdPower" }
+                   "focusPower", "totHealth", "totPower", "partyHealth", "partyPower", "prdHealth", "prdPower" }
 
 local function ApplyBars(verbose)
     local live, missing = ns.Bars.Apply()
@@ -264,6 +270,8 @@ local HELP = {
         .. "/sab self shows it (self clear: start afresh)",
     "/sab perf [note] - what the liquid costs each frame, the unit frames and the nameplates apart, saved for "
         .. "tools/perf_report.py after /reload (perf reset: time afresh, perf clear: forget the saved ones)",
+    "/sab party [note] - what the game lets the addon read about the party frames, saved for /reload "
+        .. "(party clear: forget the saved ones)",
 }
 
 -- /sab perf keeps each report in the saved variables, which the client writes to disk on /reload or logout (addons
@@ -291,6 +299,19 @@ local function SavePerf(note)
     table.insert(db.perfLog, snap)
     while #db.perfLog > PERF_LOG_MAX do table.remove(db.perfLog, 1) end
     return true
+end
+
+-- /sab party: the same, its lines kept for reading after /reload, while the party frames have no liquid yet.
+local PARTY_LOG_MAX = 20
+
+local function SaveParty(lines, note)
+    local snap = { lines = lines, note = note, combat = InCombatLockdown() and true or false }
+    snap.when = date and date("%Y-%m-%d %H:%M:%S") or nil
+    snap.zone, snap.instance = Where()
+    snap.version = C_AddOns and C_AddOns.GetAddOnMetadata and C_AddOns.GetAddOnMetadata(ADDON_NAME, "Version") or nil
+    db.partyProbe = db.partyProbe or {}
+    table.insert(db.partyProbe, snap)
+    while #db.partyProbe > PARTY_LOG_MAX do table.remove(db.partyProbe, 1) end
 end
 
 SLASH_SMOOTHANIMATEDBARS1 = "/sab"
@@ -337,6 +358,14 @@ SlashCmdList.SMOOTHANIMATEDBARS = function(input)
             Core.Print("Saved (" .. #db.perfLog .. " in the log). /reload writes it to disk; then run "
                 .. "tools/perf_report.py for a text file.")
         end
+    elseif cmd == "party clear" then
+        db.partyProbe = nil
+        Core.Print("Saved party reports cleared.")
+    elseif cmd == "party" or cmd:match("^party ") then
+        local lines = ns.Bars.PartyDebug()
+        for _, line in ipairs(lines) do Core.Print(line) end
+        SaveParty(lines, strtrim(input or ""):match("^%S+%s+(.+)$"))
+        Core.Print("Saved (" .. #db.partyProbe .. " in the log). /reload writes it to disk.")
     elseif cmd == "perf reset" then
         ns.Bars.PerfReset()
         Core.Print("Timing from now on. /sab perf in a few seconds.")

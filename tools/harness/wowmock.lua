@@ -387,12 +387,20 @@ function UnitIsPlayer(unit)
     local u = other(unit)
     return u ~= nil and u.isOtherPlayer or false
 end
+-- Whether a unit is online: false for one that is not there, as in game for an empty party slot (/sab party), and for
+-- one with offline set.
+function UnitIsConnected(unit)
+    if unit == "player" then return true end
+    local u = other(unit)
+    return u ~= nil and not u.offline
+end
 function UnitReaction(unit) local u = other(unit); return u and u.reaction or nil end
 function UnitFactionGroup() return __player.faction end
 RAID_CLASS_COLORS = {
     PALADIN = { r = 0.96, g = 0.55, b = 0.73 }, MAGE = { r = 0.25, g = 0.78, b = 0.92 },
     DRUID = { r = 1.00, g = 0.49, b = 0.04 }, PRIEST = { r = 1.00, g = 1.00, b = 1.00 },
-    WARLOCK = { r = 0.53, g = 0.53, b = 0.93 },
+    WARLOCK = { r = 0.53, g = 0.53, b = 0.93 }, WARRIOR = { r = 0.78, g = 0.61, b = 0.43 },
+    ROGUE = { r = 1.00, g = 0.96, b = 0.41 },
 }
 
 -- Secret values (Forever runs the Midnight API): health and power are secret to addons, in and out of
@@ -624,6 +632,28 @@ do
     end
     prd:Hide()
 end
+-- The party frames (Shared/PartyFrame.lua, Mainline/PartyFrameTemplates.xml): four pooled member buttons named
+-- MemberFrame1..4 on PartyFrame, hidden outside a group. Health 70x10 in a container that holds its mask, mana 74x7
+-- with its mask on the bar, and each member's pet with a health bar. The unit is on the frame and, as UnitFrame_SetUnit
+-- puts it, on each bar too (party1..4).
+PartyFrame = CreateFrame("Frame", "PartyFrame", UIParent)
+for i = 1, 4 do
+    local name = "PartyFrame.MemberFrame" .. i
+    local unit = "party" .. i
+    local f = CreateFrame("Button", nil, PartyFrame)
+    f.layoutIndex, f.unit, f.unitToken = i, unit, unit
+    f.HealthBarContainer = CreateFrame("Frame", nil, f)
+    f.HealthBarContainer.HealthBar = NewStatusBar(name .. ".HealthBar", f.HealthBarContainer, 70, 10)
+    f.HealthBarContainer.HealthBarMask = f.HealthBarContainer:CreateMaskTexture()
+    f.ManaBar = NewStatusBar(name .. ".ManaBar", f, 74, 7)
+    f.ManaBar.ManaBarMask = f.ManaBar:CreateMaskTexture()
+    f.HealthBarContainer.HealthBar.unit, f.ManaBar.unit = unit, unit
+    f.PetFrame = CreateFrame("Button", nil, f)
+    f.PetFrame.HealthBar = NewStatusBar(name .. ".PetFrame.HealthBar", f.PetFrame, 71, 10)
+    f.PetFrame.HealthBar.unit = "partypet" .. i
+    f:Hide()
+    PartyFrame["MemberFrame" .. i] = f
+end
 -- The target's portrait, on the frame's container (TargetFrame.xml).
 TargetFrame.TargetFrameContainer = CreateFrame("Frame", nil, TargetFrame)
 TargetFrame.TargetFrameContainer.Portrait = TargetFrame.TargetFrameContainer:CreateTexture(nil, "BACKGROUND")
@@ -637,6 +667,7 @@ end
 function UnitExists(unit)
     if unit == "player" then return true end
     if plateUnit(unit) then return true end
+    if type(unit) == "string" and unit:match("^party%d$") then return __units[unit] ~= nil end
     return unit == "target" and __target ~= nil
 end
 function UnitGUID(unit)
@@ -751,7 +782,12 @@ C_AddOns = {
 }
 __player.power = 0 -- UnitPowerType index: 0 mana, 1 rage, 3 energy
 local POWER_TOKENS = { [0] = "MANA", [1] = "RAGE", [2] = "FOCUS", [3] = "ENERGY" }
-function UnitPowerType() return __player.power, POWER_TOKENS[__player.power] end
+-- Another unit's power type where __units gives it one (party members), else the player's.
+function UnitPowerType(unit)
+    local u = unit and __units[unit]
+    local index = u and u.power or __player.power
+    return index, POWER_TOKENS[index]
+end
 function UnitHealth() return __secret() end
 function UnitHealthMax() return __secret() end
 function UnitPower() return __secret() end

@@ -173,7 +173,8 @@ local function Bar(f, top, spec, setup)
     bar.text = top:CreateFontString(nil, "OVERLAY", "TextStatusBarText")
     bar.text:SetPoint("CENTER", bar, "CENTER", 0, 0)
     bar.max = setup.max
-    bar.state = ns.Bars.Preview(bar, { key = setup.key, unit = setup.unit, kind = setup.kind, token = setup.token })
+    bar.state = ns.Bars.Preview(bar, { key = setup.key, unit = setup.unit, kind = setup.kind, token = setup.token,
+                                       frame = setup.frame, class = setup.class })
     return bar
 end
 
@@ -277,6 +278,111 @@ function Preview.Create(parent)
         end
     end)
     holder.player, holder.target, holder.marker = player, target, marker
+    return holder
+end
+
+--------------------------------------------------------------------------------
+-- The preview party (the setup's party step)
+--------------------------------------------------------------------------------
+-- Forever's party member frame (Mainline PartyFrameTemplates.xml, with Camelot's PartyMemberFrame.lua for the bars),
+-- 120 x 53: its art at (1, -2), the portrait 37 across at (7, -6) in a circle, the name 55 wide at (48, -7). Health
+-- 70 x 10 at (47, -20), its mask 30 left of and 3 above it; power 74 x 7 at (44, -31), its mask at (16, -26) of the
+-- frame. Four of them in a row, each a class with its own power, following the party settings.
+
+local PARTY = {
+    art = "UI-HUD-UnitFrame-Party-PortraitOn",
+    health = { x = 47, y = -20, w = 70, h = 10, fillAtlas = "UI-HUD-UnitFrame-Party-PortraitOn-Bar-Health",
+               maskAtlas = "UI-HUD-UnitFrame-Party-PortraitOn-Bar-Health-Mask", maskX = -30, maskY = 3 },
+    power = { x = 44, y = -31, w = 74, h = 7,
+              maskAtlas = "UI-HUD-UnitFrame-Party-PortraitOn-Bar-Mana-Mask", maskX = 16 - 44, maskY = -26 + 31 },
+}
+-- The class icons, by file ID, where the client has no class icon atlas.
+local CLASS_ICONS = { WARRIOR = 626008, PRIEST = 626004, MAGE = 626001, ROGUE = 626005 }
+-- name, class, power type, most power
+local MEMBERS = {
+    { "Brannoc", "WARRIOR", "RAGE", 100 },
+    { "Elisande", "PRIEST", "MANA", 300 },
+    { "Corvin", "MAGE", "MANA", 320 },
+    { "Tessaly", "ROGUE", "ENERGY", 100 },
+}
+-- Health and power as fractions, looped: { seconds, then each member's health and power }. The warrior takes the hits
+-- and builds rage, the priest spends mana healing, the mage casting, the rogue's energy comes and goes.
+local PARTY_SCRIPT = {
+    { 0.0, 1.00, 0.10, 1.00, 0.90, 1.00, 1.00, 1.00, 1.00 },
+    { 1.2, 0.70, 0.40, 1.00, 0.90, 0.90, 0.80, 1.00, 0.60 },
+    { 2.2, 0.85, 0.55, 1.00, 0.75, 0.90, 0.65, 0.80, 0.40 },
+    { 3.0, 0.55, 0.70, 1.00, 0.75, 0.90, 0.50, 0.80, 0.75 },
+    { 4.0, 0.80, 0.30, 0.85, 0.60, 0.90, 0.50, 0.80, 0.35 },
+    { 5.0, 0.80, 0.30, 0.85, 0.60, 0.65, 0.35, 0.60, 0.70 },
+    { 6.0, 1.00, 0.20, 0.85, 0.45, 0.85, 0.35, 0.60, 1.00 },
+    { 7.2, 1.00, 0.10, 1.00, 0.90, 1.00, 1.00, 1.00, 1.00 },
+}
+
+local function Member(holder, spec)
+    local name, class, token, powerMax = unpack(spec)
+    local f = CreateFrame("Frame", nil, holder)
+    f:SetSize(120, 53)
+    local top = CreateFrame("Frame", nil, f)
+    top:SetAllPoints()
+    top:SetFrameLevel(f:GetFrameLevel() + 10)
+
+    local portrait = f:CreateTexture(nil, "BACKGROUND", nil, 1)
+    portrait:SetSize(37, 37)
+    portrait:SetPoint("TOPLEFT", 7, -6)
+    if not Atlas(portrait, "classicon-" .. class:lower()) then portrait:SetTexture(CLASS_ICONS[class] or QUESTION_MARK) end
+    local mask = f:CreateMaskTexture()
+    if Atlas(mask, "CircleMask") then
+        mask:SetAllPoints(portrait)
+        portrait:AddMaskTexture(mask)
+    end
+    local art = f:CreateTexture(nil, "BACKGROUND", nil, 2)
+    if Atlas(art, PARTY.art, true) then art:SetPoint("TOPLEFT", 1, -2) else art:Hide() end
+
+    local label = top:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    label:SetJustifyH("LEFT")
+    label:SetSize(55, 12)
+    label:SetPoint("TOPLEFT", 48, -7)
+    label:SetText(name)
+
+    local info = PowerBarColor and PowerBarColor[token]
+    f.health = Bar(f, top, PARTY.health, { key = "partyHealth", frame = "party", class = class, unit = "party1",
+        kind = "health", max = 400 })
+    f.power = Bar(f, top, PARTY.power, { key = "partyPower", frame = "party", class = class, unit = "party1",
+        kind = "power", token = token, max = powerMax, color = info and { info.r, info.g, info.b } or { 0, 0, 1 },
+        fillAtlas = info and info.atlas or nil })
+    -- The game shows party bar text only with its status text setting; the examples are cleaner without.
+    f.health.text:Hide()
+    f.power.text:Hide()
+    return f
+end
+
+-- The four members in a row, playing the loop while shown.
+function Preview.CreateParty(parent)
+    local holder = CreateFrame("Frame", nil, parent)
+    holder:SetSize(4 * 120 + 3 * 10, 53)
+    local members = {}
+    for i, spec in ipairs(MEMBERS) do
+        members[i] = Member(holder, spec)
+        members[i]:SetPoint("LEFT", (i - 1) * 130, 0)
+    end
+    local t, step = 0, 0
+    local function Play(i)
+        local row = PARTY_SCRIPT[i]
+        for n, m in ipairs(members) do
+            SetFraction(m.health, row[2 * n])
+            SetFraction(m.power, row[2 * n + 1])
+        end
+    end
+    Play(1)
+    holder:SetScript("OnUpdate", function(_, elapsed)
+        t = t + elapsed
+        if t >= LOOP then t, step = t - LOOP, 0 end
+        while PARTY_SCRIPT[step + 1] and PARTY_SCRIPT[step + 1][1] <= t do
+            step = step + 1
+            Play(step)
+        end
+    end)
+    holder.members = members
     return holder
 end
 

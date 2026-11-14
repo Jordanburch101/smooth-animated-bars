@@ -222,6 +222,21 @@ local SPOTS = {
     end },
 }
 
+-- The party frames (Blizzard_UnitFrame/Shared/PartyFrame.lua): a pool of four member buttons, named MemberFrame1..4 by
+-- their place each time the party frame is shown, each with its health bar in a container that holds its mask (as the
+-- player's) and its mana bar with the mask on it. The pool keeps the same four buttons but can put them in other places,
+-- so each bar gets a spot of its own the first time it is found (AddPartySpots), and its liquid follows the unit the game
+-- puts on the bar (bar.unit: party1..4, the pet's token in a vehicle, the player in Edit Mode's preview). Seen in game
+-- with /sab party: health and power secret as the player's, the masks there, the class readable, in a dungeon in
+-- combat too.
+local PARTY_KINDS = { health = "partyHealth", power = "partyPower" }
+
+local function PartyBar(i, kind)
+    local f = Path(rawget(_G, "PartyFrame"), "MemberFrame" .. i)
+    if kind == "health" then return Path(f, "HealthBarContainer", "HealthBar") end
+    return Path(f, "ManaBar")
+end
+
 -- Whether a spot is switched on.
 local function Wanted(spot)
     return ns.Core.Get(spot.key) and true or false
@@ -243,6 +258,8 @@ local previews = {} -- bar states on the setup wizard's preview frames
 local plates = {}   -- plate health bar -> bar state
 local plateOf = {}  -- nameplate token -> bar state, while the liquid is on it
 local pending = {}  -- nameplate token -> time it was added, while waiting for its unit frame or a free slot
+local partyEvents = {} -- event -> how many came for a party unit (party1..4, partypet1..4), for /sab party
+local partyWaiting = false -- party bars wanted whose frames were not there: GROUP_ROSTER_UPDATE tries again
 local driver
 
 -- Every bar state, the game's, the previews' and the nameplates'.
@@ -364,7 +381,7 @@ local function ThemeFor(b, choice)
     else
         theme = Themes.Get(choice)
         if theme.Resolve then -- class and faction colours
-            theme = theme:Resolve(b and b.unit, b and b.spot.preview)
+            theme = theme:Resolve(b and b.unit, b and b.spot.preview, b and b.spot.class)
             if not theme then
                 if b then b.fromGame = true end
                 theme = Themes.FromColor(GameColor(b), Themes.Get(Themes.default), b and b.spot.plate)
@@ -430,7 +447,7 @@ local function ApplyColor(b, force)
     if choice == "game" then
         key = "game:" .. token
     elseif choice == "class" then
-        local c = ns.Themes.UnitColor(b.unit, b.spot.preview)
+        local c = ns.Themes.UnitColor(b.unit, b.spot.preview, b.spot.class)
         key = c and string.format("class:%.3f,%.3f,%.3f", c[1], c[2], c[3]) or ("class:none:" .. token)
     end
     if key ~= b.colorKey or force then
@@ -494,10 +511,10 @@ local FuryOff -- the rage bar's fury going (below)
 local function SetLive(b, live)
     if live == b.live then return end
     b.live = live
-    b.clip:SetShown(live)
+    b.clip:SetShown(live and not b.away)
     if b.texts then b.texts.frame:SetShown(live) end
     if b.shadeFrame then b.shadeFrame:SetShown(live) end
-    HideGameFill(b.bar, live and 0 or 1)
+    HideGameFill(b.bar, (live and not b.away) and 0 or 1)
     if live then
         Feed(b, false)
         b.liquid:Snap(b.width) -- the liquid is always full on its frame
@@ -954,9 +971,9 @@ local function Curves()
 end
 
 -- Whether the bar shows rage: a warrior's, a druid's in Bear Form, a target's, the Personal Resource Display's (not its
--- mana under the form).
+-- mana under the form). Not yet a party member's: not tried.
 local function ShowsRage(b)
-    if b.kind ~= "power" or b.spot.plate or b.spot.preview then return false end
+    if b.kind ~= "power" or b.spot.plate or b.spot.preview or b.spot.party then return false end
     if b.spot.token then return b.spot.token == "RAGE" end
     local _, token = UnitPowerType(b.unit)
     return not Secret(token) and token == "RAGE"
@@ -1162,19 +1179,55 @@ local function CostsRage(spellID)
     return false
 end
 
+-- A party bar's member offline: the game shows the bar full and grey (PartyMemberFrameMixin:UpdateOnlineStatus), which
+-- says more than a full liquid would, so its own fill comes back until the member does.
+local function SetAway(b, away)
+    if away == (b.away or false) then return end
+    b.away = away
+    b.clip:SetShown(not away)
+    HideGameFill(b.bar, away and 1 or 0)
+    if away then
+        b.liquid:HideAll()
+    else
+        Feed(b, false)
+        b.liquid:Snap(b.width)
+    end
+end
+
+local PARTY_CHECK_EVERY = 0.5 -- seconds between looks at whether a party member is online
+
+-- A party bar follows the unit the game shows on it.
+local function PartyFollow(b, dt)
+    local unit = b.bar.unit
+    if type(unit) == "string" and not Secret(unit) and unit ~= b.unit then
+        b.unit, b.checkIn = unit, 0
+        ApplyColor(b)
+        Feed(b, false)
+    end
+    b.checkIn = (b.checkIn or 0) - dt
+    if b.checkIn > 0 then return end
+    b.checkIn = PARTY_CHECK_EVERY
+    local ok, connected = pcall(UnitIsConnected, b.unit)
+    SetAway(b, ok and not Secret(connected) and connected == false)
+end
+
 local function UpdateBar(b, dt)
     local bar = b.bar
     if not Visible(bar) then
-        b.away = true
+        b.unseen = true
         return
+    end
+    if b.spot.party then
+        PartyFollow(b, dt)
+        if b.away then return end
     end
     -- The game can swap or reset its fill textures; keep them hidden under the liquid.
     HideGameFill(bar, 0)
     -- Back after being hidden (the Personal Resource Display shown in combat only, the mana under a druid's form, a
     -- frame with no unit): the liquid starts where the bar is, not easing over from where it was, and calm, not
     -- finishing a burst from before it was hidden.
-    if b.away then
-        b.away = nil
+    if b.unseen then
+        b.unseen = nil
         Feed(b, false)
         b.liquid:Settle()
         if b.fury and b.fury.on then b.fury.liquid:Settle() end
@@ -1458,6 +1511,7 @@ local function OnPlateEvent(event, unit)
 end
 
 local function OnEvent(_, event, unit, ...)
+    if type(unit) == "string" and unit:match("^party") then partyEvents[event] = (partyEvents[event] or 0) + 1 end
     if event == "UNIT_SPELLCAST_SUCCEEDED" then
         if unit ~= "player" then return end
         local _, spellID = ...
@@ -1476,6 +1530,19 @@ local function OnEvent(_, event, unit, ...)
         if pb and pb.live and STIR_EVENTS[event] == "health" then Stir(pb) end
         OnPlateEvent(event, unit)
         -- The same unit can be the target or focus as well, which the frames' own events cover.
+        return
+    end
+    if event == "GROUP_ROSTER_UPDATE" then
+        -- Someone joined or left: a party bar can show another member under the same token, and the party frames may
+        -- only now be there to build on (built out of combat, as at login).
+        if partyWaiting and not InCombatLockdown() then Bars.Apply() end
+        for _, b in pairs(bars) do
+            if b.live and b.spot.party then
+                b.checkIn = 0
+                ApplyColor(b)
+                Feed(b, false)
+            end
+        end
         return
     end
     local fresh = NEW_UNIT[event]
@@ -1506,7 +1573,7 @@ local function OnEvent(_, event, unit, ...)
 end
 
 local EVENTS = { "PLAYER_TARGET_CHANGED", "UNIT_DISPLAYPOWER", "UNIT_HEALTH", "UNIT_MAXHEALTH", "UNIT_POWER_UPDATE",
-                 "UNIT_MAXPOWER", "UNIT_TARGET", "UNIT_PET", "PLAYER_FOCUS_CHANGED" }
+                 "UNIT_MAXPOWER", "UNIT_TARGET", "UNIT_PET", "PLAYER_FOCUS_CHANGED", "GROUP_ROSTER_UPDATE" }
 local PLATE_EVENTS = { "NAME_PLATE_UNIT_ADDED", "NAME_PLATE_UNIT_REMOVED", "UNIT_FACTION" }
 local BOTH = { UNIT_HEALTH = true, UNIT_MAXHEALTH = true } -- the frames' events that the plates use too
 
@@ -1536,16 +1603,45 @@ function Bars.FindAll(key)
     return out
 end
 
+local function IsBar(bar)
+    return type(bar) == "table" and bar.GetStatusBarTexture and bar.GetValue and true or false
+end
+
+-- A spot for each party bar wanted and not yet built, wherever the pool has put it. Returns whether a member frame
+-- was missing, to look again when the group changes.
+local function AddPartySpots()
+    local built, missing = {}, false
+    for _, b in pairs(bars) do built[b.bar] = true end
+    for kind, key in pairs(PARTY_KINDS) do
+        if ns.Core.Get(key) then
+            for i = 1, 4 do
+                local bar = PartyBar(i, kind)
+                if bar == nil then
+                    missing = true
+                elseif IsBar(bar) and not built[bar] then
+                    built[bar] = true
+                    local spot = { key = key, frame = "party", optional = true, party = true, unit = "party" .. i,
+                                   kind = kind, find = function() return bar end }
+                    SPOTS[#SPOTS + 1] = spot
+                    bars[spot] = NewBar(spot, bar)
+                end
+            end
+        end
+    end
+    return missing
+end
+
 -- Show the liquid on the bars that are switched on, building each the first time it is wanted.
 -- Returns how many of the game's bars are showing it and how many were wanted but not found.
 function Bars.Apply()
     local live, missing = 0, 0
+    local waiting = AddPartySpots()
     for _, spot in ipairs(SPOTS) do
         local want = Wanted(spot)
         local b = bars[spot]
         if want and not b then
             local bar = spot.find()
-            if type(bar) == "table" and bar.GetStatusBarTexture and bar.GetValue then
+            if IsBar(bar) then
                 b = NewBar(spot, bar)
                 bars[spot] = b
                 -- A flat bar's liquid goes above the bar, under copies of its texts, as on the plates.
@@ -1562,6 +1658,7 @@ function Bars.Apply()
             if b.live then live = live + 1 end
         end
     end
+    partyWaiting = waiting
     -- Previews follow the same settings, so the wizard shows each choice on them.
     local any = live
     for _, b in ipairs(previews) do
@@ -1569,7 +1666,7 @@ function Bars.Apply()
         if b.live then any = any + 1 end
     end
     local platesOn = PlatesWanted()
-    if (any > 0 or platesOn) and not driver then
+    if (any > 0 or platesOn or waiting) and not driver then
         driver = CreateFrame("Frame")
         driver:SetScript("OnUpdate", OnUpdate)
         driver:SetScript("OnEvent", OnEvent)
@@ -1577,7 +1674,11 @@ function Bars.Apply()
     if driver then
         driver:SetShown(any > 0 or platesOn)
         for _, event in ipairs(EVENTS) do
-            if live > 0 or (platesOn and BOTH[event]) then driver:RegisterEvent(event) else driver:UnregisterEvent(event) end
+            if live > 0 or (platesOn and BOTH[event]) or (waiting and event == "GROUP_ROSTER_UPDATE") then
+                driver:RegisterEvent(event)
+            else
+                driver:UnregisterEvent(event)
+            end
         end
         for _, event in ipairs(PLATE_EVENTS) do
             if platesOn then driver:RegisterEvent(event) else driver:UnregisterEvent(event) end
@@ -1588,7 +1689,8 @@ function Bars.Apply()
 end
 
 -- The liquid on a bar of a preview frame. spec: { key = its on/off setting, unit, kind, token = power
--- type for a power bar }. Returns its state, for Bars.Stir.
+-- type for a power bar, frame = whose colour setting it follows, class = the class it stands for }. Returns its
+-- state, for Bars.Stir.
 -- spec.plate makes it a nameplate's (the setup's nameplate step): the plate mask, a level above the bar as in game,
 -- and spec.frame ("plate" or "friend") names whose colour setting it follows.
 function Bars.Preview(bar, spec)
@@ -1775,7 +1877,8 @@ function Bars.Debug()
     local out = { "smoothing: " .. YesNo(INTERPOLATION) }
     for _, spot in ipairs(SPOTS) do
         local b = bars[spot]
-        local label = spot.label or (spot.unit .. " " .. spot.kind)
+        local label = (spot.label or ((b and b.unit or spot.unit) .. " " .. spot.kind))
+            .. (b and b.away and " (offline)" or "")
         if not b then
             out[#out + 1] = label .. ": " .. (Wanted(spot) and "not found" or "off")
         else
@@ -1799,6 +1902,111 @@ function Bars.Debug()
     out[#out + 1] = string.format("enemy nameplates: %s, %d with the liquid (at most %d); friendly: %s, %d (at most %d); "
         .. "%d built, %d waiting", ns.Core.Get("plateHealth") and "on" or "off", CountSide("enemy"), MAX_PLATES,
         ns.Core.Get("plateFriendly") and "on" or "off", CountSide("friend"), MAX_FRIENDLY, Count(plates), Count(pending))
+    return out
+end
+
+--------------------------------------------------------------------------------
+-- Party frames (/sab party)
+--------------------------------------------------------------------------------
+
+-- /sab party reports what the game lets the addon read about the party frames, the liquid on them aside: PartyFrame (Blizzard_UnitFrame/Shared/PartyFrame.lua) keeps a pool of four PartyMemberFrameTemplate
+-- buttons, named MemberFrame1..4 by their place each time it is shown. Each has HealthBarContainer.HealthBar, its mask
+-- on the container as on the player's, and ManaBar, its mask on the bar, and its unit in .unit, which the game changes
+-- (the pet's token in a vehicle, "player" in Edit Mode's preview). Raid-style party frames are CompactPartyFrame's,
+-- CompactUnitFrames with flat bars. Only widgets are asked, nothing of the game's own Lua is called.
+
+local function Show(v)
+    if Secret(v) then return "secret" end
+    if type(v) == "number" then return string.format("%.4g", v) end
+    return tostring(v)
+end
+
+local function Pack(...) return { n = select("#", ...), ... } end
+
+-- What fn answers, every value through Show: "none" if there is no such function, "error" if it throws.
+local function Ask(fn, ...)
+    if type(fn) ~= "function" then return "none" end
+    local r = Pack(pcall(fn, ...))
+    if not r[1] then return "error" end
+    local parts = {}
+    for i = 2, r.n do parts[#parts + 1] = Show(r[i]) end
+    return #parts > 0 and table.concat(parts, " ") or "nothing"
+end
+
+local function Call(obj, method, ...)
+    if type(obj) ~= "table" then return "none" end
+    return Ask(obj[method], obj, ...)
+end
+
+local function Has(v) return type(v) == "table" and "yes" or "no" end
+
+local function BarReport(label, bar, kind)
+    if type(bar) ~= "table" or not bar.GetValue then return label .. ": not found" end
+    local okFill, fill = pcall(bar.GetStatusBarTexture, bar)
+    local okMask, mask = pcall(BarMask, bar, kind)
+    local line = string.format("%s (%s): liquid %s, size %s x %s, value %s, range %s, colour %s, level %s, visible %s, "
+        .. "mask %s, fill alpha %s, bar.unit %s", label, Call(bar, "GetDebugName"), YesNo(Bars.IsLive(bar)),
+        Call(bar, "GetWidth"), Call(bar, "GetHeight"),
+        Call(bar, "GetValue"), Call(bar, "GetMinMaxValues"), Call(bar, "GetStatusBarColor"), Call(bar, "GetFrameLevel"),
+        Call(bar, "IsVisible"), okMask and (mask and "yes" or "no") or "error", okFill and Call(fill, "GetAlpha") or "error",
+        Show(bar.unit))
+    if kind == "health" then
+        line = line .. string.format(", heal prediction mine %s others %s, temp max loss %s, loss bar %s",
+            Has(bar.MyHealPredictionBar), Has(bar.OtherHealPredictionBar), Has(Path(bar:GetParent(), "TempMaxHealthLoss")),
+            Has(bar.AnimatedLossBar))
+    end
+    return line
+end
+
+-- What the game says of a unit; nothing is compared, so secret answers show as "secret".
+local function UnitReport(unit)
+    return string.format("exists %s, connected %s, player %s, class %s, power type %s, health %s of %s, can attack %s",
+        Ask(rawget(_G, "UnitExists"), unit), Ask(rawget(_G, "UnitIsConnected"), unit), Ask(rawget(_G, "UnitIsPlayer"), unit),
+        Ask(rawget(_G, "UnitClass"), unit), Ask(rawget(_G, "UnitPowerType"), unit), Ask(rawget(_G, "UnitHealth"), unit),
+        Ask(rawget(_G, "UnitHealthMax"), unit), Ask(rawget(_G, "UnitCanAttack"), "player", unit))
+end
+
+local function MemberReport(out, label, frame, health, power)
+    out[#out + 1] = string.format("%s: shown %s, visible %s, layoutIndex %s, unit %s, unitToken %s, overrideUnit %s, "
+        .. "displayedUnit %s", label, Call(frame, "IsShown"), Call(frame, "IsVisible"), Show(frame.layoutIndex),
+        Show(frame.unit), Show(frame.unitToken), Show(frame.overrideUnit), Show(frame.displayedUnit))
+    local unit = frame.unit
+    if type(unit) == "string" and not Secret(unit) then out[#out + 1] = "  " .. unit .. ": " .. UnitReport(unit) end
+    out[#out + 1] = "  " .. BarReport("health", health, "health")
+    out[#out + 1] = "  " .. BarReport("power", power, "power")
+end
+
+function Bars.PartyDebug()
+    local out = {}
+    out[#out + 1] = string.format("in group %s, members %s, in combat %s", Ask(rawget(_G, "IsInGroup")),
+        Ask(rawget(_G, "GetNumSubgroupMembers")), Ask(rawget(_G, "InCombatLockdown")))
+    local party = rawget(_G, "PartyFrame")
+    out[#out + 1] = "PartyFrame: " .. (type(party) == "table"
+        and string.format("shown %s, visible %s", Call(party, "IsShown"), Call(party, "IsVisible")) or "none")
+    if type(party) == "table" then
+        for i = 1, 4 do
+            local f = party["MemberFrame" .. i]
+            if type(f) == "table" then
+                MemberReport(out, "MemberFrame" .. i, f, Path(f, "HealthBarContainer", "HealthBar"), f.ManaBar)
+                out[#out + 1] = "  pet " .. BarReport("health", Path(f, "PetFrame", "HealthBar"), "health")
+            else
+                out[#out + 1] = "MemberFrame" .. i .. ": none"
+            end
+        end
+    end
+    local compact = rawget(_G, "CompactPartyFrame")
+    out[#out + 1] = "CompactPartyFrame (raid-style): " .. (type(compact) == "table"
+        and string.format("shown %s, visible %s", Call(compact, "IsShown"), Call(compact, "IsVisible")) or "none")
+    if type(compact) == "table" then
+        for i = 1, 5 do
+            local f = rawget(_G, "CompactPartyFrameMember" .. i) or Path(compact, "memberUnitFrames", i)
+            if type(f) == "table" then MemberReport(out, "CompactPartyFrameMember" .. i, f, f.healthBar, f.powerBar) end
+        end
+    end
+    local seen = {}
+    for event, n in pairs(partyEvents) do seen[#seen + 1] = event .. " " .. n end
+    table.sort(seen)
+    out[#out + 1] = "events for party units since /reload: " .. (#seen > 0 and table.concat(seen, ", ") or "none")
     return out
 end
 

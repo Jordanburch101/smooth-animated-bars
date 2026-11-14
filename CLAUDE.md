@@ -171,6 +171,20 @@ Facts found while building this, which the code relies on and which are not obvi
   named after them; the focus is the target's template; each target of target is `TargetFrameToT`/`FocusFrameToT`
   (`.HealthBar`, `.ManaBar`, masks on the bar). No unit events fire for `targettarget`/`focustarget`, so their
   liquid is refreshed on `UNIT_TARGET` and never stirred. Not yet seen in game.
+- **Party frames** (`Bars.lua`, `AddPartySpots`; `/sab party` reports what the game shows, saved in
+  `SmoothAnimatedBarsDB.partyProbe` for `/reload`): `PartyFrame` (`Blizzard_UnitFrame/Shared/PartyFrame.lua`) pools four
+  `PartyMemberFrameTemplate` buttons and on each show releases and re-acquires them as `MemberFrame1..4`, so a bar can
+  land in another place: each bar gets a spot of its own when first found. Health is
+  `HealthBarContainer.HealthBar` (mask on the container), power `ManaBar` (mask on the bar), 70x10 and 74x7. The game
+  puts the unit on each bar (`bar.unit`, party1..4), which the liquid follows. Seen in game with `/sab party`, in
+  Stormwind and in the Stockade in combat: health, power and `UnitHealthMax` secret, sizes, masks and the fill's alpha
+  readable, class and power type readable (in a dungeon in combat too), `UNIT_HEALTH`/`UNIT_POWER_UPDATE` fire for
+  the party units (power many times a second). Each health bar has the game's `MyHealPredictionBar`,
+  `OtherHealPredictionBar` and `TempMaxHealthLoss`; how they draw against the liquid is not yet seen. An empty slot's
+  unit answers `UnitIsConnected` false, and while a member is offline the game's grey bar is given back. Raid-style
+  party frames (`CompactPartyFrameMember1..5`, CompactUnitFrames) are another matter: no masks, and their colour and
+  fill alpha secret even out of combat. The party pets' bars (`PetFrame.HealthBar`, no mask) and the fury on a party
+  member's rage are left out for now. Liquid on the party bars not yet seen in game.
 - **Enemy nameplates** (`Bars.lua`, `plateHealth`, off by default): Forever's plates are `Blizzard_NamePlates`
   (`forever` branch). The game pools the plates' unit frames: `NamePlateBaseMixin:AcquireUnitFrame` sets
   `plate.UnitFrame` and `plate.unitToken` on `NAME_PLATE_UNIT_ADDED` (perhaps after our handler), and the release
@@ -269,7 +283,7 @@ Facts found while building this, which the code relies on and which are not obvi
   copies of the texts), but keep the unit frames' motes, stirs and Rage Fury, and their theme: the bar's own colour at
   full strength, not the plates' deep one at `PLATE_SHADE`, which looked dull next to the player frame in game.
   `spot.plate` stays for what only nameplates do. A frame hidden and shown again snaps the liquid to its value
-  (`UpdateBar`, `away`). The power bar's `ManaCostPredictionBar`, `FeedbackFrame` and `FullPowerFrame` are at or near
+  (`UpdateBar`, `unseen`; `away` is a party member offline). The power bar's `ManaCostPredictionBar`, `FeedbackFrame` and `FullPowerFrame` are at or near
   the bar's level, so the raised liquid may cover their nearest pixels. Seen in game: it shows and fits the rim. The
   heal marker (`HealMarker.lua`, `extra`) puts a marker on each PRD bar from the same heals, shown only while that bar's
   liquid is live, one level above the bar (under the liquid two up, as the DoT marker on a plate), so it needs no seam;
@@ -281,7 +295,8 @@ Facts found while building this, which the code relies on and which are not obvi
   `AlternatePowerBar`, but on Forever only a druid's is used, so only druids build one.
 - **Unit frame menus** (`Options.lua`, `AddToUnitMenus`): `Menu.ModifyMenu("MENU_UNIT_" .. which, ...)` adds Open
   Settings; the frames pass themselves as `contextData.ownerFrame` (Mainline `PlayerFrame.lua`, `TargetFrame.lua`,
-  `PetFrame.lua`), which tells them from chat names and party frames. Seen in game, and the menus' protected actions
+  `PetFrame.lua`), which tells them from chat names. The party's member frames are pooled and nameless, so they are
+  told by their parent, `PartyFrame` (not yet seen in game). Seen in game, and the menus' protected actions
   (Set Focus, Target Marker Icon) still work with it, in and out of combat. But not in an instance: there a mob's
   name is secret, so the menu's title has a secret width, which the game can lay out only untainted. Anything added
   taints the layout, which errors (`FrameUtil.lua` `GetUnscaledFrameRect`, "a secret number value, while execution

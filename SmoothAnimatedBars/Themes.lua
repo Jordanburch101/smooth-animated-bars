@@ -128,16 +128,21 @@ local function IsSecret(v)
     return issecretvalue and issecretvalue(v)
 end
 
--- A unit's class colour, or nil if the client will not say.
-local function ClassOf(unit)
-    local ok, _, class = pcall(UnitClass, unit)
-    if not ok or IsSecret(class) then return nil end
+-- A class's colour by its token ("WARRIOR"), or nil.
+local function ColorOfClass(class)
     local colors = CUSTOM_CLASS_COLORS or RAID_CLASS_COLORS
     local cc = class and colors and colors[class]
     if not cc then return nil end
     local c = { cc.r, cc.g, cc.b }
     if c[1] + c[2] + c[3] > 2.6 then c = Scale(c, 0.8) end -- priests: silver rather than white
     return c
+end
+
+-- A unit's class colour, or nil if the client will not say.
+local function ClassOf(unit)
+    local ok, _, class = pcall(UnitClass, unit)
+    if not ok or IsSecret(class) then return nil end
+    return ColorOfClass(class)
 end
 
 -- The colours the game gives nameplates' bars: pure red, yellow and green (its fill shows an enemy's as (144, 0, 0)).
@@ -158,8 +163,10 @@ Themes.ReactionColor = ReactionOf
 -- The colour Class Color gives a bar of this unit, or nil if the client will not say: the player's own class (on
 -- the pet's bars too), another player's class (target, focus, target of target), and for a mob what the
 -- mobClassColor setting asks for (nil for "game"). A preview's target stands for a
--- hostile mob, whose class it does not have, so there it shows the player's class in place of the mob's.
-function Themes.UnitColor(unit, preview)
+-- hostile mob, whose class it does not have, so there it shows the player's class in place of the mob's. class: the
+-- class a preview's bar stands for (the setup's example party members).
+function Themes.UnitColor(unit, preview, class)
+    if class then return ColorOfClass(class) end
     if not unit or unit == "player" or unit == "pet" then return ClassOf("player") end
     local mobs = ns.Core.Get("mobClassColor")
     if preview then
@@ -177,8 +184,8 @@ end
 
 Themes.Register("class", {
     name = "Class Color",
-    Resolve = function(self, unit, preview)
-        local c = Themes.UnitColor(unit, preview)
+    Resolve = function(self, unit, preview, class)
+        local c = Themes.UnitColor(unit, preview, class)
         if c then return FromColor(c, self) end
         if unit and unit ~= "player" and unit ~= "pet" then return nil end -- the bar's own colour
         return self

@@ -183,6 +183,24 @@ lua.execute("SlashCmdList.SMOOTHANIMATEDBARS('debug')")
 dbg = [m for m in chat(lua) if "value secret" in m and ("|r player " in m or "|r target " in m)]
 check(len(dbg) == 4 and all("live yes" in m and "mask yes" in m and "error" not in m for m in dbg),
       f"/sab debug reports each bar ({len(dbg)} lines)")
+# /sab party: what the party frames show, without touching them. One member in a group, its unit kept secret.
+lua.execute("""local f = PartyFrame.MemberFrame1
+    f:Show(); f.unit = __secret()
+    f.HealthBarContainer.HealthBar:SetMinMaxValues(0, __secret()); f.HealthBarContainer.HealthBar:SetValue(__secret())
+    __fire('UNIT_HEALTH', 'party1')
+    SlashCmdList.SMOOTHANIMATEDBARS('party in a dungeon')""")
+party = chat(lua)
+member = [m for m in party if "MemberFrame1: shown true" in m and "unit secret" in m]
+health = [m for m in party if "health (PartyFrame.MemberFrame1.HealthBar): " in m]
+check(len(member) == 1 and len(health) == 1 and "value secret" in health[0] and "mask yes" in health[0]
+      and any("PartyFrame.MemberFrame4.ManaBar" in m and "mask yes" in m for m in party)
+      and any("events for party units since /reload: UNIT_HEALTH 1" in m for m in party),
+      "/sab party reports each member frame, its bars, masks and secrets, and the party units' events")
+check(lua.eval("#SmoothAnimatedBarsDB.partyProbe") == 1 and lua.eval("SmoothAnimatedBarsDB.partyProbe[1].note") == "in a dungeon"
+      and lua.eval("#SmoothAnimatedBarsDB.partyProbe[1].lines") > 10, "and saves the report for /reload, with its note")
+check("liquid yes" in health[0], "and whether each has the liquid")
+lua.execute("SlashCmdList.SMOOTHANIMATEDBARS('party clear'); PartyFrame.MemberFrame1:Hide()")
+check(lua.eval("SmoothAnimatedBarsDB.partyProbe") is None, "/sab party clear forgets them")
 check(not any("Error in" in m for m in chat(lua)), "no errors")
 
 print("== settings")
@@ -192,7 +210,9 @@ keys = [r.key for r in rows if r.key]
 check(keys == ["playerHealth", "healthColor", "playerPower", "powerColor", "targetHealth", "targetHealthColor",
                "targetPower", "targetPowerColor", "mobClassColor", "petHealth", "petHealthColor", "petPower",
                "petPowerColor", "focusHealth", "focusHealthColor", "focusPower", "focusPowerColor", "totHealth",
-               "totHealthColor", "totPower", "totPowerColor", "prdHealth", "prdHealthColor", "prdPower", "prdPowerColor", "plateHealth", "plateHealthColor", "plateDots", "plateFriendly", "plateFriendlyColor", "mobClassColor",
+               "totHealthColor", "totPower", "totPowerColor", "partyHealth", "partyHealthColor", "partyPower",
+               "partyPowerColor", "prdHealth", "prdHealthColor", "prdPower", "prdPowerColor", "plateHealth",
+               "plateHealthColor", "plateDots", "plateFriendly", "plateFriendlyColor", "mobClassColor",
                "waves", "swirl", "bubbles", "sparkles", "ambient", "lightning", "dots", "dotKillIcon", "heals", "manaBuild", "rageFury"],
       f"settings page rows: {keys}")
 check(not lua.eval("__sharedListTainted"), "nothing added to the game's shared settings list (Forever: Social blocked)")
@@ -388,6 +408,92 @@ run(sf, 0.05)
 check(sf.eval("__motes(PetFrameHealthBar)") > before, "a change to the pet's health stirs its liquid")
 check(not any("Error" in m for m in chat(sf)), "no errors")
 
+print("== party frames")
+PARTY_HEALTH = "PartyFrame.MemberFrame{}.HealthBarContainer.HealthBar"
+PARTY_POWER = "PartyFrame.MemberFrame{}.ManaBar"
+pf = session()
+# Two members join (Forever: their health and power secret, their class readable, seen with /sab party in game).
+pf.execute("""
+    __units.party1 = { isOtherPlayer = true, class = 'MAGE', power = 0 }
+    __units.party2 = { isOtherPlayer = true, class = 'PRIEST', power = 1 }
+    for i = 1, 2 do
+        local f = PartyFrame['MemberFrame' .. i]
+        for _, b in ipairs({ f.HealthBarContainer.HealthBar, f.ManaBar }) do b:SetMinMaxValues(0, __secret()); b:SetValue(__secret()) end
+        f:Show()
+    end
+    __fire('GROUP_ROSTER_UPDATE')
+""")
+run(pf, 0.5)
+bars = [PARTY_HEALTH.format(1), PARTY_POWER.format(1), PARTY_HEALTH.format(2), PARTY_POWER.format(2)]
+check(all(pf.eval(f"(select(2, __liquid({b})))") > 0 and pf.eval(f"{b}.fill.alpha") == 0 for b in bars),
+      "liquid in the shown members' health and power bars, on their secret values, the game's fill hidden")
+check(pf.eval(f"""(function()
+    local _, _, mover = __ours({PARTY_HEALTH.format(1)})
+    for _, r in ipairs(__regions) do
+        if r.parent == mover and r.masks and r.masks[1] == PartyFrame.MemberFrame1.HealthBarContainer.HealthBarMask then return true end
+    end
+end)()""") and pf.eval(f"(select(4, __liquid({PARTY_POWER.format(1)})))") > 0,
+      "health cut by the mask on its container, power by the one on its bar")
+r, g, b = pf.eval(f"__tint({PARTY_HEALTH.format(1)})")
+check(g > 0.5 and r < 0.4, f"Same as Yours, Game Colour: health green ({r:.2f}, {g:.2f}, {b:.2f})")
+r, g, b = pf.eval(f"__tint({PARTY_POWER.format(2)})")
+check(r > 0.5 and b < 0.3, f"and power by each member's own power type: the second member's rage red ({r:.2f}, {g:.2f}, {b:.2f})")
+pf.execute("__settings.partyHealthColor:SetValue('class')")
+run(pf, 0.2)
+r, g, b = pf.eval(f"__tint({PARTY_HEALTH.format(1)})")
+pr, pg, pb = pf.eval(f"__tint({PARTY_HEALTH.format(2)})")
+check(b > 0.8 and r < 0.5 and pr > 0.6 and abs(pr - pb) < 0.15,
+      f"Class Color: each member's class, a mage blue, a priest silver ({r:.2f}, {g:.2f}, {b:.2f} / {pr:.2f}, {pg:.2f}, {pb:.2f})")
+before = pf.eval(f"__motes({PARTY_HEALTH.format(1)})")
+pf.execute("__fire('UNIT_HEALTH', 'party1')")
+run(pf, 0.05)
+check(pf.eval(f"__motes({PARTY_HEALTH.format(1)})") > before, "a change to a member's health stirs their liquid")
+# The game moves another member onto a bar: in a vehicle, or when the pool hands the frames out again.
+pf.execute(f"{PARTY_HEALTH.format(1)}.unit = 'party2'")
+run(pf, 0.2)
+r, g, b = pf.eval(f"__tint({PARTY_HEALTH.format(1)})")
+check(abs(r - b) < 0.15 and r > 0.6, f"the liquid follows the unit the game puts on the bar ({r:.2f}, {g:.2f}, {b:.2f})")
+pf.execute(f"{PARTY_HEALTH.format(1)}.unit = 'party1'")
+pf.execute("__units.party1.offline = true")
+run(pf, 0.7)
+check(pf.eval(f"{PARTY_HEALTH.format(1)}.fill.alpha") == 1 and pf.eval(f"(select(2, __liquid({PARTY_HEALTH.format(1)})))") == 0
+      and pf.eval(f"(select(2, __liquid({PARTY_HEALTH.format(2)})))") > 0,
+      "a member offline: the game's grey bar back for them, the others keep the liquid")
+pf.execute("__units.party1.offline = nil")
+run(pf, 0.7)
+check(pf.eval(f"{PARTY_HEALTH.format(1)}.fill.alpha") == 0 and pf.eval(f"(select(2, __liquid({PARTY_HEALTH.format(1)})))") > 0,
+      "and the liquid again once they are back")
+pf.execute("__settings.partyPower:SetValue(false)")
+run(pf, 0.2)
+check(pf.eval(f"(select(2, __liquid({PARTY_POWER.format(1)})))") == 0 and pf.eval(f"{PARTY_POWER.format(1)}.fill.alpha") == 1
+      and pf.eval(f"(select(2, __liquid({PARTY_HEALTH.format(1)})))") > 0, "Party Power off: the game's power bars, health stays")
+check(row(pf, "partyHealthColor").frame.shown and not row(pf, "partyPowerColor").frame.shown, "and its colour option goes")
+pf.execute("SlashCmdList.SMOOTHANIMATEDBARS('debug')")
+check(any("party1 health" in m and "live yes" in m for m in chat(pf)), "/sab debug lists the party bars by their unit")
+check(not any("Error" in m for m in chat(pf)), "no errors")
+# A member frame only there after login, and the pool handing the frames out in other places by then (it does each time
+# the party frame is shown): the new frame gets the liquid when the group changes, and no bar gets two.
+late = session(setup="__hidden = PartyFrame.MemberFrame1; PartyFrame.MemberFrame1 = nil")
+late.execute("""
+    PartyFrame.MemberFrame1, PartyFrame.MemberFrame2 = PartyFrame.MemberFrame2, __hidden
+    __units.party2 = { isOtherPlayer = true, class = 'MAGE' }
+    local b = PartyFrame.MemberFrame2.HealthBarContainer.HealthBar
+    b.unit = 'party2' -- UnitFrame_SetUnit, as the frame takes its new place
+    b:SetMinMaxValues(0, __secret()); b:SetValue(__secret())
+    PartyFrame.MemberFrame2:Show()
+    __fire('GROUP_ROSTER_UPDATE')
+""")
+run(late, 0.3)
+check(late.eval(f"(select(2, __liquid({PARTY_HEALTH.format(2)})))") > 0 and not any("Could not find" in m for m in chat(late)),
+      "a member frame missing at login: nothing reported, built when the group changes, wherever the pool puts it")
+check(all(late.eval(f"""(function()
+    local n = 0
+    for _, f in ipairs(__frames) do if f.parent == {b} and f.SetValue then n = n + 1 end end
+    return n
+end)()""") == 1 for b in [PARTY_HEALTH.format(i) for i in range(1, 5)] + [PARTY_POWER.format(i) for i in range(1, 5)]),
+      "one liquid on each of the eight bars")
+check(not any("Error" in m for m in chat(late)), "no errors")
+
 print("== a bar whose size is kept secret")
 ss = session("{ setupDone = true, dots = true }")
 ss.execute("__target = { guid = 'Creature-0-1-2-3-299-0001', name = 'Mottled Boar' }; __fire('PLAYER_TARGET_CHANGED')")
@@ -446,7 +552,10 @@ um.execute("""
         end
     end
 """)
-for which, frame, section in (("PET", "PetFrame", "Pet"), ("FOCUS", "FocusFrame", "Focus"), ("SELF", "PlayerFrame", "Player")):
+check(um.eval("#__openUnitMenu('PARTY', { ownerFrame = PartyFrame.MemberFrame2, unit = 'party2' })") == 3,
+      "PARTY menu from a party member's frame (pooled, without a name): added")
+for which, frame, section in (("PET", "PetFrame", "Pet"), ("FOCUS", "FocusFrame", "Focus"), ("SELF", "PlayerFrame", "Player"),
+                              ("PARTY", "PartyFrame.MemberFrame1", "Party")):
     um.execute(f"__closeSettings(); local items = __openUnitMenu('{which}', {{ ownerFrame = {frame} }}); items[3].onClick(items[3])")
     run(um, 0.1)
     got, want = um.eval("__page:GetVerticalScroll()"), um.eval(f"__headerY('{section}')") - 10
@@ -496,9 +605,9 @@ wz.execute("""
     function __press(name) local b = __ns.Wizard.State().ui[name]; b.scripts.OnClick(b) end
 """)
 check(wz.eval("__card('bars', 'all').radio.checked") and not wz.eval("__card('bars', 'mine').radio.checked")
-      and wz.eval("__ns.Wizard.State().ui.step.text") == "Step 1 of 6"
+      and wz.eval("__ns.Wizard.State().ui.step.text") == "Step 1 of 7"
       and not wz.eval("__ns.Wizard.State().ui.back:IsEnabled()"),
-      "starts from the current settings: all four bars picked, step 1 of 6, no Back")
+      "starts from the current settings: all four bars picked, step 1 of 7, no Back")
 wz.execute("__pick('bars', 'mine')")
 run(wz, 0.2)
 check(wz.eval("SmoothAnimatedBarsDB.targetHealth") is False
@@ -525,6 +634,34 @@ check(wz.eval("SmoothAnimatedBarsDB.targetHealthColor") == "class" and wz.eval("
       and wz.eval("SmoothAnimatedBarsDB.mobClassColor") == "own" and wz.eval("__card('targetPowerColor', 'same').radio.checked")
       and wz.eval("__card('mobClassColor', 'own').radio.checked") and wz.eval("SmoothAnimatedBarsDB.healthColor") == "fire",
       "Class Color brings the Mobs row; each row its own pick, the player's untouched")
+wz.execute("__press('next')")
+run(wz, 0.3)
+PS = "__ns.Wizard.State().ui.strips.party"
+check(wz.eval("__ns.Wizard.State().page") == "party" and wz.eval("__card('party', 'both').radio.checked")
+      and wz.eval("__card('partyHealthColor', 'same').radio.checked") and wz.eval(PS + ".shown")
+      and not wz.eval("__ns.Wizard.State().ui.preview.shown") and wz.eval("#" + PS + ".members") == 4,
+      "the party: its own step after the target's colours, four example members in the strip, picks as the settings are")
+check("may affect performance" in wz.eval("__ns.Wizard.State().ui.partyWarning.text"), "with a note that it may affect performance")
+check(all(wz.eval(f"(select(2, __liquid({PS}.members[{i}].{k})))") > 0 for i in (1, 2, 3, 4) for k in ("health", "power")),
+      "the liquid in every example member's health and power bar")
+r, g, b = wz.eval("__tint(" + PS + ".members[1].power)")
+check(r > 0.5 and b < 0.3, f"Same as Yours, Game Colour: the warrior's rage red ({r:.2f}, {g:.2f}, {b:.2f})")
+wz.execute("__pick('partyHealthColor', 'class')")
+run(wz, 0.2)
+r, g, b = wz.eval("__tint(" + PS + ".members[1].health)")
+pr, pg, pb = wz.eval("__tint(" + PS + ".members[2].health)")
+check(wz.eval("SmoothAnimatedBarsDB.partyHealthColor") == "class" and r > g > b and abs(pr - pb) < 0.15 and pr > 0.6,
+      f"Class Color: each example member shows their class, the warrior tan, the priest silver ({r:.2f}, {g:.2f}, {b:.2f})")
+wz.execute("__pick('party', 'health')")
+run(wz, 0.2)
+check(wz.eval("SmoothAnimatedBarsDB.partyPower") is False and wz.eval("SmoothAnimatedBarsDB.partyHealth") is True
+      and wz.eval("(select(2, __liquid(" + PS + ".members[1].power)))") == 0
+      and wz.eval("(select(2, __liquid(" + PS + ".members[1].health)))") > 0
+      and wz.eval("__card('party', 'health').radio.checked"), "Just health: the party's power bars the game's again")
+wz.execute("__press('back')")
+check(wz.eval("__ns.Wizard.State().page") == "targetColors" and wz.eval("__ns.Wizard.State().ui.preview.shown")
+      and not wz.eval(PS + ".shown"), "Back: the unit frames again")
+wz.execute("__press('next')")
 wz.execute("__press('next'); __pick('effects', 'still')")
 check(wz.eval("SmoothAnimatedBarsDB.waves") is False and wz.eval("SmoothAnimatedBarsDB.sparkles") is False
       and wz.eval("__ns.Wizard.State().ui.next.text") == "Next", "effects: Still turns them off")
@@ -539,11 +676,12 @@ check(wz.eval("SmoothAnimatedBarsDB.dots") is True and wz.eval("SmoothAnimatedBa
 wz.execute("__press('next')")
 check(wz.eval("__ns.Wizard.State().page") == "plates" and wz.eval("__card('plates', 'off').radio.checked")
       and wz.eval("__card('friends', 'off').radio.checked") and wz.eval("__ns.Wizard.State().ui.next.text") == "Finish"
-      and wz.eval("__ns.Wizard.State().ui.step.text") == "Step 6 of 6",
+      and wz.eval("__ns.Wizard.State().ui.step.text") == "Step 7 of 7",
       "Nameplates: the last step, both rows Off as the settings start, says Finish")
-PP = "__ns.Wizard.State().ui.platePreview"
+PP = "__ns.Wizard.State().ui.strips.plates"
 check(wz.eval(PP + ".shown") and not wz.eval("__ns.Wizard.State().ui.preview.shown") and wz.eval("#" + PP + ".plates") == 4,
       "the preview strip shows four example nameplates instead of the unit frames")
+check("may affect performance" in wz.eval("__ns.Wizard.State().ui.plateWarning.text"), "and the nameplates' note that they may affect performance")
 check(wz.eval("(select(2, __liquid(" + PP + ".plates[1])))") == 0 and wz.eval(PP + ".plates[1].fill.alpha") == 1,
       "with nameplates off they show the game's own bar")
 wz.execute("__showPlate('nameplate1', { reaction = 2 }); __pick('plates', 'dots'); __pick('friends', 'on')")
@@ -576,6 +714,7 @@ check(not wz.eval("SmoothAnimatedBarsSetup.shown") and wz.eval("SmoothAnimatedBa
       and wz.eval("SmoothAnimatedBarsDB.targetHealthColor") == "same" and wz.eval("SmoothAnimatedBarsDB.mobClassColor") == "reaction"
       and wz.eval("SmoothAnimatedBarsDB.dots") is False and not wz.eval("__ns.Dots.IsEnabled()")
       and wz.eval("SmoothAnimatedBarsDB.plateFriendly") is False and wz.eval("SmoothAnimatedBarsDB.plateDots") is False
+      and wz.eval("SmoothAnimatedBarsDB.partyPower") is True and wz.eval("SmoothAnimatedBarsDB.partyHealthColor") == "same"
       and wz.eval("SmoothAnimatedBarsDB.setupDone") is True, "Skip puts every setting back and does not ask again")
 run(wz, 0.2)
 check(wz.eval("(select(2, __liquid(TargetFrame.healthbar)))") > 0, "and the bars follow")
@@ -584,13 +723,13 @@ run(wz, 3)
 check(not wz.eval("SmoothAnimatedBarsSetup.shown"), "not opened again on the next login")
 wz.execute("SlashCmdList.SMOOTHANIMATEDBARS('setup')")
 wz.execute("__pick('bars', 'health'); __press('next'); __pick('powerColor', 'class'); __press('next'); __press('next');"
-           " __pick('effects', 'gentle'); __press('next'); __pick('dots', 'both'); __press('next');"
+           " __pick('party', 'health'); __press('next'); __pick('effects', 'gentle'); __press('next'); __pick('dots', 'both'); __press('next');"
            " __pick('plates', 'liquid'); __press('next')")
 check(not wz.eval("SmoothAnimatedBarsSetup.shown") and wz.eval("SmoothAnimatedBarsDB.playerPower") is False
       and wz.eval("SmoothAnimatedBarsDB.powerColor") == "class" and wz.eval("SmoothAnimatedBarsDB.swirl") is True
       and wz.eval("SmoothAnimatedBarsDB.bubbles") is False and wz.eval("SmoothAnimatedBarsDB.dots") is True
       and wz.eval("SmoothAnimatedBarsDB.dotKillIcon") is True and wz.eval("SmoothAnimatedBarsDB.plateHealth") is True
-      and any("All set" in m for m in chat(wz)),
+      and wz.eval("SmoothAnimatedBarsDB.partyPower") is False and any("All set" in m for m in chat(wz)),
       "/sab setup, then Finish keeps the choices")
 wz.execute("SlashCmdList.SMOOTHANIMATEDBARS('setup'); __pick('effects', 'full'); SmoothAnimatedBarsSetup:Hide()")
 check(wz.eval("SmoothAnimatedBarsDB.bubbles") is False, "closing the window (Escape) is Skip")
