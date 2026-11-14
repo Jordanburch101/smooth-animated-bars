@@ -39,6 +39,7 @@ local MAX_PLATES = 15
 local MAX_FRIENDLY = 10           -- friendly plates apart, so a city full of players cannot take the enemies' slots
 local PLATE_IDLE_FPS = 20
 local PLATE_W, PLATE_H = 110, 10  -- a plate's bar, until the client says (its size can be secret)
+local PRD_W, PRD_H = 200, 10      -- the Personal Resource Display's bars, the same way (its width at 100%)
 local PLATE_COLOR_EVERY = 0.5     -- seconds between looks at a plate's own colour (it greys once tapped)
 local PLATE_MASK = "Interface\\AddOns\\SmoothAnimatedBars\\Media\\PlateMask"
 -- The game's fill darkens toward its top and bottom edges; this darkens every plate liquid under it the same way.
@@ -144,6 +145,11 @@ local function Path(frame, ...)
     return frame
 end
 
+-- The texts inside a flat bar, which its raised liquid would cover (PlateTexts): a nameplate's (TextStatusBar) and the
+-- Personal Resource Display's (PersonalResourceStatusBar, whose main text is TextString).
+local PLATE_TEXTS = { "Text", "LeftText", "RightText" }
+local PRD_TEXTS = { "TextString", "LeftText", "RightText" }
+
 -- UnitFrame_Initialize stores each unit frame's bars as .healthbar and .manabar; the paths are where
 -- Forever's PlayerFrame.xml and TargetFrame.xml put them. key is the bar's on/off setting.
 local SPOTS = {
@@ -191,6 +197,28 @@ local SPOTS = {
     end },
     { key = "totPower", frame = "tot", optional = true, unit = "focustarget", kind = "power", find = function()
         return Path(rawget(_G, "FocusFrameToT"), "ManaBar") or Path(rawget(_G, "FocusFrame"), "totFrame", "ManaBar")
+    end },
+    -- The Personal Resource Display (Blizzard_PersonalResourceDisplay, forever branch): the player's bars in a frame of
+    -- their own, shown when the game's Personal Resource Display option is on (the frame is there either way). Its bars
+    -- are drawn with the nameplates' art (PersonalResourceStatusBar: UI-HUD-CoolDownManager-Bar on its bronze
+    -- background) and have no mask, so they take the plates' look (flat: the plate mask and shading, a level above the
+    -- bar, with copies of the bar's texts). The third is the mana a druid's forms take off the power bar
+    -- (AlternatePowerBar, DruidAlternatePowerBarMixin); token says what it shows.
+    { key = "prdHealth", frame = "prd", optional = true, flat = true, texts = PRD_TEXTS, unit = "player", kind = "health",
+      label = "personal resource display health", find = function()
+        return Path(rawget(_G, "PersonalResourceDisplayFrame"), "HealthBarsContainer", "healthBar")
+    end },
+    { key = "prdPower", frame = "prd", optional = true, flat = true, texts = PRD_TEXTS, unit = "player", kind = "power",
+      label = "personal resource display power", find = function()
+        return Path(rawget(_G, "PersonalResourceDisplayFrame"), "PowerBar")
+    end },
+    { key = "prdPower", frame = "prd", optional = true, flat = true, texts = PRD_TEXTS, unit = "player", kind = "power",
+      token = "MANA", label = "personal resource display mana", find = function()
+        -- Every class has the bar, but on Forever only a druid's is ever shown (SetupAlternatePowerBar; the priest's
+        -- needs the Shadow spec, which Forever does not have), so no one else builds a liquid for it.
+        local ok, _, class = pcall(UnitClass, "player")
+        if not ok or Secret(class) or class ~= "DRUID" then return nil end
+        return Path(rawget(_G, "PersonalResourceDisplayFrame"), "AlternatePowerBar")
     end },
 }
 
@@ -256,6 +284,13 @@ local PLATE_SHADE = 0.57
 -- (PlateTint): SetVertexColor takes a secret from addons, so the client does the colouring.
 local WHITE = { 1, 1, 1 }
 
+local GameColor
+
+-- A flat bar's own colour (a nameplate's, the Personal Resource Display's). A nameplate's is taken at the fill's
+-- brightness, in a deep theme (ThemeFor), to look like the game's plate. The Personal Resource Display's bars are the
+-- same art, but taken that way they looked dull next to the player frame's liquid (seen in game), so they take their
+-- colour at full strength in the unit frames' theme: its health the game's default colour or the player's class (an
+-- Edit Mode setting), its power the power type's.
 local function PlateColor(b)
     local bar = b.bar
     local c
@@ -269,15 +304,22 @@ local function PlateColor(b)
             c = { r, g, bl }
         end
     end
-    -- Where the bar's colour is kept from us, the colour the game gives a plate of that reaction.
-    c = c or ns.Themes.ReactionColor(b.unit, true) or { 1, 0, 0 }
+    -- Where the bar's colour is kept from us, the colour the game gives a plate of that reaction, or the unit frames'.
+    if not c then
+        if b.spot.plate then
+            c = ns.Themes.ReactionColor(b.unit, true) or { 1, 0, 0 }
+        else
+            c = GameColor(b, true)
+        end
+    end
+    if not b.spot.plate then return c end
     return { c[1] * PLATE_SHADE, c[2] * PLATE_SHADE, c[3] * PLATE_SHADE }
 end
 
--- The bar's own colour: health green (a nameplate's its own), or the game's colour for the unit's power type (a
--- preview bar names its power type).
-local function GameColor(b)
-    if b.spot.plate then return PlateColor(b), "HEALTH" end
+-- The bar's own colour: health green (a flat bar's its own, unless unflat), or the game's colour for the unit's power
+-- type (a preview bar, and the Personal Resource Display's mana under a druid's form, name their power type).
+GameColor = function(b, unflat)
+    if b.spot.flat and not unflat then return PlateColor(b), "HEALTH" end
     if b.kind == "health" then return HEALTH_COLOR, "HEALTH" end
     local index, token
     if b.spot.token then
@@ -382,7 +424,7 @@ local function ApplyColor(b, force)
     -- Power colours change with the power type only when the bar takes the game's colour, and Class Color with the
     -- unit's colour, falling back on the game's. A nameplate's own colour changes with the unit (tapped, hostile).
     local key = choice
-    if b.spot.plate then
+    if b.spot.flat then
         token = b.plateSecret and "secret" or string.format("%.3f,%.3f,%.3f", own[1], own[2], own[3])
     end
     if choice == "game" then
@@ -482,16 +524,22 @@ end
 -- Two levels up, one over the plate's DoT liquids (Marker.lua, RaisePlateMarker, one up): at the same level the game
 -- kept no fixed order between them, and with a DoT liquid on top its straight cut, under the health's front, showed
 -- over it (seen in game, now and then).
+-- The Personal Resource Display's bars are the same art on the same background, so their liquid is raised the same
+-- way. They are built once, so the raise is looked at again now and then (UpdateBar), should the game move the bar.
 local PLATE_RAISE = 2
 local function RaisePlate(b)
     local clip = b.clip
     local ok, level = pcall(b.bar.GetFrameLevel, b.bar)
     local shade = b.shadeFrame
     if ok and type(level) == "number" and not Secret(level) then
+        if level == b.raisedOn then return end
+        b.raisedOn = level
         if clip.SetUsingParentLevel then clip:SetUsingParentLevel(false) end
         clip:SetFrameLevel(level + PLATE_RAISE)
         if shade then shade:SetFrameLevel(level + PLATE_RAISE + 1) end
+        if b.texts then b.texts.frame:SetFrameLevel(level + PLATE_RAISE + 2) end
     else
+        b.raisedOn = nil
         AtParentLevel(clip, b.bar)
     end
 end
@@ -500,7 +548,7 @@ end
 -- and RightText, shown by the game's nameplate settings) and the name where the style puts it inside the bar (Large).
 -- Each is copied, text, font, colour and place, into a FontString of ours a level above the liquid, drawn exactly
 -- over the game's own, which is left as it is. The texts may be secret; FontString:SetText takes them as they are.
-local PLATE_TEXTS = { "Text", "LeftText", "RightText" }
+-- The Personal Resource Display's bars (flat too) have their texts copied the same way (PRD_TEXTS).
 local TEXT_EVERY = 0.1 -- seconds between copies; the game's health text changes no faster than the bar's value
 
 -- Whether a region's centre is inside the bar (the name: inside in the Large style, above it in Normal).
@@ -536,9 +584,10 @@ local function PlateTextHeight()
     if type(h) == "number" and not Secret(h) and h > 0 then return h end
 end
 
-local function CopyFont(mine, theirs)
+-- plate: a nameplate's text, which the game draws at the plates' text height.
+local function CopyFont(mine, theirs, plate)
     local ok, object = pcall(theirs.GetFontObject, theirs)
-    local height = PlateTextHeight()
+    local height = plate and PlateTextHeight()
     if ok and type(object) == "table" then
         if mine.fontObject ~= object then
             mine.fontObject, mine.textHeight, mine.lineHeight = object, nil, nil
@@ -572,13 +621,13 @@ end
 -- shown: true, false, or a secret (IsShown and IsVisible can answer with one, SecretReturnsForAspect Shown). A secret
 -- cannot be tested, and SetShown takes one only from untainted code, but SetAlphaFromBoolean takes one from addons
 -- (SimpleRegionAPI), so the copy then shows and the client fades it in or out by the game's own answer.
-local function CopyText(mine, theirs, shown, whole)
+local function CopyText(mine, theirs, shown, whole, plate)
     local secret = Secret(shown)
     if not secret and not shown then
         mine:Hide()
         return
     end
-    CopyFont(mine, theirs)
+    CopyFont(mine, theirs, plate)
     if whole then CopyNameHeight(mine) end
     -- Each on its own, so one the client refuses cannot keep the rest from being copied.
     pcall(function() mine:SetTextColor(theirs:GetTextColor()) end)
@@ -629,11 +678,14 @@ end
 local function SyncPlateTexts(b)
     local t = b.texts
     if not t then return end
-    for i, key in ipairs(PLATE_TEXTS) do
+    local plate = b.spot.plate
+    for i, key in ipairs(b.spot.texts or PLATE_TEXTS) do
         local theirs = b.bar[key]
         if type(theirs) == "table" and theirs.GetText then
             local ok, shown = pcall(theirs.IsShown, theirs)
-            CopyText(t[i], theirs, ok and (Secret(shown) and shown or shown == true))
+            -- A secret answer goes on as it is; a truth test on it would raise an error in the client.
+            if not ok then shown = false elseif not Secret(shown) then shown = shown == true end
+            CopyText(t[i], theirs, shown, false, plate)
         end
     end
     local name = b.unitFrame and b.unitFrame.name
@@ -642,18 +694,20 @@ local function SyncPlateTexts(b)
         local inside = NameInsideBar()
         if inside == nil then inside = Inside(name, b.bar) end
         if not ok or not inside then shown = false elseif not Secret(shown) then shown = shown == true end
-        CopyText(t.name, name, shown, true)
+        CopyText(t.name, name, shown, true, plate)
     end
 end
 
--- The copies' frame, built once per plate bar, a level above the liquid; not clipped, as the name is wider.
+-- The copies' frame, built once per flat bar, a level above the liquid; not clipped, as the name is wider.
 local function PlateTexts(b)
     if not b.texts then
         local frame = CreateFrame("Frame", nil, b.bar)
         frame:SetAllPoints(b.bar)
         local t = { frame = frame }
         -- A font of the game's to start from, so SetText never meets a string without one.
-        for i in ipairs(PLATE_TEXTS) do t[i] = frame:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall") end
+        for i in ipairs(b.spot.texts or PLATE_TEXTS) do
+            t[i] = frame:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+        end
         t.name = frame:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
         for _, fs in pairs(t) do if fs ~= frame then fs:Hide() end end
         b.texts = t
@@ -666,7 +720,8 @@ local function PlateTexts(b)
 end
 
 local function NewBar(spot, bar)
-    local w, h = Size(bar, spot.plate and PLATE_W or 1, spot.plate and PLATE_H or 1)
+    local w, h = Size(bar, spot.plate and PLATE_W or spot.flat and PRD_W or 1,
+        spot.plate and PLATE_H or spot.flat and PRD_H or 1)
     local b = { spot = spot, unit = spot.unit, kind = spot.kind, bar = bar, width = w, height = h, live = false,
                 idle = 0, feed = 0, stirAt = 0 }
 
@@ -684,7 +739,8 @@ local function NewBar(spot, bar)
     local clip = CreateFrame("Frame", nil, bar)
     AtParentLevel(clip, bar)
     -- A nameplate's bar has no mask, so the clip frame is the bar itself: it cuts the waves at the bar's end, and the
-    -- motes too, which would only clutter a crowd of plates.
+    -- motes too, which would only clutter a crowd of plates. The Personal Resource Display is one frame, the player's
+    -- own, so its motes fly free as on the unit frames; its plate mask cuts the waves.
     local spill = spot.plate and 0 or SPILL
     clip:SetPoint("TOPLEFT", bar, "TOPLEFT", 0, spill)
     clip:SetPoint("BOTTOMRIGHT", bar, "BOTTOMRIGHT", spill, -spill)
@@ -704,8 +760,9 @@ local function NewBar(spot, bar)
     b.liquid = ns.Liquid.New(mover, math.max(w, 1) + ROOM, math.max(h, 1), ns.Themes.Get(ns.Themes.default), ns.Core.db)
     -- The bar's mask cuts the liquid to the bar. Motes are left free to fly off the front. A nameplate's bar has no
     -- mask, and its bronze rim has cut corners that a square liquid would cover, so the liquid there takes a mask of
-    -- the addon's own in the shape of the game's fill (PlateMask.tga, make_media.py).
-    if spot.plate then
+    -- the addon's own in the shape of the game's fill (PlateMask.tga, make_media.py). So do the Personal Resource
+    -- Display's bars, the same art.
+    if spot.flat then
         b.mask = clip:CreateMaskTexture()
         b.mask:SetTexture(PLATE_MASK, "CLAMPTOBLACKADDITIVE", "CLAMPTOBLACKADDITIVE")
         b.mask:SetAllPoints(bar)
@@ -808,8 +865,10 @@ local function Inflow(b, dt, w, h)
     end
 end
 
--- Whether the bar is showing mana. A druid's forms put rage or energy on it.
+-- Whether the bar is showing mana. A druid's forms put rage or energy on it, and the Personal Resource Display's mana
+-- under the form shows nothing else.
 local function OnMana(b)
+    if b.spot.token then return b.spot.token == "MANA" end
     local _, token = UnitPowerType(b.unit)
     return Secret(token) or token == "MANA"
 end
@@ -894,9 +953,11 @@ local function Curves()
     return curves or nil
 end
 
--- Whether the bar shows rage: a warrior's, a druid's in Bear Form, a target's.
+-- Whether the bar shows rage: a warrior's, a druid's in Bear Form, a target's, the Personal Resource Display's (not its
+-- mana under the form).
 local function ShowsRage(b)
     if b.kind ~= "power" or b.spot.plate or b.spot.preview then return false end
+    if b.spot.token then return b.spot.token == "RAGE" end
     local _, token = UnitPowerType(b.unit)
     return not Secret(token) and token == "RAGE"
 end
@@ -1103,9 +1164,22 @@ end
 
 local function UpdateBar(b, dt)
     local bar = b.bar
-    if not Visible(bar) then return end
+    if not Visible(bar) then
+        b.away = true
+        return
+    end
     -- The game can swap or reset its fill textures; keep them hidden under the liquid.
     HideGameFill(bar, 0)
+    -- Back after being hidden (the Personal Resource Display shown in combat only, the mana under a druid's form, a
+    -- frame with no unit): the liquid starts where the bar is, not easing over from where it was, and calm, not
+    -- finishing a burst from before it was hidden.
+    if b.away then
+        b.away = nil
+        Feed(b, false)
+        b.liquid:Settle()
+        if b.fury and b.fury.on then b.fury.liquid:Settle() end
+        b.colorIn = 0 -- a flat bar's colour may have changed meanwhile (a druid shifting while it was hidden)
+    end
 
     b.feed = b.feed + dt
     if b.feed >= FEED_EVERY then
@@ -1122,18 +1196,23 @@ local function UpdateBar(b, dt)
     end
 
     local idleFps = IDLE_FPS
-    if b.spot.plate then
-        idleFps = PLATE_IDLE_FPS
+    -- A flat bar's own colour can change under it (a plate once tapped, the Personal Resource Display's health with
+    -- its class colour setting), and its texts are copies.
+    if b.spot.flat then
         b.colorIn = (b.colorIn or 0) - dt
         if b.colorIn <= 0 then
             b.colorIn = PLATE_COLOR_EVERY
             ApplyColor(b)
+            if not b.spot.plate and not b.spot.preview then RaisePlate(b) end
         end
         b.textIn = (b.textIn or 0) - dt
         if b.textIn <= 0 then
             b.textIn = TEXT_EVERY
             SyncPlateTexts(b)
         end
+    end
+    if b.spot.plate then
+        idleFps = PLATE_IDLE_FPS
     else
         Inflow(b, dt, w, h)
         BuildUp(b, dt, w, h)
@@ -1241,7 +1320,8 @@ local function AttachPlate(token)
     if b and b.token and b.token ~= token and plateOf[b.token] == b then plateOf[b.token] = nil end
     if not plateOf[token] and CountSide(side) >= Cap(side) then return false end
     if not b then
-        b = NewBar({ key = "plateHealth", frame = "plate", unit = token, kind = "health", plate = true }, bar)
+        b = NewBar({ key = "plateHealth", frame = "plate", unit = token, kind = "health", plate = true, flat = true },
+            bar)
         plates[bar] = b
     end
     b.token, b.unit, b.spot.unit, b.side = token, token, token, side
@@ -1328,7 +1408,7 @@ local function RunBar(b, dt)
         b.err = tostring(err)
         pcall(SetLive, b, false)
         ns.Core.Print("Error in the " .. (b.spot.preview and "preview " or "") .. (b.spot.plate and "nameplate " or "")
-            .. b.unit .. " " .. b.kind .. " bar, which is back to the game's own: " .. b.err)
+            .. (b.spot.label or (b.unit .. " " .. b.kind)) .. " bar, which is back to the game's own: " .. b.err)
         if b.token then plateOf[b.token] = nil end
     end
     -- Counted for /sab perf only while it shows: a hidden frame's bar (no focus, no pet) costs next to nothing.
@@ -1383,7 +1463,8 @@ local function OnEvent(_, event, unit, ...)
         local _, spellID = ...
         local spent
         for _, b in pairs(bars) do
-            if b.live and b.unit == "player" and b.fury and b.fury.on then
+            -- Not on a hidden bar (the display out of combat): its burst would wait there until the bar shows.
+            if b.live and b.unit == "player" and b.fury and b.fury.on and Visible(b.bar) then
                 if spent == nil then spent = CostsRage(spellID) end
                 if spent then Release(b) end
             end
@@ -1406,9 +1487,18 @@ local function OnEvent(_, event, unit, ...)
                 Feed(b, false)
             elseif b.unit == unit then
                 if event == "UNIT_DISPLAYPOWER" then -- druid forms
-                    if b.kind == "power" then ApplyColor(b) end
+                    -- A flat bar's colour is the bar's, which the game sets in its own handler of this event, perhaps
+                    -- after ours: it is read on the next update.
+                    if b.kind == "power" then
+                        if b.spot.flat then b.colorIn = 0 else ApplyColor(b) end
+                    end
                 elseif STIR_EVENTS[event] == b.kind then
-                    Stir(b)
+                    -- A bar of one power (the Personal Resource Display's mana under a form) stirs only with it.
+                    local token = ...
+                    if not (b.spot.token and event == "UNIT_POWER_UPDATE" and type(token) == "string"
+                        and not Secret(token) and token ~= b.spot.token) then
+                        Stir(b)
+                    end
                 end
             end
         end
@@ -1431,6 +1521,21 @@ function Bars.Find(key)
     end
 end
 
+-- Every bar there is for an on/off setting: the Personal Resource Display's power is its power bar and the mana under
+-- a druid's form. Each comes with whether it shows only mana.
+function Bars.FindAll(key)
+    local out = {}
+    for _, spot in ipairs(SPOTS) do
+        if spot.key == key then
+            local bar = spot.find()
+            if type(bar) == "table" and bar.GetStatusBarTexture then
+                out[#out + 1] = { bar = bar, manaOnly = spot.token == "MANA" }
+            end
+        end
+    end
+    return out
+end
+
 -- Show the liquid on the bars that are switched on, building each the first time it is wanted.
 -- Returns how many of the game's bars are showing it and how many were wanted but not found.
 function Bars.Apply()
@@ -1443,6 +1548,11 @@ function Bars.Apply()
             if type(bar) == "table" and bar.GetStatusBarTexture and bar.GetValue then
                 b = NewBar(spot, bar)
                 bars[spot] = b
+                -- A flat bar's liquid goes above the bar, under copies of its texts, as on the plates.
+                if spot.flat then
+                    PlateTexts(b)
+                    RaisePlate(b)
+                end
             elseif not spot.optional then
                 missing = missing + 1
             end
@@ -1483,6 +1593,7 @@ end
 -- and spec.frame ("plate" or "friend") names whose colour setting it follows.
 function Bars.Preview(bar, spec)
     spec.preview = true
+    if spec.plate then spec.flat = true end
     local b = NewBar(spec, bar)
     if spec.plate then RaisePlate(b) end
     previews[#previews + 1] = b
@@ -1506,10 +1617,11 @@ local function StateFor(bar)
     return plates[bar]
 end
 
--- The mask the liquid on a nameplate's bar takes, for the DoT marker's liquids there (Marker.lua).
+-- The mask the liquid on a flat bar takes (a nameplate's, the Personal Resource Display's), for the markers' liquids
+-- there (Marker.lua, HealMarker.lua); nil for any other bar.
 function Bars.PlateMask(bar)
-    local b = plates[bar]
-    return b and b.mask
+    local b = StateFor(bar)
+    return b and b.spot.flat and b.mask or nil
 end
 
 -- For the tests: a plate bar's copies of its texts ({ frame, [1..3], name }), nil until it first had the liquid.
@@ -1578,7 +1690,7 @@ end
 -- colour, and slow stars keep rising until the meal ends.
 function Bars.Release(bar)
     local b = StateFor(bar)
-    if not b or not b.live or not b.inflow then return end
+    if not b or not b.live or not b.inflow or not Visible(b.bar) then return end
     b.charge, b.sated, b.flash = nil, true, 1
     local theme, w, h = b.inflow.theme, b.width, b.height
     for _ = 1, RELEASE_STARS do
@@ -1601,7 +1713,9 @@ function Bars.WaitOver(bar)
     local b = StateFor(bar)
     if not b then return end
     b.waitProgress = nil
-    if not b.live or b.inflow or not OnMana(b) then return end
+    -- Not into a hidden bar (the mana under a druid's form in caster form, the display out of combat): the stars would
+    -- wait there and burst out when it shows.
+    if not b.live or b.inflow or not OnMana(b) or not Visible(b.bar) then return end
     local w, h, liquid = b.width, b.height, b.liquid
     local theme = liquid.theme
     b.buildFlash, b.buildPhase, b.buildAcc = 1, 0, 0
@@ -1661,7 +1775,7 @@ function Bars.Debug()
     local out = { "smoothing: " .. YesNo(INTERPOLATION) }
     for _, spot in ipairs(SPOTS) do
         local b = bars[spot]
-        local label = spot.unit .. " " .. spot.kind
+        local label = spot.label or (spot.unit .. " " .. spot.kind)
         if not b then
             out[#out + 1] = label .. ": " .. (Wanted(spot) and "not found" or "off")
         else

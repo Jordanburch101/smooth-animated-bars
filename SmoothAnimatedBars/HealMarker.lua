@@ -18,6 +18,12 @@
 -- player casts (healthBar.MyHealPredictionBar, a flat teal bar) shows the same heals, and at the bar's level
 -- would draw over the liquid, so its fill is transparent while the marker shows. Heals from others keep the
 -- game's bar. Our frames are children of the bar, at the bar's level so the game's text stays on top.
+-- The Personal Resource Display's bars get markers of their own, from the same heals, while their liquid shows. Their
+-- liquid is raised over the bar as on a nameplate (Bars.lua, flat), so the marker goes one level above the bar, under
+-- the health liquid two up, as the DoT marker on a plate does (Marker.lua): the levels put the heal liquid under the
+-- health's front, so no seam is needed, and the plate mask and shading of the bar's liquid are the marker's too. Its
+-- own prediction of the player's heals is a texture on the bar (healthBar.myHealPrediction), kept transparent the same
+-- way.
 
 local _, ns = ...
 
@@ -118,7 +124,7 @@ end
 --------------------------------------------------------------------------------
 
 -- spec: { bar = the health bar, mask = its mask or nil, source = function() returning max (may be secret),
--- total, list (as Heals.Player's), visible = function() whether to show }.
+-- total, list (as Heals.Player's), visible = function() whether to show, raised = a flat bar's (one level up) }.
 local function New(spec)
     local bar = spec.bar
     local w, h = ns.Bars.Size(bar, 1, 1)
@@ -197,6 +203,22 @@ end
 
 -- Under the health liquid when it shows, each reaching OVERLAP back under the liquid before it. Over the
 -- game's own fill when it does not, each cut exactly at its own ends, side by side.
+-- A flat bar's marker one level above the bar, under its liquid two up (Bars.lua, RaisePlate). Looked at again with
+-- each refresh, should the game move the bar.
+local function Raise(m)
+    if not m.spec.raised then return end
+    local ok, level = pcall(m.bar.GetFrameLevel, m.bar)
+    if ok and type(level) == "number" and not Secret(level) then
+        if level == m.raisedOn then return end
+        m.raisedOn = level
+        if m.clip.SetUsingParentLevel then m.clip:SetUsingParentLevel(false) end
+        m.clip:SetFrameLevel(level + 1)
+    else
+        m.raisedOn = nil
+        AtParentLevel(m.clip, m.bar)
+    end
+end
+
 local function Layer(m)
     local under = ns.Bars.IsLive(m.bar)
     if under == m.under then return end
@@ -213,10 +235,11 @@ local function Layer(m)
     end
 end
 
--- The game's prediction of the player's own heals: its fill, or nil.
+-- The game's prediction of the player's own heals: its fill, or nil. The player frame's is a bar with a Fill, the
+-- Personal Resource Display's a texture on the bar.
 local function GamePrediction(bar)
     local own = bar.MyHealPredictionBar
-    local fill = type(own) == "table" and own.Fill
+    local fill = type(own) == "table" and own.Fill or bar.myHealPrediction
     if type(fill) == "table" and fill.SetAlpha and fill.GetAlpha then return fill end
 end
 
@@ -240,7 +263,7 @@ local function DrawSeams(m)
         elseif m.liquids[i - 1].pool:IsShown() then
             before = m.liquids[i - 1].liquid
         end
-        local show = (m.under and d.pool:IsShown() and before) and true or false
+        local show = (m.under and d.pool:IsShown() and before and not m.spec.raised) and true or false
         if s.mover:IsShown() ~= show then s.mover:SetShown(show) end
         if show then
             local r, g, b = before.gradC:GetRGBA()
@@ -269,7 +292,13 @@ local function DrawSeams(m)
     end
 end
 
+-- Kept up each frame while there is nothing to show, so done once; and a heal that started meanwhile (its splash,
+-- landed and burst) is not saved up for when the bar shows again (the Personal Resource Display hidden, or the mana
+-- under a druid's form in caster form).
 local function Hide(m)
+    m.landed, m.burst = false, nil
+    if m.hidden then return end
+    m.hidden = true
     GameFill(m, 1)
     m.chargeFor, m.released = nil, false
     ns.Bars.Inflow(m.bar, nil)
@@ -360,6 +389,7 @@ local function Refresh(m)
     end
     if not m.clip:IsShown() then
         m.clip:Show()
+        m.hidden = false
         Layer(m)
     end
     for i, d in ipairs(m.liquids) do
@@ -437,6 +467,7 @@ local function Update(m, dt)
             end
         end
         if not Refresh(m) then return Hide(m) end
+        Raise(m)
         Layer(m)
     end
     if not m.clip:IsShown() then return end
@@ -471,11 +502,13 @@ end
 
 local player  -- the marker on the player frame's health bar, once built
 local mana    -- the one on its mana bar (drink)
+local extra = {} -- the Personal Resource Display's, by bar: its health, its power bar and the mana under a form
 local driver
 
 local function Each(fn)
     if player then fn(player) end
     if mana then fn(mana) end
+    for _, m in pairs(extra) do fn(m) end
 end
 
 local function PlayerAlive()
@@ -499,14 +532,45 @@ local function SourceFor(m, read)
     end
 end
 
-local function Build(key, read, visible)
-    local bar = ns.Bars.Find(key)
+-- name: what the marker shows, "health" or "mana" (Heals.lua's resources); label: whose, for messages.
+local function BuildOn(bar, name, read, visible, label)
     if type(bar) ~= "table" or not bar.GetStatusBarTexture then return nil end
-    local spec = { bar = bar, mask = MaskOf(bar), visible = visible }
+    local flatMask = ns.Bars.PlateMask(bar)
+    local spec = { bar = bar, mask = flatMask or MaskOf(bar), visible = visible, raised = flatMask ~= nil }
+    -- A raised marker shows only over the bar's own liquid: without it, the game's fill is at the bar's level, under
+    -- the bar's dark background.
+    if spec.raised then spec.visible = function() return ns.Bars.IsLive(bar) and visible() end end
     local m = New(spec)
     spec.source = SourceFor(m, read)
-    m.name = key == "playerHealth" and "health" or "mana"
+    m.name, m.label = name, label
+    Raise(m)
     return m
+end
+
+local function Build(key, read, visible)
+    local name = key == "playerHealth" and "health" or "mana"
+    return BuildOn(ns.Bars.Find(key), name, read, visible, name)
+end
+
+-- The Personal Resource Display's markers, each built once its bar has the liquid (whose mask and level it takes),
+-- so this is tried again with each Apply.
+local function BuildDisplay()
+    for _, key in ipairs({ "prdHealth", "prdPower" }) do
+        for _, found in ipairs(ns.Bars.FindAll(key)) do
+            local bar = found.bar
+            if not extra[bar] and ns.Bars.PlateMask(bar) then
+                if key == "prdHealth" then
+                    extra[bar] = BuildOn(bar, "health", ns.Heals.Player, PlayerAlive,
+                        "Personal Resource Display health")
+                else
+                    -- The mana under a druid's form is only ever mana, shown in the form; the power bar while it
+                    -- shows mana.
+                    extra[bar] = BuildOn(bar, "mana", ns.Heals.Mana, found.manaOnly and PlayerAlive or ManaShown,
+                        found.manaOnly and "Personal Resource Display mana" or "Personal Resource Display power")
+                end
+            end
+        end
+    end
 end
 
 local function OnUpdate(_, elapsed)
@@ -518,7 +582,8 @@ local function OnUpdate(_, elapsed)
         if not ok then
             m.err = tostring(err)
             pcall(Hide, m)
-            ns.Core.Print("Error in the " .. m.name .. " heal marker, which is off until a reload: " .. m.err)
+            ns.Core.Print("Error in the " .. (m.label or m.name) .. " heal marker, which is off until a reload: "
+                .. m.err)
         end
     end)
 end
@@ -528,12 +593,13 @@ function HealMarker.Apply()
     local live = ns.Core.Get("heals") and true or false
     if live and not player then player = Build("playerHealth", ns.Heals.Player, PlayerAlive) end
     if live and not mana then mana = Build("playerPower", ns.Heals.Mana, ManaShown) end
+    if live then BuildDisplay() end
     ns.Heals.Enable(live)
     Each(function(m)
         m.live = live
         if not live then Hide(m) end
     end)
-    local any = live and (player or mana) and true or false
+    local any = live and (player or mana or next(extra)) and true or false
     if any and not driver then
         driver = CreateFrame("Frame")
         driver:SetScript("OnUpdate", OnUpdate)
@@ -551,30 +617,31 @@ end
 ns.Heals.Listen(function(event, arg)
     Each(function(m) m.since = REFRESH_EVERY end) -- read again on the next frame
     if event == "applied" then
-        local m = arg == "mana" and mana or player
-        if m then m.landed = true end
-    elseif event == "landed" and player then
-        player.burst = arg
+        local name = arg == "mana" and "mana" or "health"
+        Each(function(m) if m.name == name then m.landed = true end end)
+    elseif event == "landed" then
+        Each(function(m) if m.name == "health" then m.burst = arg end end)
     end
 end)
 
--- For the tests and the gallery: the markers on the player frame's health and mana bars (nil until built).
+-- For the tests and the gallery: the markers on the player frame's health and mana bars (nil until built), and the
+-- Personal Resource Display's by bar.
 function HealMarker.State()
-    return player, mana
+    return player, mana, extra
 end
 
 -- For /sab heals.
 function HealMarker.Debug()
     if not ns.Core.Get("heals") then return { "Heal marker: off (Heal Marker in the settings)" } end
-    if not player then return { "Heal marker: the player frame's health bar was not found" } end
     local out = {}
+    if not player then out[1] = "Heal marker: the player frame's health bar was not found" end
     Each(function(m)
         local shown = {}
         for _, d in ipairs(m.liquids) do
             if d.pool:IsShown() then shown[#shown + 1] = d.themeKey or DEFAULT_THEME end
         end
         local game = GamePrediction(m.bar)
-        out[#out + 1] = string.format("Heal marker (%s): on, %s, liquids %s%s, mask %s%s%s", m.name,
+        out[#out + 1] = string.format("Heal marker (%s): on, %s, liquids %s%s, mask %s%s%s", m.label or m.name,
             m.clip:IsShown() and "showing" or "hidden", #shown > 0 and table.concat(shown, " then ") or "none",
             m.under and " under the bar's liquid" or " over the game's fill", m.spec.mask and "yes" or "no",
             m.name == "health" and (", game's own prediction " .. (not game and "not found"

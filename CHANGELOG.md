@@ -4,6 +4,17 @@ Player-facing notes for each release. Write for players: what they can now
 do or see, and what was broken and now works. Leave out internal changes.
 Sections are `### New` and `### Fixed`; skip one that would be empty.
 
+## 1.8.0
+
+### New
+- The liquid in the game's Personal Resource Display, the extra health and
+  power bars you can turn on in its options and place with Edit Mode. It
+  follows your own bars' colours, or takes its own under Personal Resource
+  Display in the settings. Your heals, bandages, food and drink show there as
+  on your player frame, the mana bar builds up through the wait before mana
+  regenerates, and a warrior's rage grows furious. A druid's mana under the
+  power bar in Cat or Bear Form gets the liquid as well.
+
 ## 1.7.3
 
 ### Fixed

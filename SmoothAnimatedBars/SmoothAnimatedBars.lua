@@ -19,6 +19,9 @@ local DEFAULTS = {
     focusPower   = true,
     totHealth    = true,
     totPower     = true,
+    -- The Personal Resource Display's bars (the game shows them with its Personal Resource Display option on)
+    prdHealth    = true,
+    prdPower     = true,
     -- Enemy nameplates' health (Bars.lua), off until it has been tried in a crowd
     plateHealth  = false,
     -- Friendly nameplates' health, the same way (outside instances: the game keeps those there to itself)
@@ -38,6 +41,8 @@ local DEFAULTS = {
     focusPowerColor   = "same",
     totHealthColor    = "same",
     totPowerColor     = "same",
+    prdHealthColor    = "same",
+    prdPowerColor     = "same",
     plateHealthColor  = "same",
     -- Friendly nameplates: their own colour by default, or "same" for the enemy plates'
     plateFriendlyColor = "game",
@@ -82,11 +87,12 @@ local COLOR_KEYS = {
     pet    = { health = "petHealthColor", power = "petPowerColor" },
     focus  = { health = "focusHealthColor", power = "focusPowerColor" },
     tot    = { health = "totHealthColor", power = "totPowerColor" },
+    prd    = { health = "prdHealthColor", power = "prdPowerColor" },
     plate  = { health = "plateHealthColor" },
     friend = { health = "plateFriendlyColor" },
 }
-local FOLLOWS = { target = "player", pet = "player", focus = "target", tot = "target", plate = "target",
-                  friend = "plate" }
+local FOLLOWS = { target = "player", pet = "player", focus = "target", tot = "target", prd = "player",
+                  plate = "target", friend = "plate" }
 
 -- The colour a frame's bar of this kind ("health" or "power") shows: "game" or a theme key, "same" followed through.
 function Core.ColorChoice(frame, kind)
@@ -122,7 +128,7 @@ function Core.PlatesUseClass()
 end
 
 local BAR_KEYS = { "playerHealth", "playerPower", "targetHealth", "targetPower", "petHealth", "petPower", "focusHealth",
-                   "focusPower", "totHealth", "totPower" }
+                   "focusPower", "totHealth", "totPower", "prdHealth", "prdPower" }
 
 local function ApplyBars(verbose)
     local live, missing = ns.Bars.Apply()
@@ -145,6 +151,10 @@ local SETTING_APPLY = {
     plateFriendly = function() ApplyBars(false) end,
 }
 for _, key in ipairs(BAR_KEYS) do SETTING_APPLY[key] = function() ApplyBars(true) end end
+-- The Personal Resource Display's heal markers are built once its bars have the liquid.
+for _, key in ipairs({ "prdHealth", "prdPower" }) do
+    SETTING_APPLY[key] = function() ApplyBars(true); ns.HealMarker.Apply() end
+end
 for frame, keys in pairs(COLOR_KEYS) do
     if frame ~= "player" then
         for _, key in pairs(keys) do SETTING_APPLY[key] = function() ns.Bars.ApplyColors() end end

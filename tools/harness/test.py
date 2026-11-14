@@ -192,7 +192,7 @@ keys = [r.key for r in rows if r.key]
 check(keys == ["playerHealth", "healthColor", "playerPower", "powerColor", "targetHealth", "targetHealthColor",
                "targetPower", "targetPowerColor", "mobClassColor", "petHealth", "petHealthColor", "petPower",
                "petPowerColor", "focusHealth", "focusHealthColor", "focusPower", "focusPowerColor", "totHealth",
-               "totHealthColor", "totPower", "totPowerColor", "plateHealth", "plateHealthColor", "plateDots", "plateFriendly", "plateFriendlyColor", "mobClassColor",
+               "totHealthColor", "totPower", "totPowerColor", "prdHealth", "prdHealthColor", "prdPower", "prdPowerColor", "plateHealth", "plateHealthColor", "plateDots", "plateFriendly", "plateFriendlyColor", "mobClassColor",
                "waves", "swirl", "bubbles", "sparkles", "ambient", "lightning", "dots", "dotKillIcon", "heals", "manaBuild", "rageFury"],
       f"settings page rows: {keys}")
 check(not lua.eval("__sharedListTainted"), "nothing added to the game's shared settings list (Forever: Social blocked)")
@@ -1739,6 +1739,225 @@ cp.execute("SlashCmdList.SMOOTHANIMATEDBARS('capture')")
 check(cp.eval("SmoothAnimatedBarsCapture.shown") and not cp.eval(f"{grid}.shown"),
       "the frames' capture still works after it, on its own grid")
 check(not any("Error in" in m for m in chat(cp)), "no errors")
+
+print("== personal resource display")
+# Forever's Personal Resource Display: the player's bars in a frame of their own, drawn with the plates' art and no
+# mask, so they take the plates' look; shown only with the game's option on.
+PRD = "PersonalResourceDisplayFrame"
+PH, PP, PA = PRD + ".HealthBarsContainer.healthBar", PRD + ".PowerBar", PRD + ".AlternatePowerBar"
+check(lua.eval(f"__ours({PA}) == nil") and lua.eval(f"__ours({PH}) ~= nil"),
+      "only a druid's display gets a liquid for the mana under a form (only theirs is ever shown on Forever)")
+pr = session(setup="__player.class = 'DRUID'")  # in Bear Form: rage, with the form's mana under it
+pr.execute(f"for _, b in ipairs({{ {PH}, {PP}, {PA} }}) do b:SetMinMaxValues(0, __secret()); b:SetValue(__secret()) end")
+run(pr, 0.3)
+check(not any("Error in" in m for m in chat(pr)) and not any("Could not find" in m for m in chat(pr)),
+      "with the game's option off (the frame hidden), no error and nothing reported missing")
+pr.execute(f"{PH}.level = 5; {PP}.level = 5; {PA}.level = 5; {PRD}:Show()")
+run(pr, 0.3)
+for label, bar in (("health", PH), ("power", PP)):
+    n, shown, alpha, masked, free = pr.eval(f"__liquid({bar})")
+    check(shown > 0 and alpha == 0 and masked > 0 and free == 64 and pr.eval(f"""(function()
+        local mask = __ns.Bars.Liquid({bar}) and select(3, __ours({bar}))
+        for _, r in ipairs(__regions) do
+            if r.parent == mask and r.masks and r.masks[1] then return r.masks[1].file:sub(-9) == "PlateMask" end
+        end
+    end)()"""), f"the option on: liquid in the display's {label} bar, the game's fill hidden, cut to the plates' fill "
+          f"shape (no mask of the game's), motes free ({shown}/{n}, {masked} masked, {free} free)")
+check(pr.eval(f"(select(2, __ours({PH}))).useParentLevel") is False and pr.eval(f"(select(2, __ours({PH}))).level") == 7
+      and pr.eval(f"""(function()
+    local bar = {PH}
+    local _, clip = __ours(bar)
+    for _, f in ipairs(__frames) do
+        if f.parent == bar and f ~= clip and f.level == clip.level + 1 then
+            for _, r in ipairs(__regions) do
+                if r.parent == f and r.file and r.file:sub(-10) == "PlateShade" then return true end
+            end
+        end
+    end
+end)()"""), "above the bar, over its dark background, with the plates' shading over it, as on a plate")
+check(pr.eval(f"""(function()
+    local _, clip = __ours({PH})
+    local tl, br = clip.points.TOPLEFT, clip.points.BOTTOMRIGHT
+    return tl.rel == {PH} and tl.x == 0 and tl.y > 0 and br.x > 0 and br.y < 0
+end)()"""), "its clip frame has room around the bar, so motes fly off it as on the unit frames")
+r, g, b = pr.eval(f"__tint({PH})")
+check(g > 0.8 and r < 0.4 and b < 0.4, f"Same as Yours, with your Game Colour: its own green at full strength, lively "
+      f"as the player frame's, not the plates' deep shade "
+      f"({r:.2f}, {g:.2f}, {b:.2f})")
+r, g, b = pr.eval(f"__tint({PP})")
+check(b > 0.8 and r < 0.4, f"and its power its own blue ({r:.2f}, {g:.2f}, {b:.2f})")
+pr.execute(f"{PH}:SetStatusBarColor(0.96, 0.55, 0.73)")
+run(pr, 0.7)
+r, g, b = pr.eval(f"__tint({PH})")
+check(r > 0.35 and b > 0.2 and g < r, f"the game's class colour setting turns it: a paladin's pink ({r:.2f}, {g:.2f}, {b:.2f})")
+pr.execute("__settings.healthColor:SetValue('fire')")
+run(pr, 0.2)
+check(pr.eval(f"__ns.Bars.Liquid({PH}).theme.fillA == __ns.Bars.Liquid(PlayerFrame.healthbar).theme.fillA"),
+      "a theme for your own health shows on the display's too (Same as Yours)")
+pr.execute("__settings.prdHealthColor:SetValue('frost')")
+run(pr, 0.2)
+check(pr.eval(f"__ns.Bars.Liquid({PH}).theme.fillA ~= __ns.Bars.Liquid(PlayerFrame.healthbar).theme.fillA"),
+      "and one of its own")
+pr.execute(f"{PH}.TextString:SetText(__secret()); {PH}.TextString:Show()")
+run(pr, 0.2)
+check(pr.eval(f"""(function()
+    local theirs = {PH}.TextString
+    for _, r in ipairs(__regions) do
+        if r.kind == "FontString" and r ~= theirs and r.parent and r.parent.parent == {PH} and r.over == theirs then
+            local p = r.points.CENTER
+            return r.shown and issecretvalue(r.text) and r:GetFontObject() == TextStatusBarText and r.textHeight == nil
+                and p and p.rel == theirs and r.parent.level == {PH}:GetFrameLevel() + 4
+        end
+    end
+    return false
+end)()"""), "its health text (shown on mouseover or by Edit Mode) is copied over the liquid, secret, in the game's font "
+      "and at its size (not the plates' text height)")
+check(pr.eval("__ns.Bars.FuryLiquid(" + PP + ") ~= nil"), "rage on the display grows furious too")
+# Whether the game shows its text can come back secret (IsShown, SecretReturnsForAspect Shown): never truth-tested.
+pr.execute(f"{PH}.TextString.IsShown = function() return __secret(true) end")
+run(pr, 0.3)
+check(pr.eval(f"""(function()
+    for _, r in ipairs(__regions) do
+        if r.kind == "FontString" and r.over == {PH}.TextString then return r.shown and issecretvalue(r.alpha) end
+    end
+end)()""") and not any("Error in" in m for m in chat(pr)),
+      "a secret answer whether its text shows: the copy is faded by it, without an error")
+pr.execute(f"{PH}.TextString.IsShown = nil")
+run(pr, 2)
+pr.execute(f"{PA}:Show()")
+run(pr, 0.3)
+check(pr.eval(f"(select(2, __liquid({PA})))") > 0 and pr.eval(f"{PA}.fill.alpha") == 0
+      and pr.eval("__ns.Bars.FuryLiquid(" + PA + ")") is None,
+      "a druid's mana under the power bar in a form gets the liquid, never the rage's fury")
+run(pr, 2)
+pr.execute("__fire('UNIT_POWER_UPDATE', 'player', 'RAGE')")
+run(pr, 0.05)
+rage_motes = pr.eval(f"__motes({PA})")
+run(pr, 2)
+pr.execute("__fire('UNIT_POWER_UPDATE', 'player', 'MANA')")
+run(pr, 0.05)
+mana_motes = pr.eval(f"__motes({PA})")
+check(rage_motes == 0 and mana_motes > 0, f"and only mana stirs it ({rage_motes} motes on rage, {mana_motes} on mana)")
+pr.execute("SlashCmdList.SMOOTHANIMATEDBARS('debug')")
+check(any(m.startswith("|cff40d060Smooth Animated Bars|r personal resource display health (") for m in chat(pr))
+      and any("personal resource display mana (" in m for m in chat(pr)), "/sab debug lists the display's bars")
+pr.execute("__settings.prdHealth:SetValue(false)")
+run(pr, 0.2)
+check(pr.eval(f"(select(2, __liquid({PH})))") == 0 and pr.eval(f"{PH}.fill.alpha") == 1
+      and pr.eval(f"(select(2, __liquid({PP})))") > 0,
+      "turned off: the display's health is the game's again, its power keeps the liquid")
+check(pr.eval(f"""(function()
+    for _, r in ipairs(__regions) do
+        if r.kind == "FontString" and r.over == {PH}.TextString then return not r:IsVisible() end
+    end
+end)()"""), "and the copy of its text goes with it, the game's own showing")
+pr.execute("SlashCmdList.SMOOTHANIMATEDBARS('off')")
+run(pr, 0.2)
+check(pr.eval(f"{PP}.fill.alpha") == 1 and pr.eval("SmoothAnimatedBarsDB.prdPower") is False, "/sab off includes it")
+check(not any("Error in" in m for m in chat(pr)), "no errors")
+
+# Heals, food and drink, and the wait before mana regenerates, on the display as on the player frame.
+ph = session("{ setupDone = true }", f"""__player.class = 'DRUID'; __player.power = 0
+    for _, b in ipairs({{ {PH}, {PP}, {PA} }}) do b.level = 5 end
+    {PRD}:Show()""")
+ph.execute(f"""
+    for _, b in ipairs({{ {PH}, {PP}, {PA} }}) do b:SetMinMaxValues(0, __secret()); b:SetValue(__secret()) end
+    __spells[746] = {{ 'First Aid', 'Heals 66 damage over 6 sec.' }}
+    __spells[433] = {{ 'Food', 'Restores 61 health over 18 sec. Must remain seated while eating.' }}
+    __spells[430] = {{ 'Drink', 'Restores 151 mana over 18 sec. Must remain seated while drinking.' }}
+    __spells[133] = {{ 'Fireball', 'Hurls a fiery ball.' }}
+    __spellCosts[133] = {{ {{ type = 0, name = 'MANA', cost = 42 }} }}
+    function __mk(bar) return select(3, __ns.HealMarker.State())[bar] end
+    function __use(id, guid)
+        __fire('UNIT_SPELLCAST_SENT', 'player', '', guid, id)
+        __fire('UNIT_SPELLCAST_SUCCEEDED', 'player', guid, id)
+    end
+""")
+run(ph, 0.3)
+check(ph.eval(f"__mk({PH}) ~= nil and __mk({PP}) ~= nil and __mk({PA}) ~= nil")
+      and not ph.eval(f"__mk({PH}).clip.shown"),
+      "the heal marker on the display's health, power and form mana, nothing shown without heals")
+ph.execute(f"{PH}.myHealPrediction:SetAlpha(1)")
+ph.execute("__fire('UNIT_SPELLCAST_SENT', 'player', 'Testchar', 'Cast-1', 746)"
+           "; __fire('UNIT_SPELLCAST_CHANNEL_START', 'player', 'Cast-1', 746)"
+           "; __fire('UNIT_SPELLCAST_SUCCEEDED', 'player', 'Cast-1', 746)")
+run(ph, 0.5)
+check(ph.eval(f"__mk({PH}).clip.shown") and ph.eval(f"__mk({PH}).liquids[1].themeKey") == "bandage"
+      and ph.eval("__ns.HealMarker.State().clip.shown"),
+      "a bandage on yourself shows on the display's health as on the player frame's")
+check(ph.eval(f"""(function()
+    local m = __mk({PH})
+    local _, clip = __ours({PH})
+    local masked = 0
+    for _, t in ipairs(m.liquids[1].liquid.textures) do
+        if t.masks and t.masks[1] == __ns.Bars.PlateMask({PH}) then masked = masked + 1 end
+    end
+    return m.clip.useParentLevel == false and m.clip.level == 6 and clip.level == 7 and masked > 0
+        and not m.liquids[1].seam.mover.shown
+end)()"""), "one level above the bar and under the display's health liquid, in its plate shape; the levels order "
+      "them, so no seam")
+check(ph.eval(f"{PH}.myHealPrediction.alpha") == 0, "the display's own prediction of your heals is hidden under it")
+ph.execute("__settings.prdHealth:SetValue(false)")
+run(ph, 0.3)
+check(not ph.eval(f"__mk({PH}).clip.shown") and ph.eval(f"{PH}.myHealPrediction.alpha") == 1
+      and ph.eval("__ns.HealMarker.State().clip.shown"),
+      "the display's health off: its marker goes and the game's prediction is back; the player frame's stays")
+ph.execute("__settings.prdHealth:SetValue(true)")
+run(ph, 0.5)
+check(ph.eval(f"__mk({PH}).clip.shown") and ph.eval(f"{PH}.myHealPrediction.alpha") == 0,
+      "and comes back with it, the game's prediction hidden again")
+run(ph, 6)
+ph.execute("__use(433, 'Cast-2'); __use(430, 'Cast-3')")
+run(ph, 1)
+check(ph.eval(f"__mk({PH}).liquids[1].themeKey") == "honey" and ph.eval(f"__mk({PP}).clip.shown")
+      and ph.eval(f"__mk({PP}).liquids[1].themeKey") == "nagrand" and not ph.eval(f"__mk({PA}).clip.shown"),
+      "eating and drinking: Honey on the display's health, Nagrand on its mana")
+check(ph.eval(INFLOW + f"({PP}, __mk({PP}).liquids[1].liquid)") > 0
+      and ph.eval(INFLOW + f"({PH}, __mk({PH}).liquids[1].liquid)") > 0,
+      "pouring into the display's liquids too")
+ph.execute(f"__player.power = 3; __fire('UNIT_DISPLAYPOWER', 'player'); {PA}:Show()")
+run(ph, 0.5)
+check(not ph.eval(f"__mk({PP}).clip.shown") and ph.eval(f"__mk({PA}).clip.shown")
+      and ph.eval(f"__mk({PA}).liquids[1].themeKey") == "nagrand",
+      "in Cat Form the drink moves to the mana under the energy bar")
+ph.execute("__fire('PLAYER_STARTED_MOVING')")
+run(ph, 2)
+ph.execute("__use(133, 'Cast-4')")
+run(ph, 4.5)
+energy_main, energy_alt = ph.eval(f"__ns.Bars.Liquid({PP}).energy"), ph.eval(f"__ns.Bars.Liquid({PA}).energy")
+check(energy_alt > 0.8 and energy_main < 0.5,
+      f"a spell that costs mana: the mana under the form builds up to regenerating, the energy bar does not "
+      f"({energy_alt:.2f}, {energy_main:.2f})")
+run(ph, 0.6)
+check(ph.eval(f"__motes({PA})") >= 30, "and lets go in stars")
+ph.execute(f"__player.power = 0; __fire('UNIT_DISPLAYPOWER', 'player'); {PA}:Hide()")
+run(ph, 3)
+ph.execute("__use(133, 'Cast-5')")
+run(ph, 4.5)
+check(ph.eval(f"__ns.Bars.Liquid({PP}).energy") > 0.8 and ph.eval("__ns.Bars.Liquid(PlayerFrame.manabar).energy") > 0.8,
+      "out of the form, the display's power bar builds up with the player frame's")
+# What happens while a bar is hidden is not saved up for when it shows: the mana under the form is hidden in caster
+# form, the display out of combat with its in-combat setting.
+run(ph, 5)
+ph.execute("__use(133, 'Cast-6')")
+run(ph, 5.5)
+ph.execute(f"__player.power = 3; __fire('UNIT_DISPLAYPOWER', 'player'); {PA}:Show()")
+run(ph, 0.1)
+check(ph.eval(f"__motes({PA})") == 0 and ph.eval(f"__ns.Bars.Liquid({PA}).energy") < 0.5,
+      f"mana regenerating while the mana under the form was hidden (caster form): no stars saved up for the next shift "
+      f"({ph.eval(f'__motes({PA})')} motes)")
+ph.execute(f"__player.power = 0; __fire('UNIT_DISPLAYPOWER', 'player'); {PA}:Hide(); {PRD}:Hide()")
+run(ph, 2)
+ph.execute("__fire('UNIT_SPELLCAST_SENT', 'player', 'Testchar', 'Cast-7', 746)"
+           "; __fire('UNIT_SPELLCAST_CHANNEL_START', 'player', 'Cast-7', 746)"
+           "; __fire('UNIT_SPELLCAST_SUCCEEDED', 'player', 'Cast-7', 746)")
+run(ph, 1)
+check(not ph.eval(f"__mk({PH}).landed"), "a bandage started while the display is hidden leaves no splash waiting for it")
+ph.execute(f"{PRD}:Show()")
+run(ph, 0.5)
+check(ph.eval(f"__mk({PH}).clip.shown") and ph.eval(f"__mk({PH}).liquids[1].themeKey") == "bandage",
+      "and shows when the display does")
+check(not any("Error in" in m for m in chat(ph)), "no errors")
 
 print("== enemy nameplates")
 

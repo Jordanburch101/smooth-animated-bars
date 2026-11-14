@@ -258,6 +258,27 @@ Facts found while building this, which the code relies on and which are not obvi
   darkens the liquids the same way (`make_media.py`, `PLATE_FADE`, measured on the captured fill). Not yet seen in
   game: the plate's size being readable, the liquid under the plate's
   deselected overlay, and the cost in a crowd.
+- **Personal Resource Display** (`Bars.lua`, the `prd` spots, `prdHealth`/`prdPower`): on Forever it is
+  `Blizzard_PersonalResourceDisplay` (forever branch, with a small `Camelot/` override), not a nameplate: one global frame,
+  `PersonalResourceDisplayFrame`, parented to UIParent and placed with Edit Mode, shown when the game's option is on
+  (`C_GameRules.IsPersonalResourceDisplayEnabled`, CVar `nameplateShowSelf`) or only in combat by its Edit Mode setting.
+  Its bars are `HealthBarsContainer.healthBar`, `PowerBar` and `AlternatePowerBar` (a druid's mana in a form,
+  `DruidAlternatePowerBarMixin`), all `PersonalResourceStatusBar`: the plates' art (`UI-HUD-CoolDownManager-Bar` on
+  `-Bar-BG`), no mask, texts `TextString`/`LeftText`/`RightText`, and their sizes and the health's class colour are Edit
+  Mode settings. So the spots are `flat`: they take the plates' look (`PlateMask`, `PlateShade`, raised two levels with
+  copies of the texts), but keep the unit frames' motes, stirs and Rage Fury, and their theme: the bar's own colour at
+  full strength, not the plates' deep one at `PLATE_SHADE`, which looked dull next to the player frame in game.
+  `spot.plate` stays for what only nameplates do. A frame hidden and shown again snaps the liquid to its value
+  (`UpdateBar`, `away`). The power bar's `ManaCostPredictionBar`, `FeedbackFrame` and `FullPowerFrame` are at or near
+  the bar's level, so the raised liquid may cover their nearest pixels. Seen in game: it shows and fits the rim. The
+  heal marker (`HealMarker.lua`, `extra`) puts a marker on each PRD bar from the same heals, shown only while that bar's
+  liquid is live, one level above the bar (under the liquid two up, as the DoT marker on a plate), so it needs no seam;
+  it hides the PRD's own prediction, a texture (`healthBar.myHealPrediction`). `ManaRule.lua` drives every mana bar
+  (`Bars.FindAll`); the form mana's bar counts as mana whatever the power type (`spot.token`). Not yet seen in game.
+  A hidden bar's liquid is not updated, so nothing is set off in one (`Bars.WaitOver`, `Bars.Release`, the fury's
+  burst check `Visible`), heal flags are dropped while a marker is hidden, and a bar shown again settles
+  (`Liquid:Settle`): a burst in flight when it hid would otherwise finish when it shows. Every class has the
+  `AlternatePowerBar`, but on Forever only a druid's is used, so only druids build one.
 - **Unit frame menus** (`Options.lua`, `AddToUnitMenus`): `Menu.ModifyMenu("MENU_UNIT_" .. which, ...)` adds Open
   Settings; the frames pass themselves as `contextData.ownerFrame` (Mainline `PlayerFrame.lua`, `TargetFrame.lua`,
   `PetFrame.lua`), which tells them from chat names and party frames. Seen in game, and the menus' protected actions

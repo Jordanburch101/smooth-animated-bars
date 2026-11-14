@@ -1,7 +1,8 @@
 -- The wait before mana regenerates: after a spell that spends mana, regeneration from Spirit stops for five seconds.
 -- Mana itself is secret, so the wait is timed from the player's casts: a cast that succeeds and costs mana starts
 -- it again. Its cost is read as the cast is sent, as a free cast (Clearcasting) uses its buff up by the time it
--- succeeds. Bars.lua draws the build-up on the mana bar.
+-- succeeds. Bars.lua draws the build-up on the mana bars: the player frame's, and the Personal Resource Display's
+-- power bar and the mana under a druid's form (each draws it only while it shows mana).
 
 local _, ns = ...
 
@@ -45,8 +46,18 @@ local function manaCost(spellID)
     return 0
 end
 
-local function bar()
-    return ns.Bars.Find("playerPower")
+-- Looked up as each wait begins, and kept for it.
+local waitBars = {}
+local function bars()
+    return waitBars
+end
+
+local function findBars()
+    local out = {}
+    for _, key in ipairs({ "playerPower", "prdPower" }) do
+        for _, found in ipairs(ns.Bars.FindAll(key)) do out[#out + 1] = found.bar end
+    end
+    waitBars = out
 end
 
 local frame = CreateFrame("Frame")
@@ -54,20 +65,18 @@ local frame = CreateFrame("Frame")
 local function stop()
     startedAt = nil
     frame:SetScript("OnUpdate", nil)
-    local b = bar()
-    if b then ns.Bars.Wait(b, nil) end
+    for _, b in ipairs(bars()) do ns.Bars.Wait(b, nil) end
 end
 
 local function onUpdate()
     local progress = (GetTime() - startedAt) / WAIT
-    local b = bar()
     if progress >= 1 then
         trace("REGEN starts")
         startedAt = nil
         frame:SetScript("OnUpdate", nil)
-        if b then ns.Bars.WaitOver(b) end
-    elseif b then
-        ns.Bars.Wait(b, progress)
+        for _, b in ipairs(bars()) do ns.Bars.WaitOver(b) end
+    else
+        for _, b in ipairs(bars()) do ns.Bars.Wait(b, progress) end
     end
 end
 
@@ -82,6 +91,7 @@ frame:SetScript("OnEvent", function(_, event, ...)
         if cost == "secret" or cost > 0 then
             trace("SPEND " .. spellName(spellID) .. " cost " .. tostring(cost))
             startedAt = GetTime()
+            findBars()
             frame:SetScript("OnUpdate", onUpdate)
         else
             trace("FREE " .. spellName(spellID))

@@ -254,6 +254,12 @@ function Options.Register(savedDB, defaultValues)
         whose = "your focus's", health = SAME_TARGET, power = SAME_TARGET })
     Frame("Target of Target", "tot", "totHealthColor", "totPowerColor", SameAsOptions("Same as Target"), {
         whose = "your target's target's and your focus's target's", health = SAME_TARGET, power = SAME_TARGET })
+    Frame("Personal Resource Display", "prd", "prdHealthColor", "prdPowerColor", SameAsOptions("Same as Yours"), {
+        whose = "the Personal Resource Display's",
+        health = "The extra bars the game shows with its Personal Resource Display option on, placed with Edit Mode. "
+            .. "Same as Yours follows your own health colour; Game Colour takes the display's own, as it draws it.",
+        power = "Same as Yours follows your own power colour. A druid's mana under the power bar in Cat or Bear Form "
+            .. "gets the liquid too." })
 
     Header("Nameplates")
     Checkbox("plateHealth", "Enemy Nameplates",

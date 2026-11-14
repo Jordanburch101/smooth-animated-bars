@@ -586,6 +586,13 @@ function Liquid:HideAll()
     for _, b in ipairs(self.bolts) do b.active = false end
 end
 
+-- Calm, with nothing in flight: for a liquid shown again after its frame was hidden, which stops its updates, so what
+-- was flying then would otherwise carry on where it stopped. The next Update draws it again.
+function Liquid:Settle()
+    self:HideAll()
+    self.energy, self.charge = 0, 0
+end
+
 -- Nothing visible is moving beyond the idle wobble and slow ambient particles, so the caller
 -- can lower the update rate.
 function Liquid:IsQuiet()

@@ -590,6 +590,40 @@ PetFrameManaBar = NewStatusBar("PetFrameManaBar", PetFrame, 77, 7)
 PetFrameHealthBarMask = PetFrameHealthBar:CreateMaskTexture()
 PetFrameManaBarMask = PetFrameManaBar:CreateMaskTexture()
 PetFrame.healthbar, PetFrame.manabar = PetFrameHealthBar, PetFrameManaBar
+-- The Personal Resource Display (Blizzard_PersonalResourceDisplay, forever branch): health in a container, power, and
+-- the mana a druid's form takes off the power bar (AlternatePowerBar, hidden unless the player is a druid in a form).
+-- PersonalResourceStatusBar bars: the plates' art, no mask, texts TextString, LeftText and RightText (TextStatusBar,
+-- shown on mouseover or with Edit Mode's bar text). The game hides the frame unless its option is on (nameplateShowSelf).
+-- The bar texts' font object (TextStatusBarText, in SharedFonts.xml).
+TextStatusBarText = { GetFont = function() return "Fonts\\FRIZQT__.TTF", 10, "OUTLINE" end }
+PersonalResourceDisplayFrame = CreateFrame("Frame", "PersonalResourceDisplayFrame", UIParent)
+do
+    local prd = PersonalResourceDisplayFrame
+    prd.HealthBarsContainer = CreateFrame("Frame", nil, prd)
+    prd.HealthBarsContainer.healthBar = NewStatusBar("PersonalResourceDisplayFrame.healthBar", prd.HealthBarsContainer,
+        200, 10)
+    prd.PowerBar = NewStatusBar("PersonalResourceDisplayFrame.PowerBar", prd, 200, 10)
+    prd.AlternatePowerBar = NewStatusBar("PersonalResourceDisplayFrame.AlternatePowerBar", prd, 200, 10)
+    prd.AlternatePowerBar:Hide()
+    prd.HealthBarsContainer.healthBar:SetStatusBarColor(0, 1, 0)
+    -- Its prediction of the player's own heals: a texture on the bar (UpdateHealthPrediction).
+    prd.HealthBarsContainer.healthBar.myHealPrediction =
+        prd.HealthBarsContainer.healthBar:CreateTexture(nil, "BORDER", nil, 5)
+    prd.HealthBarsContainer.healthBar.myHealPrediction:Hide() -- hidden="true" until the game has a heal to show
+    prd.PowerBar:SetStatusBarColor(0.1, 0.25, 1)
+    prd.AlternatePowerBar:SetStatusBarColor(0, 0, 1)
+    for _, bar in ipairs({ prd.HealthBarsContainer.healthBar, prd.PowerBar, prd.AlternatePowerBar }) do
+        for _, key in ipairs({ "TextString", "RightText", "LeftText" }) do
+            bar[key] = bar:CreateFontString(nil, "OVERLAY", "TextStatusBarText")
+            bar[key]:SetFontObject(TextStatusBarText)
+            bar[key]:Hide()
+        end
+        bar.TextString:SetPoint("RIGHT", bar, "RIGHT", -5, 0)
+        bar.RightText:SetPoint("RIGHT", bar, "RIGHT", -5, 0)
+        bar.LeftText:SetPoint("LEFT", bar, "LEFT", 5, 0)
+    end
+    prd:Hide()
+end
 -- The target's portrait, on the frame's container (TargetFrame.xml).
 TargetFrame.TargetFrameContainer = CreateFrame("Frame", nil, TargetFrame)
 TargetFrame.TargetFrameContainer.Portrait = TargetFrame.TargetFrameContainer:CreateTexture(nil, "BACKGROUND")
