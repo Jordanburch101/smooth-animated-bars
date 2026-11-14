@@ -86,11 +86,16 @@ def report(log, source):
         out.append(f"plates {'on' if snap.get('platesOn') else 'off'} (at most {snap.get('maxPlates', '?')}, idle "
                    f"{snap.get('plateIdleFps', '?')} fps), textures in live liquids {snap.get('textures', '?')}, "
                    f"addon memory {snap.get('memoryKB', 0):.0f} KB, version {snap.get('version') or '?'}")
-        out.append("  s ago  frames  units  plates  unit ms/frame  plate ms/frame  peak ms")
+        out.append("  s ago  frames  units  plates  unit ms/frame  plate ms/frame  peak ms  (of the unit ms: display, "
+                   "party)")
         for ago, s in enumerate(secs, 1):
             f = s["frames"] or 1
+            groups = ""
+            if "prdMs" in s or "partyMs" in s:
+                groups = (f"  {s.get('prdMs', 0) / f:.3f} ({s.get('prd', 0)}),"
+                          f" {s.get('partyMs', 0) / f:.3f} ({s.get('party', 0)})")
             out.append(f"  {ago:5d}  {s['frames']:6d}  {s['units']:5d}  {s['plates']:6d}  {s['unitMs'] / f:13.3f}  "
-                       f"{s['plateMs'] / f:14.3f}  {s['peak']:7.2f}")
+                       f"{s['plateMs'] / f:14.3f}  {s['peak']:7.2f}{groups}")
     return out
 
 

@@ -478,7 +478,8 @@ late.execute("""
     PartyFrame.MemberFrame1, PartyFrame.MemberFrame2 = PartyFrame.MemberFrame2, __hidden
     __units.party2 = { isOtherPlayer = true, class = 'MAGE' }
     local b = PartyFrame.MemberFrame2.HealthBarContainer.HealthBar
-    b.unit = 'party2' -- UnitFrame_SetUnit, as the frame takes its new place
+    b.unit = 'party2' -- UnitFrame_SetUnit, as the frame takes its new place: on the frame and its bars
+    PartyFrame.MemberFrame2.unit = 'party2'
     b:SetMinMaxValues(0, __secret()); b:SetValue(__secret())
     PartyFrame.MemberFrame2:Show()
     __fire('GROUP_ROSTER_UPDATE')
@@ -541,14 +542,29 @@ check(b > 0.8 and r < 0.5 and before[1] != r,
       f"a member's class learned after they joined: their colour follows within a moment ({r:.2f}, {g:.2f}, {b:.2f})")
 # Out of a group the game hides its member frames, but Edit Mode's preview may have left the player on a bar: the
 # player's own changes do not stir it.
-pf.execute(f"PartyFrame.MemberFrame3:Hide(); {PARTY_HEALTH.format(3)}.unit = 'player'")
+pf.execute(f"{PARTY_HEALTH.format(3)}.unit = 'player'")
+run(pf, 1)  # shown, so the liquid takes the player on, as in Edit Mode's preview
+pf.execute("PartyFrame.MemberFrame3:Hide()")
 run(pf, 2)
 pf.execute("for _ = 1, 20 do __fire('UNIT_HEALTH', 'player') end")
 check(pf.eval(f"__ns.Bars.Liquid({PARTY_HEALTH.format(3)}).energy") < 0.05,
-      "a hidden party bar with the player on it is not stirred by the player's changes")
+      "a hidden party bar left with the player on it (Edit Mode's preview) is not stirred by the player's changes")
+pf.execute(f"{PARTY_HEALTH.format(3)}.unit = 'party3'")
+# A member in a vehicle: the game puts the vehicle on their health bar but asks whether the member is online.
+pf.execute(f"PartyFrame.MemberFrame2.unit = 'party2'; {PARTY_HEALTH.format(2)}.unit = 'partypet2'")
+run(pf, 1)
+check(pf.eval(f"(select(2, __liquid({PARTY_HEALTH.format(2)})))") > 0 and pf.eval(f"{PARTY_HEALTH.format(2)}.fill.alpha") == 0,
+      "a member in a vehicle (the vehicle on their bar) keeps the liquid: it is the member who is online")
+pf.execute(f"{PARTY_HEALTH.format(2)}.unit = 'party2'")
 pf.execute("__units.party1.offline = true")
 run(pf, 0.7)
 check(pf.eval(f"__ns.Bars.IsLive({PARTY_HEALTH.format(1)})") is False, "an offline member's bar does not count as live")
+pf.execute("__settings.partyHealth:SetValue(false)")
+run(pf, 0.2)
+pf.execute("__settings.partyHealth:SetValue(true)")
+run(pf, 0.3)
+check(pf.eval(f"{PARTY_HEALTH.format(1)}.fill.alpha") == 1 and pf.eval(f"(select(2, __liquid({PARTY_HEALTH.format(1)})))") == 0,
+      "Party Health off and on while a member is offline: their bar stays the game's grey one, not an empty bar")
 pf.execute("__units.party1.offline = nil")
 
 print("== a bar whose size is kept secret")
@@ -2153,6 +2169,19 @@ ph.execute(f"{PRD}:Show()")
 run(ph, 0.5)
 check(ph.eval(f"__mk({PH}).clip.shown") and ph.eval(f"__mk({PH}).liquids[1].themeKey") == "bandage",
       "and shows when the display does")
+# Shown again, a bar settles (nothing left in flight from before) and must draw at once: settled, it counts as quiet and
+# would wait for its next idle update, the game's fill hidden meanwhile, an empty bar for a few frames at 144 fps.
+ph.execute(f"{PRD}:Hide()")
+run(ph, 1)
+ph.execute(f"{PRD}:Show(); __step(1 / 144)")
+check(ph.eval(f"(select(2, __liquid({PH})))") > 0 and ph.eval(f"{PH}.fill.alpha") == 0,
+      "a bar shown again draws its liquid on the first frame, not an empty bar until its next idle update")
+ph.execute(f"{PRD}:Hide()")
+run(ph, 3)
+ph.execute("for _ = 1, 20 do __fire('UNIT_HEALTH', 'player') end")
+check(ph.eval(f"__ns.Bars.Liquid({PH}).energy") < 0.05,
+      "the display hidden (in-combat only, out of combat): the player's changes do not stir it")
+ph.execute(f"{PRD}:Show()")
 check(not any("Error in" in m for m in chat(ph)), "no errors")
 
 print("== enemy nameplates")

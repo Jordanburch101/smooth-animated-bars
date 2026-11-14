@@ -17,11 +17,11 @@ local W, H = 620, 450
 local GOLD = { 1, 0.82, 0 }
 local EDGE = { 0.32, 0.30, 0.36 }
 
--- Each pick sets every frame's bars: the pet goes with the player, the focus and targets of target with the target.
--- The party has a step of its own.
+-- Each pick sets every frame's bars: the pet and the Personal Resource Display go with the player, the focus and targets
+-- of target with the target. The party has a step of its own.
 local function BarSet(mine, others, power)
     local set = {}
-    for _, frame in ipairs({ "player", "pet" }) do
+    for _, frame in ipairs({ "player", "pet", "prd" }) do
         set[frame .. "Health"], set[frame .. "Power"] = mine, mine and power
     end
     for _, frame in ipairs({ "target", "focus", "tot" }) do

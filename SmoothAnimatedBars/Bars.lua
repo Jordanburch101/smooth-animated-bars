@@ -47,6 +47,20 @@ local PLATE_SHADE_TEX = "Interface\\AddOns\\SmoothAnimatedBars\\Media\\PlateShad
 local TINT_PAST = 4               -- px the tint of a secret plate colour reaches past the health's edge (PlateColor)
 local PLATE_WAIT = 1              -- how long a new plate may take to get its unit frame, seconds
 
+-- The party frames' liquids: eight small bars (70x10 and 74x7) whose members' health and power change all through a
+-- fight, so they were stirred every STIR_EVERY and never settled, each updating every frame. In a party in combat the
+-- unit frames' liquids took 4.3 ms a frame (15% of it at 36 fps, /sab perf in game), and in the mock the party's eight
+-- made more widget calls than the player's, target's and display's together. So they update at most PARTY_FPS times a
+-- second, busy or not, as small as the plates' bars, and stir at most every PARTY_STIR_EVERY.
+local PARTY_FPS = 20
+local PARTY_STIR_EVERY = 1.2
+-- And their fronts have a slice for every PARTY_ROW_PX of the bar's height (8 for health, 6 for power) instead of
+-- fifteen: each slice is nine textures redrawn every update, and fifteen on a bar 7 px high were half a pixel each.
+local PARTY_ROW_PX = 1.25
+local function PartyRows(h)
+    return math.max(6, math.min(15, math.floor(h / PARTY_ROW_PX)))
+end
+
 -- Inflow (Bars.Inflow): while something is on the way into a bar, its particles drift back from the front into
 -- the bar's liquid, and the front ripples where the two meet.
 local INFLOW_RATE = 12         -- motes per second
@@ -778,7 +792,8 @@ local function NewBar(spot, bar)
     mover:SetWidth(w)
     b.mover = mover
 
-    b.liquid = ns.Liquid.New(mover, math.max(w, 1) + ROOM, math.max(h, 1), ns.Themes.Get(ns.Themes.default), ns.Core.db)
+    b.liquid = ns.Liquid.New(mover, math.max(w, 1) + ROOM, math.max(h, 1), ns.Themes.Get(ns.Themes.default), ns.Core.db,
+        spot.party and PartyRows(h) or nil)
     -- The bar's mask cuts the liquid to the bar. Motes are left free to fly off the front. A nameplate's bar has no
     -- mask, and its bronze rim has cut corners that a square liquid would cover, so the liquid there takes a mask of
     -- the addon's own in the shape of the game's fill (PlateMask.tga, make_media.py). So do the Personal Resource
@@ -825,7 +840,7 @@ end
 local function Stir(b)
     local now = GetTime()
     if now < b.stirAt then return end
-    b.stirAt = now + STIR_EVERY
+    b.stirAt = now + (b.spot.party and PARTY_STIR_EVERY or STIR_EVERY)
     b.liquid:Splash(STIR, b.width - 8, b.width)
 end
 
@@ -1212,7 +1227,12 @@ local function PartyFollow(b, dt)
     b.checkIn = (b.checkIn or 0) - dt
     if b.checkIn > 0 then return end
     b.checkIn = PARTY_CHECK_EVERY
-    local ok, connected = pcall(UnitIsConnected, b.unit)
+    -- Whether the member is online, asked of the member frame's unit as the game does (UpdateOnlineStatus): in a vehicle
+    -- the bar shows the vehicle (partypetN), which is no player to be online.
+    local member = b.spot.member
+    local who = type(member) == "table" and member.unit
+    if type(who) ~= "string" or Secret(who) then who = b.unit end
+    local ok, connected = pcall(UnitIsConnected, who)
     SetAway(b, ok and not Secret(connected) and connected == false)
     if not b.away then ApplyColor(b) end
 end
@@ -1236,7 +1256,13 @@ local function UpdateBar(b, dt)
         b.unseen = nil
         Feed(b, false)
         b.liquid:Settle()
-        if b.fury and b.fury.on then b.fury.liquid:Settle() end
+        if b.fury and b.fury.on then
+            b.fury.liquid:Settle()
+            b.fury.acc = 1 / FURY_FPS -- drawn again this frame too
+        end
+        -- Settled, it counts as quiet: drawn again now, not at the next idle update, or the bar shows nothing until then
+        -- (its game fill is hidden).
+        b.drawNow = true
         b.colorIn = 0 -- a flat bar's colour may have changed meanwhile (a druid shifting while it was hidden)
     end
 
@@ -1270,16 +1296,24 @@ local function UpdateBar(b, dt)
             SyncPlateTexts(b)
         end
     end
+    if b.spot.party then idleFps = PARTY_FPS end
     if b.spot.plate then
         idleFps = PLATE_IDLE_FPS
     else
         Inflow(b, dt, w, h)
         BuildUp(b, dt, w, h)
-        if b.kind == "power" then Fury(b, dt, w, h) end
+        if b.kind == "power" then
+            local clock = debugprofilestop
+            local t0 = clock and clock()
+            Fury(b, dt, w, h)
+            if t0 then b.furyMs = (b.furyMs or 0) + (clock() - t0) end
+        end
     end
 
-    -- Once settled only the idle wobble remains, so it drops to the idle rate.
-    if b.liquid:IsQuiet() then
+    -- Once settled only the idle wobble remains, so it drops to the idle rate. A party bar keeps to its rate busy too.
+    if b.drawNow then
+        b.drawNow, b.idle = nil, 0
+    elseif b.spot.party or b.liquid:IsQuiet() then
         b.idle = b.idle + dt
         if b.idle < 1 / idleFps then return end
         dt, b.idle = b.idle, 0
@@ -1441,9 +1475,18 @@ end
 -- for the unit frames (with the previews) and the nameplates apart. debugprofilestop is the client's millisecond
 -- timer. Only this file's updates are timed; the DoT and heal markers run their own.
 local PERF_SECONDS = 10
-local perf = { done = {} }
+local perf = { done = {}, groups = {} }
 
-local function PerfAdd(unitMs, plateMs, units, platesLive)
+-- The unit frames' share is split again by group (PerfGroup), each with its own count of liquids showing: the
+-- Personal Resource Display and the party frames apart from the rest.
+local PERF_GROUPS = { "prd", "party" }
+
+local function PerfGroup(b)
+    if b.spot.party then return "party" end
+    if b.spot.flat and not b.spot.plate and not b.spot.preview then return "prd" end
+end
+
+local function PerfAdd(unitMs, plateMs, units, platesLive, groups)
     local second = math.floor(GetTime())
     local cur = perf.cur
     if not cur or cur.second ~= second then
@@ -1452,12 +1495,31 @@ local function PerfAdd(unitMs, plateMs, units, platesLive)
             perf.done[PERF_SECONDS + 1] = nil
         end
         cur = { second = second, frames = 0, unitMs = 0, plateMs = 0, peak = 0, units = 0, plates = 0 }
+        for _, g in ipairs(PERF_GROUPS) do cur[g .. "Ms"], cur[g] = 0, 0 end
         perf.cur = cur
     end
     cur.frames = cur.frames + 1
     cur.unitMs, cur.plateMs = cur.unitMs + unitMs, cur.plateMs + plateMs
     cur.peak = math.max(cur.peak, unitMs + plateMs)
     cur.units, cur.plates = math.max(cur.units, units), math.max(cur.plates, platesLive)
+    for _, g in ipairs(PERF_GROUPS) do
+        cur[g .. "Ms"] = cur[g .. "Ms"] + groups[g .. "Ms"]
+        cur[g] = math.max(cur[g], groups[g])
+    end
+end
+
+-- Each unit frame bar's time (and its fury's), moved into the second just ended. Its label names it in /sab perf.
+local function PerfBars(cur)
+    cur.bars = cur.bars or {}
+    for _, b in pairs(bars) do
+        if b.perfMs and b.perfMs > 0 then
+            local label = b.spot.label or ((b.unit or "?") .. " " .. b.kind)
+            local e = cur.bars[label] or { ms = 0, fury = 0 }
+            e.ms, e.fury = e.ms + b.perfMs, e.fury + (b.furyMs or 0)
+            cur.bars[label] = e
+            b.perfMs, b.furyMs = 0, 0
+        end
+    end
 end
 
 local function RunBar(b, dt)
@@ -1507,13 +1569,31 @@ local function OnUpdate(_, elapsed)
     local clock = debugprofilestop
     local t0 = clock and clock()
     local units, live = 0, 0
-    for _, b in pairs(bars) do if RunBar(b, dt) then units = units + 1 end end
+    local groups = perf.groups
+    for _, g in ipairs(PERF_GROUPS) do groups[g .. "Ms"], groups[g] = 0, 0 end
+    for _, b in pairs(bars) do
+        local g = clock and PerfGroup(b)
+        local tb = clock and clock()
+        local shows = RunBar(b, dt)
+        if shows then units = units + 1 end
+        if tb then
+            local ms = clock() - tb
+            b.perfMs = (b.perfMs or 0) + ms
+            if g then
+                groups[g .. "Ms"] = groups[g .. "Ms"] + ms
+                if shows then groups[g] = groups[g] + 1 end
+            end
+        end
+    end
     for _, b in ipairs(previews) do if RunBar(b, dt) then units = units + 1 end end
     local t1 = clock and clock()
     if next(pending) then TryPending() end
     for _, b in pairs(plates) do if RunBar(b, dt) then live = live + 1 end end
     if partyWaiting then LookForParty(dt) end
-    if clock then PerfAdd(t1 - t0, clock() - t1, units, live) end
+    if clock then
+        PerfAdd(t1 - t0, clock() - t1, units, live, groups)
+        PerfBars(perf.cur)
+    end
 end
 
 local STIR_EVENTS = { UNIT_HEALTH = "health", UNIT_MAXHEALTH = "health", UNIT_POWER_UPDATE = "power",
@@ -1567,7 +1647,9 @@ local function OnEvent(_, event, unit, ...)
     if event == "GROUP_ROSTER_UPDATE" then
         -- Someone joined or left: a party bar can show another member under the same token, and the party frames may
         -- only now be there to build on (built out of combat, as at login).
-        if partyWaiting and not InCombatLockdown() then Bars.Apply() end
+        -- Only when a member frame is there to build on: without the party frame (raid-style frames) every roster change
+        -- in a raid or battleground would apply everything again.
+        if partyWaiting and not InCombatLockdown() and PartyFramesNew() then Bars.Apply() end
         for _, b in pairs(bars) do
             if b.live and b.spot.party then
                 b.checkIn = 0
@@ -1653,7 +1735,8 @@ local function AddPartySpots()
                 elseif IsBar(bar) and not built[bar] then
                     built[bar] = true
                     local spot = { key = key, frame = "party", optional = true, party = true, unit = "party" .. i,
-                                   kind = kind, find = function() return bar end }
+                                   kind = kind, find = function() return bar end,
+                                   member = Path(rawget(_G, "PartyFrame"), "MemberFrame" .. i) }
                     SPOTS[#SPOTS + 1] = spot
                     bars[spot] = NewBar(spot, bar)
                 end
@@ -2070,9 +2153,33 @@ function Bars.Perf()
     end
     out[#out + 1] = string.format("Over the last %d s (%d frames):", #perf.done, frames)
     out[#out + 1] = Line("unit frames", unitMs, units)
+    -- Of which: the display's and the party's, where there were any.
+    for _, group in ipairs({ { "prd", "  of which the Personal Resource Display" }, { "party", "  of which the party" } }) do
+        local g, label = group[1], group[2]
+        local ms, n = 0, 0
+        for _, s in ipairs(perf.done) do ms, n = ms + (s[g .. "Ms"] or 0), math.max(n, s[g] or 0) end
+        if n > 0 then out[#out + 1] = Line(label, ms, n) end
+    end
     out[#out + 1] = Line("nameplates", plateMs, platesLive)
     if platesLive > 0 then
         out[#out + 1] = string.format("  that is %.3f ms a frame per nameplate", plateMs / frames / platesLive)
+    end
+    -- The costliest unit frame bars, each with its fury's share (party members' bars by their unit).
+    local byBar = {}
+    for _, s in ipairs(perf.done) do
+        for label, e in pairs(s.bars or {}) do
+            local t = byBar[label] or { label = label, ms = 0, fury = 0 }
+            t.ms, t.fury = t.ms + e.ms, t.fury + e.fury
+            byBar[label] = t
+        end
+    end
+    local list = {}
+    for _, t in pairs(byBar) do list[#list + 1] = t end
+    table.sort(list, function(a, b) return a.ms > b.ms end)
+    for i = 1, math.min(6, #list) do
+        local t = list[i]
+        out[#out + 1] = string.format("  %s: %.3f ms a frame%s", t.label, t.ms / frames,
+            t.fury > 0 and string.format(" (its rage fury %.3f)", t.fury / frames) or "")
     end
     out[#out + 1] = string.format("slowest frame: %.2f ms", peak)
     local textures = 0
@@ -2091,7 +2198,8 @@ function Bars.PerfSnapshot()
     local seconds = {}
     for i, s in ipairs(perf.done) do
         seconds[i] = { frames = s.frames, unitMs = s.unitMs, plateMs = s.plateMs, peak = s.peak, units = s.units,
-                       plates = s.plates }
+                       plates = s.plates, prdMs = s.prdMs, prd = s.prd, partyMs = s.partyMs, party = s.party,
+                       bars = s.bars }
     end
     local textures = 0
     Each(function(b) if b.live then textures = textures + #b.liquid.textures end end)

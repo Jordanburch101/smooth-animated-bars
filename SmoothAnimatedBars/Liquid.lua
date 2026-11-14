@@ -13,8 +13,25 @@ local atan2 = math.atan2 or math.atan
 local MEDIA = "Interface\\AddOns\\SmoothAnimatedBars\\Media\\"
 local SWIRL_W, SWIRL_H = 256, 64
 
+-- Show and hide the liquid's textures only when that changes: Draw asks for every slice, cap and layer each update,
+-- and on eight quiet party bars a third of the widget calls a frame were Show and Hide on textures already so (counted
+-- in the mock). The state is kept on our own textures; nothing else shows or hides them.
+local function On(t)
+    if not t.sabShown then
+        t.sabShown = true
+        t:Show()
+    end
+end
+
+local function Off(t)
+    if t.sabShown ~= false then
+        t.sabShown = false
+        t:Hide()
+    end
+end
+
 local CFG = {
-    rows        = 15,      -- horizontal slices that make up the liquid front
+    rows        = 15,      -- horizontal slices that make up the liquid front (Liquid.New can take fewer)
     step        = 1 / 120, -- fixed physics step
     energyDecay = 0.8,     -- per second
     bubbles     = 36,      -- pool sizes
@@ -165,10 +182,13 @@ Liquid.__index = Liquid
 ns.Liquid = Liquid
 
 -- opts holds the user toggles (waves, swirl, bubbles, sparkles, ambient, lightning) and is read live.
-function Liquid.New(parent, width, height, theme, opts)
+-- rows: how many slices make up the front (CFG.rows unless given). A short bar can take fewer: each slice is several
+-- textures redrawn every update, and on a bar 7 px high fifteen of them were half a pixel each (the party's).
+function Liquid.New(parent, width, height, theme, opts, rows)
     local self = setmetatable({}, Liquid)
     self.parent, self.width, self.height, self.opts = parent, width, height, opts
-    self.rowH = height / CFG.rows
+    self.n = rows or CFG.rows
+    self.rowH = height / self.n
     self.textures = {} -- every texture made here, for HideAll and masks
     self.drawLayers = {} -- texture -> { layer, sublevel } as made, for SetSublevelOffset
 
@@ -188,7 +208,7 @@ function Liquid.New(parent, width, height, theme, opts)
             t:SetSnapToPixelGrid(false)
             t:SetTexelSnappingBias(0)
         end
-        t:Hide()
+        Off(t)
         return t
     end
 
@@ -198,10 +218,10 @@ function Liquid.New(parent, width, height, theme, opts)
 
     self.rows, self.tips, self.pos, self.vel = {}, {}, {}, {}
     self.lean, self.leanShape = 0, {}
-    for i = 1, CFG.rows do
-        self.leanShape[i] = 0.55 - ((i - 1) / (CFG.rows - 1)) ^ 1.3 -- row 1 is the top
+    for i = 1, self.n do
+        self.leanShape[i] = 0.55 - ((i - 1) / (self.n - 1)) ^ 1.3 -- row 1 is the top
     end
-    for i = 1, CFG.rows do
+    for i = 1, self.n do
         local row = Tex("ARTWORK", 3)
         row:SetHeight(self.rowH)
         self.rows[i] = row
@@ -217,7 +237,7 @@ function Liquid.New(parent, width, height, theme, opts)
         local layer = { main = Tex("ARTWORK", sublevel, MEDIA .. file, blend, "REPEAT"), caps = {}, u = 0, v = 0 }
         layer.main:SetPoint("TOPLEFT")
         layer.main:SetPoint("BOTTOMLEFT")
-        for i = 1, CFG.rows do
+        for i = 1, self.n do
             layer.caps[i] = Tex("ARTWORK", sublevel, MEDIA .. file, blend, "REPEAT")
         end
         return layer
@@ -324,12 +344,12 @@ function Liquid:SetTheme(theme)
     -- Particles from the previous theme would look out of place.
     for _, m in ipairs(self.motes) do
         m.active = false
-        m.tex:Hide()
+        Off(m.tex)
     end
     for _, b in ipairs(self.bolts) do
         b.active = false
-        b.tex:Hide()
-        b.glow:Hide()
+        Off(b.tex)
+        Off(b.glow)
     end
     -- Whatever is pouring in keeps tinting the front.
     if self.inflowTheme then self:SetInflow(self.inflowTheme, self.inflowMix) end
@@ -347,8 +367,8 @@ function Liquid:LayerColor(layer, c)
 end
 
 local function HideLayer(layer)
-    layer.main:Hide()
-    for _, cap in ipairs(layer.caps) do cap:Hide() end
+    Off(layer.main)
+    for _, cap in ipairs(layer.caps) do Off(cap) end
 end
 
 -- ku, kv: texture units per px across and down. Caps use the same mapping as the main texture,
@@ -364,7 +384,7 @@ function Liquid:DrawLayer(layer, ku, kv, alpha)
     main:SetWidth(back)
     main:SetTexCoord(u, u + back * ku, v, v + self.height * kv)
     main:SetAlpha(alpha)
-    main:Show()
+    On(main)
     local ub = u + back * ku
     for i, cap in ipairs(layer.caps) do
         local e = ends[i]
@@ -374,9 +394,9 @@ function Liquid:DrawLayer(layer, ku, kv, alpha)
             cap:SetSize(e - back, rowH)
             cap:SetTexCoord(ub, u + e * ku, v + y * kv, v + (y + rowH) * kv)
             cap:SetAlpha(alpha)
-            cap:Show()
+            On(cap)
         else
-            cap:Hide()
+            Off(cap)
         end
     end
 end
@@ -384,7 +404,7 @@ end
 -- Each slice's line is 1.5 slices tall so they overlap their neighbours on the
 -- textures' ramps. The first and last drop their outer ramp so they stay inside the bar.
 function Liquid:LayoutTips()
-    local rowH, n = self.rowH, CFG.rows
+    local rowH, n = self.rowH, self.n
     for i, tip in ipairs(self.tips) do
         local top, h, v0, v1 = rowH * 0.25, rowH * 1.5, 0, 1
         if i == 1 then
@@ -400,8 +420,8 @@ end
 
 function Liquid:SetSize(width, height)
     self.width, self.height = width, height
-    self.rowH = height / CFG.rows
-    for i = 1, CFG.rows do
+    self.rowH = height / self.n
+    for i = 1, self.n do
         self.rows[i]:SetHeight(self.rowH)
     end
     self:LayoutTips()
@@ -428,26 +448,26 @@ end
 function Liquid:ApplyOptions()
     local opts = self.opts
     if not opts.waves then
-        for i = 1, CFG.rows do self.pos[i], self.vel[i] = 0, 0 end
+        for i = 1, self.n do self.pos[i], self.vel[i] = 0, 0 end
     end
     if not opts.bubbles then
         for _, b in ipairs(self.bubbles) do
             b.active = false
-            b.tex:Hide()
+            Off(b.tex)
         end
     end
     if not opts.lightning then
         for _, b in ipairs(self.bolts) do
             b.active = false
-            b.tex:Hide()
-            b.glow:Hide()
+            Off(b.tex)
+            Off(b.glow)
         end
         self.storm = 0
     end
     for _, m in ipairs(self.motes) do
         if m.active and ((m.ambient and not opts.ambient) or (not m.ambient and not opts.sparkles)) then
             m.active = false
-            m.tex:Hide()
+            Off(m.tex)
         end
     end
 end
@@ -475,7 +495,7 @@ function Liquid:Splash(intensity, fromX, toX)
 
     -- Ripple out from a random point on the front (a follower's front is its leader's).
     if self.opts.waves and not self.leader then
-        local n = CFG.rows
+        local n = self.n
         local centre = random(1, n)
         local kick = (40 + 160 * intensity) * (1 - self.steady)
         for i = 1, n do
@@ -540,7 +560,7 @@ end
 function Liquid:Follow(leader, tremble)
     self.leader, self.tremble = leader, tremble or 0
     if not leader then
-        for i = 1, CFG.rows do self.pos[i], self.vel[i] = 0, 0 end
+        for i = 1, self.n do self.pos[i], self.vel[i] = 0, 0 end
     end
 end
 
@@ -568,7 +588,7 @@ end
 -- A ripple along the front only: no motes, no bubbles, no lightning charge. intensity 0..1.
 function Liquid:Ripple(intensity)
     if not self.opts.waves or self.leader then return end
-    local n = CFG.rows
+    local n = self.n
     local centre = random(1, n)
     local kick = (40 + 160 * intensity) * (1 - self.steady)
     for i = 1, n do
@@ -580,7 +600,7 @@ end
 -- Hide everything the liquid draws, e.g. while its bar shows the game's own fill. The next Update
 -- shows what it needs again; particles in flight are dropped.
 function Liquid:HideAll()
-    for _, t in ipairs(self.textures) do t:Hide() end
+    for _, t in ipairs(self.textures) do Off(t) end
     for _, b in ipairs(self.bubbles) do b.active = false end
     for _, m in ipairs(self.motes) do m.active = false end
     for _, b in ipairs(self.bolts) do b.active = false end
@@ -591,14 +611,14 @@ end
 function Liquid:Settle()
     self:HideAll()
     self.energy, self.charge = 0, 0
-    for i = 1, CFG.rows do self.pos[i], self.vel[i] = 0, 0 end
+    for i = 1, self.n do self.pos[i], self.vel[i] = 0, 0 end
 end
 
 -- Nothing visible is moving beyond the idle wobble and slow ambient particles, so the caller
 -- can lower the update rate.
 function Liquid:IsQuiet()
     if self.energy > 0.02 then return false end
-    for i = 1, CFG.rows do
+    for i = 1, self.n do
         if abs(self.vel[i]) > 1 or abs(self.pos[i]) > 0.3 then return false end
     end
     for _, m in ipairs(self.motes) do
@@ -639,7 +659,7 @@ function Liquid:EmitMote(x, y, vx, vy, life, size, from, to, style, ambient)
     end
     if tex.SetRotation then tex:SetRotation((style.spin or style.orient) and m.rot or 0) end
     m.active = true
-    tex:Show()
+    On(tex)
 end
 
 -- Continuous particles from a theme's `ambient` list (embers, snow, spores, stars...).
@@ -695,7 +715,7 @@ function Liquid:EmitBubble(x, drifter)
             end
             b.age, b.pop = 0, nil
             b.active = true
-            b.tex:Show()
+            On(b.tex)
             return
         end
     end
@@ -738,8 +758,8 @@ function Liquid:EmitBolt()
             b.tex:SetVertexColor(Lerp(c[1], 1, wa), Lerp(c[2], 1, wa), Lerp(c[3], 1, wa))
             b.glow:SetVertexColor(Lerp(g[1], 1, wg), Lerp(g[2], 1, wg), Lerp(g[3], 1, wg))
             b.active = true
-            if not b.sheet then b.tex:Show() end
-            b.glow:Show()
+            if not b.sheet then On(b.tex) end
+            On(b.glow)
             return
         end
     end
@@ -768,8 +788,8 @@ function Liquid:UpdateBolts(dt)
             local w = min(b.w, back - 2 - b.x)
             if (b.strokes == 0 and b.flash < 0.03) or w < h * 2 or not self.opts.lightning then
                 b.active = false
-                b.tex:Hide()
-                b.glow:Hide()
+                Off(b.tex)
+                Off(b.glow)
             else
                 local lit = b.flash * b.power
                 b.tex:SetSize(w, h * 0.9)
@@ -798,7 +818,7 @@ function Liquid:UpdateParticles(dt)
                 local p = b.pop / 0.15
                 if p >= 1 then
                     b.active = false
-                    b.tex:Hide()
+                    Off(b.tex)
                 else
                     b.tex:SetSize(b.size * (1 + p), b.size * (1 + p))
                     b.tex:SetAlpha(bubbleAlpha * (1 - p))
@@ -849,7 +869,7 @@ function Liquid:UpdateParticles(dt)
             end
             if done then
                 m.active = false
-                m.tex:Hide()
+                Off(m.tex)
             else
                 m.x = m.x + m.vx * dt
                 m.y = m.y + m.vy * dt
@@ -892,7 +912,7 @@ end
 
 function Liquid:Simulate(dt)
     if self.leader then return end
-    local pos, vel, n, phys = self.pos, self.vel, CFG.rows, self.phys
+    local pos, vel, n, phys = self.pos, self.vel, self.n, self.phys
     local lean, shape = self.lean, self.leanShape
     local k, d, c, limit = phys.stiffness, phys.damping + STEADY_DAMPING * self.steady, phys.coupling, phys.amplitude * 1.2
     local s = CFG.step
@@ -929,7 +949,7 @@ function Liquid:Update(dt, edge)
     self.edge, self.speed = edge, speed
     if dv ~= 0 and self.opts.waves and not self.leader then
         local kick = -dv * self.phys.slosh
-        local n = CFG.rows
+        local n = self.n
         for i = 1, n do
             self.vel[i] = self.vel[i] + kick * sin(pi * (i - 0.5) / n)
         end
@@ -1026,14 +1046,14 @@ function Liquid:Draw(dt)
     if base >= 0.5 then
         self.body:SetGradient("HORIZONTAL", self.gradA, self.gradB)
         self.body:SetWidth(base)
-        self.body:Show()
+        On(self.body)
     else
-        self.body:Hide()
+        Off(self.body)
     end
 
     local tipAlpha = (0.25 + 0.5 * min(1, energy)) * k
     local rowH, back, ends = self.rowH, edge, self.ends
-    for i = 1, CFG.rows do
+    for i = 1, self.n do
         local row, tip = self.rows[i], self.tips[i]
         local off = self:FrontOffset(i)
         local right = min(w, edge + off)
@@ -1043,20 +1063,20 @@ function Liquid:Draw(dt)
         ends[i] = vis
         if vis and vis < back then back = vis end
         if edge < 0.5 or rw < 0.5 then
-            row:Hide()
-            tip:Hide()
+            Off(row)
+            Off(tip)
         else
             local y = -(i - 1) * rowH
             row:SetGradient("HORIZONTAL", self.gradB, self.gradC)
             row:SetPoint("TOPLEFT", parent, "TOPLEFT", base, y)
             row:SetWidth(rw)
-            row:Show()
+            On(row)
             if right < w - 1 then
                 tip:SetPoint("TOPLEFT", parent, "TOPLEFT", right - 0.5 - CFG.edgeCore * CFG.edgeW, y + tip.dy)
                 tip:SetAlpha(min(1, tipAlpha + abs((self.leader or self).vel[i]) * 0.01))
-                tip:Show()
+                On(tip)
             else
-                tip:Hide()
+                Off(tip)
             end
         end
     end
@@ -1122,8 +1142,8 @@ function Liquid:Draw(dt)
     if edge > 1 and edge < w - 1 then
         self.glow:SetPoint("CENTER", parent, "LEFT", edge, 0)
         self.glow:SetAlpha(min(1, (0.12 + 0.55 * energy) * k))
-        self.glow:Show()
+        On(self.glow)
     else
-        self.glow:Hide()
+        Off(self.glow)
     end
 end

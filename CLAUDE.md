@@ -187,7 +187,8 @@ Facts found while building this, which the code relies on and which are not obvi
   shows (`PartyFrameMixin:OnShow`), which can come after `GROUP_ROSTER_UPDATE` or with no group change (Edit Mode), so
   while a wanted party bar is missing they are looked for every second out of combat (`LookForParty`). A member's
   colour is read again with the half-second online check, and a hidden party bar (perhaps left on `player` by Edit
-  Mode's preview) is never stirred. An empty slot's
+  Mode's preview) is never stirred. Whether a member is online is asked of the member frame's unit, as the game's
+  `UpdateOnlineStatus` does: in a vehicle the bar shows `partypetN`. An empty slot's
   unit answers `UnitIsConnected` false, and while a member is offline the game's grey bar is given back. Raid-style
   party frames (`CompactPartyFrameMember1..5`, CompactUnitFrames) are another matter: no masks, and their colour and
   fill alpha secret even out of combat. The party pets' bars (`PetFrame.HealthBar`, no mask) and the fury on a party
@@ -252,7 +253,21 @@ Facts found while building this, which the code relies on and which are not obvi
   step shows four example plates instead of the unit frames (`Preview.CreatePlates`), built from those atlases in
   the Normal style and following the plate settings; seen in game and right.
   `/sab perf` times the updates with `debugprofilestop`, unit frames and plates
-  apart; the mock's numbers are mostly the mock's own cost, so only the game's say anything. Addons cannot write
+  apart, and of the unit frames the Personal Resource Display's and the party's (`PerfGroup`); the mock's times are
+  mostly the mock's own cost, so only the game's say anything. What the mock can count is widget calls per frame
+  (wrap the mock's Region methods), which is what costs in the client. In a party in combat the unit frames took
+  4.3 ms a frame (15% at 36 fps) and 4.6 ms (25% at 55 fps) in game; counted in the mock, the eight party liquids,
+  stirred all fight and so never quiet, made more calls than the player's, target's and display's together. So party
+  liquids update at most 20 times a second and stir at most every 1.2 s (`PARTY_FPS`, `PARTY_STIR_EVERY`), and their
+  fronts have a slice per 1.25 px of height (8 and 6 instead of 15; `Liquid.New`'s `rows`, looked the same zoomed in).
+  `Liquid.lua` shows and hides its textures only when that changes (`On`, `Off`): a third of a quiet liquid's calls
+  were Show and Hide on textures already so. Together a party's eight went from about 4500 calls a frame to 820 in a
+  stream of events, and the player's and target's four from 2700 to 2100. Fewer slices on the other short bars
+  (power bars, the display, plates) would save more but changes the gallery's look, so not yet. `/sab perf` also lists
+  the six costliest unit frame bars with their Rage Fury's share (`PerfBars`). After the party changes, in game in a
+  party in combat at 24 fps: party 0.2 ms a frame per liquid, the full-size bars about 0.85 ms each, the display's two
+  2.1 ms with its fury. In the mock the fury is about half of a rage bar's cost: it runs at 30 fps even when the curve
+  has faded it out (below half rage), as the addon cannot know how much of it shows. Addons cannot write
   files, so each `/sab perf` is kept in `SmoothAnimatedBarsDB.perfLog` (last 50), which the client writes on
   `/reload`; `tools/perf_report.py` turns the newest saved file under Forever's WTF folder into
   `perf/perf_report.txt` (git-ignored). The DoT marker on plates (`plateDots`, needs `plateHealth`): `Dots.lua`
@@ -298,7 +313,8 @@ Facts found while building this, which the code relies on and which are not obvi
   (`Bars.FindAll`); the form mana's bar counts as mana whatever the power type (`spot.token`). Not yet seen in game.
   A hidden bar's liquid is not updated, so nothing is set off in one (`Bars.WaitOver`, `Bars.Release`, the fury's
   burst check `Visible`), heal flags are dropped while a marker is hidden, and a bar shown again settles
-  (`Liquid:Settle`): a burst in flight when it hid would otherwise finish when it shows. Every class has the
+  (`Liquid:Settle`): a burst in flight when it hid would otherwise finish when it shows. Settled, it counts as quiet,
+  so it is drawn at once (`drawNow`): waiting for its next idle update left an empty bar for a few frames. Every class has the
   `AlternatePowerBar`, but on Forever only a druid's is used, so only druids build one.
 - **Unit frame menus** (`Options.lua`, `AddToUnitMenus`): `Menu.ModifyMenu("MENU_UNIT_" .. which, ...)` adds Open
   Settings; the frames pass themselves as `contextData.ownerFrame` (Mainline `PlayerFrame.lua`, `TargetFrame.lua`,

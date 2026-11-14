@@ -16,7 +16,7 @@ Sections are `### New` and `### Fixed`; skip one that would be empty.
   keep the game's own bars.
 - **Personal Resource Display**: the liquid fills the game's Personal
   Resource Display too, the extra health and power bars you can turn on in
-  its options and place with Edit Mode. It follows your own bars' colours,
+  the game's options and place with Edit Mode. It follows your own bars' colours,
   or takes its own under Personal Resource Display in the settings. Your
   heals, bandages, food and drink show there as on your player frame, the
   mana bar builds up through the wait before mana regenerates, and a

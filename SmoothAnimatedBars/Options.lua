@@ -188,8 +188,8 @@ local function MenuSection(owner, frames)
     if frames[owner] then return MENU_SECTIONS[owner:GetName() or ""] or "" end
     local party = rawget(_G, "PartyFrame")
     -- Every hooked menu's owner comes here (chat names, raid frames): one the client will not answer for is passed by.
-    if not (party and owner.GetParent) then return nil end
-    local ok, parent = pcall(owner.GetParent, owner)
+    if not party then return nil end
+    local ok, parent = pcall(function() return owner:GetParent() end)
     if ok and parent == party then return "Party" end
 end
 
@@ -241,10 +241,14 @@ function Options.Register(savedDB, defaultValues)
     local function On(key) return function() return db[key] end end
     local function Frame(title, prefix, healthColor, powerColor, sameAs, extra)
         Header(title)
-        Checkbox(prefix .. "Health", "Health", "Liquid in " .. extra.whose .. " health bar.")
+        -- What a player needs to decide on turning a bar on goes on its checkbox too (aboutHealth, aboutPower): the
+        -- colour rows under it, with the rest of the explanation, show only once it is on.
+        Checkbox(prefix .. "Health", "Health", "Liquid in " .. extra.whose .. " health bar."
+            .. (extra.aboutHealth and (" " .. extra.aboutHealth) or ""))
         Dropdown(healthColor, "Colour", extra.health, sameAs or ColorOptions,
             { indent = true, shown = On(prefix .. "Health") })
-        Checkbox(prefix .. "Power", "Power", "Liquid in " .. extra.whose .. " power bar.")
+        Checkbox(prefix .. "Power", "Power", "Liquid in " .. extra.whose .. " power bar."
+            .. (extra.aboutPower and (" " .. extra.aboutPower) or ""))
         Dropdown(powerColor, "Colour", extra.power, sameAs or ColorOptions,
             { indent = true, shown = On(prefix .. "Power") })
     end
@@ -268,11 +272,16 @@ function Options.Register(savedDB, defaultValues)
         whose = "your target's target's and your focus's target's", health = SAME_TARGET, power = SAME_TARGET })
     Frame("Party", "party", "partyHealthColor", "partyPowerColor", SameAsOptions("Same as Yours"), {
         whose = "your party members'",
+        aboutHealth = "Raid-style party frames keep the game's bars. While a member is offline the game's grey bar "
+            .. "comes back.",
+        aboutPower = "Raid-style party frames keep the game's bars.",
         health = "Same as Yours follows your own health colour. Class Color shows each member's class. While a member "
             .. "is offline the game's grey bar comes back. Raid-style party frames keep the game's bars.",
         power = "Same as Yours follows your own power colour, so Game Colour shows each member's power type." })
     Frame("Personal Resource Display", "prd", "prdHealthColor", "prdPowerColor", SameAsOptions("Same as Yours"), {
         whose = "the Personal Resource Display's",
+        aboutHealth = "The extra bars the game shows with its Personal Resource Display option on, placed with Edit Mode.",
+        aboutPower = "With a druid's mana under it in Cat or Bear Form.",
         health = "The extra bars the game shows with its Personal Resource Display option on, placed with Edit Mode. "
             .. "Same as Yours follows your own health colour; Game Colour takes the display's own, as it draws it.",
         power = "Same as Yours follows your own power colour. A druid's mana under the power bar in Cat or Bear Form "

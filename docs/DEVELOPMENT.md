@@ -49,7 +49,8 @@ tools/venv/Scripts/python tools/whatsnew_data.py    # SmoothAnimatedBars/WhatsNe
 ## Measuring
 
 `/sab perf [note]` in game prints what the liquid's updates cost each frame over the last 10 seconds, the unit
-frames and the enemy nameplates apart, and saves it in the saved variables. After `/reload`:
+frames and the enemy nameplates apart (and of the unit frames, the Personal Resource Display's and the party's, and
+the costliest bars with their Rage Fury), and saves it in the saved variables. After `/reload`:
 
 ```powershell
 tools/venv/Scripts/python tools/perf_report.py    # perf/perf_report.txt: a line per report, then each second
@@ -57,6 +58,15 @@ tools/venv/Scripts/python tools/perf_report.py    # perf/perf_report.txt: a line
 
 It reads the newest `SmoothAnimatedBars.lua` under Forever's WTF folder (`--file` for another). Only the Lua
 updates are timed, not the client drawing the textures, so compare fps with a setting on and off too.
+
+Without the game, `tools/harness/bench.py` counts the liquid's calls to the game's widgets per frame, by group of
+bars, quiet and in a combat-like stream of changes. Those calls are what costs in the client: matched against
+`/sab perf` in game, each took about 1.9 microseconds, which gives its ms estimate. Run it on a copy of the addon with
+a change to see what the change saves:
+
+```powershell
+tools/venv/Scripts/python tools/harness/bench.py SmoothAnimatedBars --party 3 --fps 24 --class WARRIOR
+```
 
 ## Gallery
 
