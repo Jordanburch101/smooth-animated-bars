@@ -187,7 +187,10 @@ local function MenuSection(owner, frames)
     if type(owner) ~= "table" then return nil end
     if frames[owner] then return MENU_SECTIONS[owner:GetName() or ""] or "" end
     local party = rawget(_G, "PartyFrame")
-    if party and owner.GetParent and owner:GetParent() == party then return "Party" end
+    -- Every hooked menu's owner comes here (chat names, raid frames): one the client will not answer for is passed by.
+    if not (party and owner.GetParent) then return nil end
+    local ok, parent = pcall(owner.GetParent, owner)
+    if ok and parent == party then return "Party" end
 end
 
 -- Whether the menu's unit has a secret identity (a mob or player in an instance or battleground). The menu's title is
@@ -266,7 +269,7 @@ function Options.Register(savedDB, defaultValues)
     Frame("Party", "party", "partyHealthColor", "partyPowerColor", SameAsOptions("Same as Yours"), {
         whose = "your party members'",
         health = "Same as Yours follows your own health colour. Class Color shows each member's class. While a member "
-            .. "is offline the game's grey bar comes back.",
+            .. "is offline the game's grey bar comes back. Raid-style party frames keep the game's bars.",
         power = "Same as Yours follows your own power colour, so Game Colour shows each member's power type." })
     Frame("Personal Resource Display", "prd", "prdHealthColor", "prdPowerColor", SameAsOptions("Same as Yours"), {
         whose = "the Personal Resource Display's",

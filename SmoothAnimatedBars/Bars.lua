@@ -259,7 +259,9 @@ local plates = {}   -- plate health bar -> bar state
 local plateOf = {}  -- nameplate token -> bar state, while the liquid is on it
 local pending = {}  -- nameplate token -> time it was added, while waiting for its unit frame or a free slot
 local partyEvents = {} -- event -> how many came for a party unit (party1..4, partypet1..4), for /sab party
-local partyWaiting = false -- party bars wanted whose frames were not there: GROUP_ROSTER_UPDATE tries again
+local partyWaiting = false -- party bars wanted whose frames were not there: looked for again (LookForParty)
+local partyBuilt = {}      -- party bar -> true, once it has its liquid
+local LookForParty         -- below
 local driver
 
 -- Every bar state, the game's, the previews' and the nameplates'.
@@ -342,7 +344,9 @@ GameColor = function(b, unflat)
     if b.spot.token then
         token = b.spot.token
     else
-        index, token = UnitPowerType(b.unit)
+        local ok
+        ok, index, token = pcall(UnitPowerType, b.unit)
+        if not ok then index, token = nil, nil end
     end
     if Secret(index, token) then return POWER_COLORS.MANA, "MANA" end
     local c = PowerBarColor and (PowerBarColor[token] or PowerBarColor[index])
@@ -1194,9 +1198,10 @@ local function SetAway(b, away)
     end
 end
 
-local PARTY_CHECK_EVERY = 0.5 -- seconds between looks at whether a party member is online
+local PARTY_CHECK_EVERY = 0.5 -- seconds between looks at whether a party member is online, and at their colour
 
--- A party bar follows the unit the game shows on it.
+-- A party bar follows the unit the game shows on it. Its colour is looked at again with each check: a member who has
+-- just joined may not have their class or power type known yet (ApplyColor only re-themes when it changed).
 local function PartyFollow(b, dt)
     local unit = b.bar.unit
     if type(unit) == "string" and not Secret(unit) and unit ~= b.unit then
@@ -1209,6 +1214,7 @@ local function PartyFollow(b, dt)
     b.checkIn = PARTY_CHECK_EVERY
     local ok, connected = pcall(UnitIsConnected, b.unit)
     SetAway(b, ok and not Secret(connected) and connected == false)
+    if not b.away then ApplyColor(b) end
 end
 
 local function UpdateBar(b, dt)
@@ -1470,6 +1476,31 @@ end
 
 -- An error in one bar is kept for /sab debug and reported once, and that bar goes back to the
 -- game's fill; the others carry on.
+-- The game makes its party member frames when the party frame first shows (PartyFrameMixin:OnShow), which can come
+-- after the group change that shows it, or with no group change at all (Edit Mode). So while a wanted party bar is
+-- missing, the frames are looked for every PARTY_LOOK_EVERY out of combat, where the bars are built as at login.
+local PARTY_LOOK_EVERY = 1
+local partyLookIn = 0
+
+local function PartyFramesNew()
+    for kind, key in pairs(PARTY_KINDS) do
+        if ns.Core.Get(key) then
+            for i = 1, 4 do
+                local bar = PartyBar(i, kind)
+                if bar ~= nil and not partyBuilt[bar] then return true end
+            end
+        end
+    end
+    return false
+end
+
+LookForParty = function(dt)
+    partyLookIn = partyLookIn - dt
+    if partyLookIn > 0 then return end
+    partyLookIn = PARTY_LOOK_EVERY
+    if not InCombatLockdown() and PartyFramesNew() then Bars.Apply() end
+end
+
 local function OnUpdate(_, elapsed)
     local dt = min(elapsed, 0.1)
     if dt <= 0 then return end
@@ -1481,6 +1512,7 @@ local function OnUpdate(_, elapsed)
     local t1 = clock and clock()
     if next(pending) then TryPending() end
     for _, b in pairs(plates) do if RunBar(b, dt) then live = live + 1 end end
+    if partyWaiting then LookForParty(dt) end
     if clock then PerfAdd(t1 - t0, clock() - t1, units, live) end
 end
 
@@ -1559,8 +1591,9 @@ local function OnEvent(_, event, unit, ...)
                     if b.kind == "power" then
                         if b.spot.flat then b.colorIn = 0 else ApplyColor(b) end
                     end
-                elseif STIR_EVENTS[event] == b.kind then
-                    -- A bar of one power (the Personal Resource Display's mana under a form) stirs only with it.
+                elseif STIR_EVENTS[event] == b.kind and Visible(b.bar) then
+                    -- A bar of one power (the Personal Resource Display's mana under a form) stirs only with it. A
+                    -- hidden bar is not stirred: a hidden party bar can still have the player on it from Edit Mode.
                     local token = ...
                     if not (b.spot.token and event == "UNIT_POWER_UPDATE" and type(token) == "string"
                         and not Secret(token) and token ~= b.spot.token) then
@@ -1610,8 +1643,7 @@ end
 -- A spot for each party bar wanted and not yet built, wherever the pool has put it. Returns whether a member frame
 -- was missing, to look again when the group changes.
 local function AddPartySpots()
-    local built, missing = {}, false
-    for _, b in pairs(bars) do built[b.bar] = true end
+    local built, missing = partyBuilt, false
     for kind, key in pairs(PARTY_KINDS) do
         if ns.Core.Get(key) then
             for i = 1, 4 do
@@ -1672,7 +1704,7 @@ function Bars.Apply()
         driver:SetScript("OnEvent", OnEvent)
     end
     if driver then
-        driver:SetShown(any > 0 or platesOn)
+        driver:SetShown(any > 0 or platesOn or waiting)
         for _, event in ipairs(EVENTS) do
             if live > 0 or (platesOn and BOTH[event]) or (waiting and event == "GROUP_ROSTER_UPDATE") then
                 driver:RegisterEvent(event)
@@ -1744,7 +1776,7 @@ end
 -- Whether a bar is showing the liquid (and not the game's own fill).
 function Bars.IsLive(bar)
     local b = StateFor(bar)
-    return b and b.live and not b.err or false
+    return b and b.live and not b.err and not b.away or false
 end
 
 -- Where a bar's liquid ends: on the left edge of region (the DoT marker's span, Marker.lua), or with nil

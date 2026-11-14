@@ -591,6 +591,7 @@ end
 function Liquid:Settle()
     self:HideAll()
     self.energy, self.charge = 0, 0
+    for i = 1, CFG.rows do self.pos[i], self.vel[i] = 0, 0 end
 end
 
 -- Nothing visible is moving beyond the idle wobble and slow ambient particles, so the caller

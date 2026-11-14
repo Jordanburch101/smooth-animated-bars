@@ -543,6 +543,13 @@ local function NewStatusBar(name, parent, w, h)
     b.w, b.h, b.debugName = w, h, name
     return b
 end
+-- A bar known only by its parentKey, as the pooled party bars and the Personal Resource Display's are: no global name,
+-- so GetName answers nil, but GetDebugName still tells where it is.
+local function KeyedStatusBar(debugName, parent, w, h)
+    local b = CreateFrame("StatusBar", nil, parent)
+    b.w, b.h, b.debugName = w, h, debugName
+    return b
+end
 
 -- Forever's unit frames (Blizzard_UnitFrame/Mainline): the bars sit deep in each frame, and
 -- UnitFrame_Initialize also keeps them as .healthbar and .manabar. 124x20 and 124x10, as on Forever.
@@ -608,10 +615,10 @@ PersonalResourceDisplayFrame = CreateFrame("Frame", "PersonalResourceDisplayFram
 do
     local prd = PersonalResourceDisplayFrame
     prd.HealthBarsContainer = CreateFrame("Frame", nil, prd)
-    prd.HealthBarsContainer.healthBar = NewStatusBar("PersonalResourceDisplayFrame.healthBar", prd.HealthBarsContainer,
-        200, 10)
-    prd.PowerBar = NewStatusBar("PersonalResourceDisplayFrame.PowerBar", prd, 200, 10)
-    prd.AlternatePowerBar = NewStatusBar("PersonalResourceDisplayFrame.AlternatePowerBar", prd, 200, 10)
+    prd.HealthBarsContainer.healthBar = KeyedStatusBar("PersonalResourceDisplayFrame.HealthBarsContainer.healthBar",
+        prd.HealthBarsContainer, 200, 10)
+    prd.PowerBar = KeyedStatusBar("PersonalResourceDisplayFrame.PowerBar", prd, 200, 10)
+    prd.AlternatePowerBar = KeyedStatusBar("PersonalResourceDisplayFrame.AlternatePowerBar", prd, 200, 10)
     prd.AlternatePowerBar:Hide()
     prd.HealthBarsContainer.healthBar:SetStatusBarColor(0, 1, 0)
     -- Its prediction of the player's own heals: a texture on the bar (UpdateHealthPrediction).
@@ -643,13 +650,20 @@ for i = 1, 4 do
     local f = CreateFrame("Button", nil, PartyFrame)
     f.layoutIndex, f.unit, f.unitToken = i, unit, unit
     f.HealthBarContainer = CreateFrame("Frame", nil, f)
-    f.HealthBarContainer.HealthBar = NewStatusBar(name .. ".HealthBar", f.HealthBarContainer, 70, 10)
+    f.HealthBarContainer.HealthBar = KeyedStatusBar(name .. ".HealthBarContainer.HealthBar", f.HealthBarContainer, 70,
+        10)
     f.HealthBarContainer.HealthBarMask = f.HealthBarContainer:CreateMaskTexture()
-    f.ManaBar = NewStatusBar(name .. ".ManaBar", f, 74, 7)
+    -- The game's heal prediction and absorb segments on the health bar (PartyFrameTemplates.xml), child frames above it.
+    for _, key in ipairs({ "MyHealPredictionBar", "OtherHealPredictionBar", "HealAbsorbBar", "TotalAbsorbBar" }) do
+        local segment = CreateFrame("Frame", nil, f.HealthBarContainer.HealthBar)
+        segment.Fill = segment:CreateTexture(nil, "BORDER")
+        f.HealthBarContainer.HealthBar[key] = segment
+    end
+    f.ManaBar = KeyedStatusBar(name .. ".ManaBar", f, 74, 7)
     f.ManaBar.ManaBarMask = f.ManaBar:CreateMaskTexture()
     f.HealthBarContainer.HealthBar.unit, f.ManaBar.unit = unit, unit
     f.PetFrame = CreateFrame("Button", nil, f)
-    f.PetFrame.HealthBar = NewStatusBar(name .. ".PetFrame.HealthBar", f.PetFrame, 71, 10)
+    f.PetFrame.HealthBar = KeyedStatusBar(name .. ".PetFrame.HealthBar", f.PetFrame, 71, 10)
     f.PetFrame.HealthBar.unit = "partypet" .. i
     f:Hide()
     PartyFrame["MemberFrame" .. i] = f

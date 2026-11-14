@@ -191,7 +191,7 @@ lua.execute("""local f = PartyFrame.MemberFrame1
     SlashCmdList.SMOOTHANIMATEDBARS('party in a dungeon')""")
 party = chat(lua)
 member = [m for m in party if "MemberFrame1: shown true" in m and "unit secret" in m]
-health = [m for m in party if "health (PartyFrame.MemberFrame1.HealthBar): " in m]
+health = [m for m in party if "health (PartyFrame.MemberFrame1.HealthBarContainer.HealthBar): " in m]
 check(len(member) == 1 and len(health) == 1 and "value secret" in health[0] and "mask yes" in health[0]
       and any("PartyFrame.MemberFrame4.ManaBar" in m and "mask yes" in m for m in party)
       and any("events for party units since /reload: UNIT_HEALTH 1" in m for m in party),
@@ -493,6 +493,63 @@ check(all(late.eval(f"""(function()
 end)()""") == 1 for b in [PARTY_HEALTH.format(i) for i in range(1, 5)] + [PARTY_POWER.format(i) for i in range(1, 5)]),
       "one liquid on each of the eight bars")
 check(not any("Error" in m for m in chat(late)), "no errors")
+# The game makes its member frames when the party frame first shows, which can come after the group change, or with no
+# group change at all (Edit Mode). They are looked for while some are missing, out of combat.
+lf = session(setup="__hidden = PartyFrame.MemberFrame1; PartyFrame.MemberFrame1 = nil")
+lf.execute("__fire('GROUP_ROSTER_UPDATE')")
+run(lf, 0.3)
+lf.execute("""
+    __units.party1 = { isOtherPlayer = true, class = 'MAGE' }
+    PartyFrame.MemberFrame1 = __hidden
+    local b = PartyFrame.MemberFrame1.HealthBarContainer.HealthBar
+    b:SetMinMaxValues(0, __secret()); b:SetValue(__secret())
+    PartyFrame.MemberFrame1:Show()
+""")
+run(lf, 1.5)
+check(lf.eval(f"(select(2, __liquid({PARTY_HEALTH.format(1)})))") > 0,
+      "a member frame the game makes after the group change, with no event after it: found within a second or so")
+lc = session(setup="__hidden = PartyFrame.MemberFrame1; PartyFrame.MemberFrame1 = nil")
+lc.execute("""
+    __combat = true
+    __units.party1 = { isOtherPlayer = true, class = 'MAGE' }
+    PartyFrame.MemberFrame1 = __hidden
+    local b = PartyFrame.MemberFrame1.HealthBarContainer.HealthBar
+    b:SetMinMaxValues(0, __secret()); b:SetValue(__secret())
+    PartyFrame.MemberFrame1:Show()
+    __fire('GROUP_ROSTER_UPDATE')
+""")
+run(lc, 2)
+in_combat = lc.eval(f"__ours({PARTY_HEALTH.format(1)}) == nil")
+lc.execute("__combat = false; __fire('PLAYER_REGEN_ENABLED')")
+run(lc, 1.5)
+check(in_combat and lc.eval(f"(select(2, __liquid({PARTY_HEALTH.format(1)})))") > 0,
+      "one made in combat: left alone until combat ends, then built")
+check(not any("Error" in m for m in chat(lf) + chat(lc)), "no errors")
+# A member whose class the client does not know yet as they join: their colour comes once it does.
+pf.execute("""__settings.partyHealthColor:SetValue('class')
+    __units.party3 = { isOtherPlayer = true }
+    local f = PartyFrame.MemberFrame3
+    local b = f.HealthBarContainer.HealthBar
+    b:SetMinMaxValues(0, __secret()); b:SetValue(__secret()); f:Show()
+    __fire('GROUP_ROSTER_UPDATE')""")
+run(pf, 0.7)
+before = pf.eval(f"__tint({PARTY_HEALTH.format(3)})")
+pf.execute("__units.party3.class = 'MAGE'")
+run(pf, 0.7)
+r, g, b = pf.eval(f"__tint({PARTY_HEALTH.format(3)})")
+check(b > 0.8 and r < 0.5 and before[1] != r,
+      f"a member's class learned after they joined: their colour follows within a moment ({r:.2f}, {g:.2f}, {b:.2f})")
+# Out of a group the game hides its member frames, but Edit Mode's preview may have left the player on a bar: the
+# player's own changes do not stir it.
+pf.execute(f"PartyFrame.MemberFrame3:Hide(); {PARTY_HEALTH.format(3)}.unit = 'player'")
+run(pf, 2)
+pf.execute("for _ = 1, 20 do __fire('UNIT_HEALTH', 'player') end")
+check(pf.eval(f"__ns.Bars.Liquid({PARTY_HEALTH.format(3)}).energy") < 0.05,
+      "a hidden party bar with the player on it is not stirred by the player's changes")
+pf.execute("__units.party1.offline = true")
+run(pf, 0.7)
+check(pf.eval(f"__ns.Bars.IsLive({PARTY_HEALTH.format(1)})") is False, "an offline member's bar does not count as live")
+pf.execute("__units.party1.offline = nil")
 
 print("== a bar whose size is kept secret")
 ss = session("{ setupDone = true, dots = true }")

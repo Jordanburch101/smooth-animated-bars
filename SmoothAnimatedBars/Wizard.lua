@@ -68,8 +68,8 @@ local FRIENDS = {
     { key = "off", label = "Off", set = { plateFriendly = false } },
     { key = "on", label = "On", set = { plateFriendly = true } },
 }
--- The party frames: their bars, and the health colour (power keeps each member's power type unless changed in the
--- settings).
+-- The party frames: their bars, and the health colour (power follows the player's power colour unless changed in the
+-- settings: with Game Colour, each member's power type).
 local PARTY = {
     { key = "both", label = "Health and power", set = { partyHealth = true, partyPower = true } },
     { key = "health", label = "Just health", set = { partyHealth = true, partyPower = false } },
@@ -263,8 +263,8 @@ function BUILD.party(p)
     end
     Row("Bars", "party", -56, PARTY)
     Row("Colour", "partyHealthColor", -102, PARTY_COLORS)
-    local note = Font(p, "GameFontHighlightSmall", "Class Color shows each member's class. Power keeps each member's "
-        .. "own power colour; every theme is in the settings.", "LEFT")
+    local note = Font(p, "GameFontHighlightSmall", "Class Color shows each member's class. Power follows your own power "
+        .. "colour; every theme is in the settings. Raid-style party frames keep the game's bars.", "LEFT")
     note:SetPoint("TOPLEFT", 0, -178)
     note:SetWidth(W - 72)
     note:SetWordWrap(true)

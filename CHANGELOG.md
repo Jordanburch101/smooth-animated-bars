@@ -12,7 +12,8 @@ Sections are `### New` and `### Fixed`; skip one that would be empty.
   one's class, and Game Colour each one's power type. While a member is
   offline their bar goes back to the game's grey one. Switch them on or
   off, and pick their colours, under Party in the settings, or right-click
-  a party member's frame and choose Open Settings.
+  a party member's frame and choose Open Settings. Raid-style party frames
+  keep the game's own bars.
 - **Personal Resource Display**: the liquid fills the game's Personal
   Resource Display too, the extra health and power bars you can turn on in
   its options and place with Edit Mode. It follows your own bars' colours,

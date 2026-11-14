@@ -180,7 +180,14 @@ Facts found while building this, which the code relies on and which are not obvi
   Stormwind and in the Stockade in combat: health, power and `UnitHealthMax` secret, sizes, masks and the fill's alpha
   readable, class and power type readable (in a dungeon in combat too), `UNIT_HEALTH`/`UNIT_POWER_UPDATE` fire for
   the party units (power many times a second). Each health bar has the game's `MyHealPredictionBar`,
-  `OtherHealPredictionBar` and `TempMaxHealthLoss`; how they draw against the liquid is not yet seen. An empty slot's
+  `OtherHealPredictionBar`, `HealAbsorbBar` and `TotalAbsorbBar` (child frames, a level above the liquid) and
+  `TempMaxHealthLoss`. They are left showing: they lie on the fill's front and tell of heals and shields the addon does
+  not track for party members (on the player frame the heal marker shows the same heals, so the game's is hidden
+  there); how they draw against the liquid is not yet seen. The game makes the member frames when `PartyFrame` first
+  shows (`PartyFrameMixin:OnShow`), which can come after `GROUP_ROSTER_UPDATE` or with no group change (Edit Mode), so
+  while a wanted party bar is missing they are looked for every second out of combat (`LookForParty`). A member's
+  colour is read again with the half-second online check, and a hidden party bar (perhaps left on `player` by Edit
+  Mode's preview) is never stirred. An empty slot's
   unit answers `UnitIsConnected` false, and while a member is offline the game's grey bar is given back. Raid-style
   party frames (`CompactPartyFrameMember1..5`, CompactUnitFrames) are another matter: no masks, and their colour and
   fill alpha secret even out of combat. The party pets' bars (`PetFrame.HealthBar`, no mask) and the fury on a party
@@ -283,8 +290,8 @@ Facts found while building this, which the code relies on and which are not obvi
   copies of the texts), but keep the unit frames' motes, stirs and Rage Fury, and their theme: the bar's own colour at
   full strength, not the plates' deep one at `PLATE_SHADE`, which looked dull next to the player frame in game.
   `spot.plate` stays for what only nameplates do. A frame hidden and shown again snaps the liquid to its value
-  (`UpdateBar`, `unseen`; `away` is a party member offline). The power bar's `ManaCostPredictionBar`, `FeedbackFrame` and `FullPowerFrame` are at or near
-  the bar's level, so the raised liquid may cover their nearest pixels. Seen in game: it shows and fits the rim. The
+  (`UpdateBar`, `unseen`; `away` is a party member offline). The power bar's `ManaCostPredictionBar`, `FeedbackFrame`
+  and `FullPowerFrame` are at or near the bar's level, so the raised liquid may cover their nearest pixels. Seen in game: it shows and fits the rim. The
   heal marker (`HealMarker.lua`, `extra`) puts a marker on each PRD bar from the same heals, shown only while that bar's
   liquid is live, one level above the bar (under the liquid two up, as the DoT marker on a plate), so it needs no seam;
   it hides the PRD's own prediction, a texture (`healthBar.myHealPrediction`). `ManaRule.lua` drives every mana bar
