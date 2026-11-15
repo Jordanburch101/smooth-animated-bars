@@ -147,6 +147,19 @@ On by default, under Rage in the settings.
 *   **Spending rage lets it go:** every ability that costs rage throws sparks off the front, and while the bar was hot the whole fury flares and cools back to red at what is left.
 *   **It goes by your rage itself,** which WoW Forever keeps hidden from addons: the game fades the fury in, so it shows exactly as far as your rage has climbed. It shows on any rage bar: yours, a druid's in Bear Form, your target's.
 
+## Using another unit frame addon?
+
+If your unit frame addon replaces the game's frames, the liquid has nowhere to show: the game's bars are hidden. Unit frame addons can now hand their own health and power bars to Smooth Animated Bars, and the liquid fills them instead.
+
+**Ask your unit frame addon's author to take a look.** It takes them a few lines, and everything they need is in the [For addon authors](https://github.com/Jordanburch101/smooth-animated-bars#for-addon-authors) section of the README. Feel free to link it in their comments or issues.
+
+Once your addon supports it:
+
+*   **Your bars keep their look:** the liquid takes the colours you set in that addon, and a bar that fills from the right gets the liquid flowing the other way.
+*   **Your own bars get the extras:** heals, bandages, food and drink pour in, the mana bar builds up before mana regenerates, and a warrior's rage grows furious.
+*   **Your DoTs show** on the target's health bar, with the DoT Marker on.
+*   **On by default,** under Other Addons in the settings (Other Addons' Bars), or `/sab off` for every bar.
+
 ## Make it yours
 
 ![The player frame's health in eight colours: Game Colour, Class Color, Fire, Frost, Arcane, Fel, Cosmic and Void](https://raw.githubusercontent.com/Jordanburch101/smooth-animated-bars/refs/heads/main/branding/gallery/themes.png)
@@ -161,6 +174,7 @@ Open the settings with `/sab`, from **Open Settings** when you right-click your 
 *   **Mana:** Mana Regen Build-Up.
 *   **Rage:** Rage Fury.
 *   **Nameplates:** Enemy Nameplates and their Colour, Your DoTs on Nameplates, and Friendly Nameplates with a Colour of their own.
+*   **Other Addons:** Other Addons' Bars, for unit frame addons that hand their bars over.
 *   **Setup Wizard:** run the seven-step setup again. **What's New:** what changed in the latest versions.
 
 ## Commands
@@ -180,7 +194,7 @@ Open the settings with `/sab`, from **Open Settings** when you right-click your 
 ## Good to know
 
 *   **WoW Forever only.** It draws on Forever's own unit frames.
-*   **Player, target, pet, focus, target-of-target and party frames, the Personal Resource Display and nameplates.** Raid-style party frames keep the game's bars.
+*   **Player, target, pet, focus, target-of-target and party frames, the Personal Resource Display and nameplates.** Raid-style party frames keep the game's bars. Another addon's unit frames get the liquid once that addon hands its bars over (see Using another unit frame addon? above).
 *   **Always matches the game.** WoW Forever keeps health and power hidden from addons, so the game itself places the liquid on its own bar. That is also why a hit and someone else's heal both just stir the liquid.
 *   **Spell text in eight languages.** The DoT tracking reads your spells' tooltips in English, French, German, Spanish, Portuguese, Russian, Korean and Chinese (rogue poisons in English only). The heal tracking reads English only, so on other client languages it may not pick up your heals.
 *   **Light on your game.** Once the bars settle, the liquid drops to a low update rate, and the party's small bars and the rage's fury keep to a lower one even in a fight.
