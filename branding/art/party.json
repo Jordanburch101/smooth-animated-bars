@@ -1,0 +1,16 @@
+{
+  "ppu": 5.812962962962963,
+  "cell": [
+    120,
+    53
+  ],
+  "cells": [
+    "party-art",
+    "party-health-mask",
+    "party-power-mask",
+    "party-portrait-warrior",
+    "party-portrait-priest",
+    "party-portrait-mage",
+    "party-portrait-rogue"
+  ]
+}

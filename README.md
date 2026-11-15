@@ -3,7 +3,7 @@
 # Smooth Animated Bars
 
 Liquid health and power bars for your unit frames in **WoW Forever**: yours, your target's, your pet's, your
-focus's and your targets of target, and nameplates too. The liquid from
+focus's, your targets of target and your party's, the Personal Resource Display, and nameplates too. The liquid from
 [Smooth Experience Bar](https://www.curseforge.com/wow/addons/smooth-experience-bar) — waves, a swirl of magic,
 bubbles, sparkles and lightning — now fills the bars you watch all fight long.
 
@@ -12,7 +12,10 @@ short setup on the first login lets you choose the look, or skip it.
 
 ## What you get
 
-- **Liquid in every bar** of your frame, your target's, your pet's, your focus's and your targets of target.
+- **Liquid in every bar** of your frame, your target's, your pet's, your focus's, your targets of target and
+  your party members'.
+- **The Personal Resource Display:** the extra health and power bars the game can show, with everything your own
+  frame has: heals, food and drink, the mana build-up and Rage Fury.
 - **Every power type:** mana, rage, energy and focus, each in its own colour, as the game shows it.
 - **Moves with the fight:** the liquid eases to wherever the game's bar is, and stirs with every hit, heal,
   cast and tick.
@@ -25,6 +28,7 @@ short setup on the first login lets you choose the look, or skip it.
   far as they will still burn it, and the game's skull shows on its portrait when they will finish it.
 - **Nameplates (optional):** the liquid in enemy and friendly nameplates too, with your DoTs on every mob that
   carries them.
+- **Party frames:** each member's health and power, in their class or power colours.
 - **Your heals on the way:** your own heals over time, bandages and the heal you are casting on yourself show
   ahead of your health as far as they will still bring it, and pour into it.
 - **Food and drink:** what you are eating and drinking shows ahead of your health and mana, and food with a buff
@@ -91,6 +95,38 @@ Turn them on in the setup or under Nameplates in the settings, enemy and friendl
   target's frame does, and keeps it when you change target.
 - **The game's nameplates stay its own:** health numbers turned on in the game's nameplate settings show over the
   liquid.
+
+## Party frames
+
+<p align="center"><img src="https://raw.githubusercontent.com/Jordanburch101/smooth-animated-bars/refs/heads/main/branding/gallery/party.webp" alt="Four party members' frames stacked as in game, a warrior, a priest, a mage and a rogue, their health liquid green and their power in its own colour, red rage, blue mana and yellow energy, rising and falling through a fight"></p>
+<p align="center"><em>Party: each member's health and power in their own colours, rising and falling with the fight.</em></p>
+
+On by default, under Party in the settings, or right-click a party member's frame and choose Open Settings:
+
+- **Each bar follows its own member,** wherever the game puts them, and stirs with every change to their health
+  and power.
+- **Colours:** Same as Yours follows your own; Class Color shows each member's class, and Game Colour each one's
+  power type (blue mana, red rage, yellow energy).
+- **While a member is offline** their bar goes back to the game's grey one, until they are back.
+- **The game's party frames only.** With Use Raid-Style Party Frames on, they keep the game's bars. The game's own
+  incoming heals and shields still show on them.
+
+## Personal Resource Display
+
+<p align="center"><img src="https://raw.githubusercontent.com/Jordanburch101/smooth-animated-bars/refs/heads/main/branding/gallery/prd.webp" alt="The Personal Resource Display's two bronze bars: green health falling through a fight while the red rage below climbs, heating to a fiery orange and bursting in sparks with each Heroic Strike, then a bandage as a spring green liquid ahead of the health, throwing up green pluses"></p>
+<p align="center"><em>Personal Resource Display: the rage grows furious and bursts with every spend, then a bandage pours into the health.</em></p>
+
+The extra health and power bars the game shows with its Personal Resource Display option on, wherever you place
+them with Edit Mode. On by default, under Personal Resource Display in the settings:
+
+- **Shaped to the game's bronze bars,** with the liquid inside their rim and the bar text over it.
+- **Everything your own frame has:** your heals, bandages, food and drink pour in, the mana bar builds up through
+  the wait before mana regenerates, and a rage bar grows furious.
+- **Colours:** Same as Yours follows your own; Game Colour takes the display's own, including its class colour
+  setting in Edit Mode.
+- **A druid in Cat or Bear Form** gets the liquid in the mana bar under the power bar too, with drink and the mana
+  build-up there.
+- **Shown only in combat?** If you set it so in Edit Mode, the liquid picks up where the bar is each time it shows.
 
 ## Your heals on the way
 
@@ -170,12 +206,13 @@ On by default, under Rage in the settings.
 <p align="center"><img src="https://raw.githubusercontent.com/Jordanburch101/smooth-animated-bars/refs/heads/main/branding/gallery/themes.png" alt="The player frame's health in eight colours: Game Colour, Class Color, Fire, Frost, Arcane, Fel, Cosmic and Void" width="760"></p>
 
 Open the settings with `/sab`, from Open Settings at the bottom of the menu when you right-click your frame (or
-your target's, pet's or focus's), or from Options > AddOns > Smooth Animated Bars:
+your target's, pet's, focus's or a party member's), or from Options > AddOns > Smooth Animated Bars:
 
 - **Player, Target, Pet, Focus and Target of Target:** each frame's Health and Power, on or off, and while one is
   on, its colour. Game Colour keeps green health and the game's power colours (blue mana, red rage, yellow
   energy); any theme brings its own colours and particles. Same as Yours (target, pet) and Same as Target
   (focus, target of target) follow those, and are where they start.
+- **Party and Personal Resource Display:** the same, each Same as Yours to start with.
 - **Class Color** shows each unit's own: yours on your bars and your pet's, another player's on theirs. While
   your target's, focus's or target of target's bars show it, Class Color on Mobs says what it shows on a mob:
   Reaction (red if hostile, yellow if neutral, green if friendly), Game Colour (so only players show a class),
@@ -187,10 +224,11 @@ your target's, pet's or focus's), or from Options > AddOns > Smooth Animated Bar
 - **Rage:** Rage Fury.
 - **Nameplates:** Enemy Nameplates and their Colour (the nameplate's own, any theme, or Same as Target), Your DoTs
   on Nameplates, and Friendly Nameplates with a Colour of their own.
-- **Setup Wizard:** run the six-step setup again. **What's New:** what changed in the latest versions.
+- **Setup Wizard:** run the seven-step setup again. **What's New:** what changed in the latest versions.
 
 The setup asks which bars you want (every frame, just yours and your pet's, or just health), picks your colours
-from a few favourites, then your target's, how lively the liquid should be (everything, gentle, or still),
+from a few favourites, then your target's, your party's (health and power, just health, or off, and their colour,
+shown on an example party), how lively the liquid should be (everything, gentle, or still),
 whether to mark your DoTs (marker and skull, just the marker, or off), and last, nameplates (enemy plates off,
 liquid, or with your DoTs; friendly plates on or off), each shown on example nameplates. Skip puts everything back
 as it was.
@@ -207,18 +245,20 @@ as it was.
 | `/sab dots` | Your DoTs on the target, and what the DoT tracking saw lately |
 | `/sab heals` | Your heals, food and drink on the way to you, and what the tracking saw lately |
 | `/sab mana` | The wait before your mana regenerates, and what it saw lately |
-| `/sab perf` | What the liquid costs each frame, the unit frames and the nameplates apart. Add a note (`/sab perf 12 mobs`) to label it; each one is saved with your settings on `/reload` (`/sab perf reset` times afresh, `/sab perf clear` forgets the saved ones) |
+| `/sab perf` | What the liquid costs each frame: the unit frames (the Personal Resource Display and the party apart) and the nameplates, and the costliest bars. Add a note (`/sab perf 12 mobs`) to label it; each one is saved with your settings on `/reload` (`/sab perf reset` times afresh, `/sab perf clear` forgets the saved ones) |
 
 ## Good to know
 
 - **WoW Forever only.** It draws on Forever's own unit frames.
-- **Player, target, pet, focus and target-of-target frames, and nameplates.** Party frames keep the game's bars. A target of
-  target's liquid follows its bar but is not stirred by changes, as the game sends no events for it.
+- **Player, target, pet, focus, target-of-target and party frames, the Personal Resource Display and nameplates.**
+  Raid-style party frames keep the game's bars. A target of target's liquid follows its bar but is not stirred by
+  changes, as the game sends no events for it.
 - **Always matches the game.** WoW Forever keeps health and power hidden from addons, so the addon never knows
   how full a bar is: the game itself places the liquid on its own bar. That is why it always matches the game
   exactly, and also why a hit and someone else's heal both just stir the liquid rather than each getting an
   effect of its own.
-- **Light on your game.** Once the bars settle, the liquid drops to a low update rate.
+- **Light on your game.** Once the bars settle, the liquid drops to a low update rate, and the party's small bars
+  and the rage's fury keep to a lower one even in a fight.
 
 ## Install
 

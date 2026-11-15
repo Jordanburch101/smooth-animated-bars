@@ -2,19 +2,21 @@
 
 # Smooth Animated Bars
 
-**Liquid health and power bars for your unit frames in WoW Forever: yours, your target's, your pet's, your focus's and your targets of target, and nameplates too.** Waves, a swirl of magic, bubbles, sparkles and lightning now fill the bars you watch all fight long, and they show what is on the way: your heals, your bandages, your food and your drink pour into your bars, and your DoTs eat into your target's.
+**Liquid health and power bars for your unit frames in WoW Forever: yours, your target's, your pet's, your focus's, your targets of target and your party's, the Personal Resource Display, and nameplates too.** Waves, a swirl of magic, bubbles, sparkles and lightning now fill the bars you watch all fight long, and they show what is on the way: your heals, your bandages, your food and your drink pour into your bars, and your DoTs eat into your target's.
 
 Your frames stay the game's own. Only the fill changes, so nothing moves: log in and your bars are liquid. A short setup on your first login lets you choose the look, or skip it.
 
 ## Features
 
-*   **Liquid in every bar** of your frame, your target's, your pet's, your focus's and your targets of target.
+*   **Liquid in every bar** of your frame, your target's, your pet's, your focus's, your targets of target and your party members'.
+*   **The Personal Resource Display:** the extra health and power bars the game can show, with everything your own frame has: heals, food and drink, the mana build-up and Rage Fury.
 *   **Every power type:** mana, rage, energy and focus, each in its own colour, as the game shows it.
 *   **Moves with the fight:** the liquid eases to wherever the game's bar is, and stirs with every hit, heal, cast and tick.
 *   **Your heals on the way:** your own heals over time, bandages and the heal you are casting on yourself show ahead of your health as far as they will still bring it, and pour into it.
 *   **Food and drink:** what you are eating and drinking shows ahead of your health and mana, and food with a buff builds up to a burst of stars when you become well fed.
 *   **Your DoTs on the target (optional):** liquid in your DoTs' own colours eats into your target's health as far as they will still burn it, and the game's skull shows on its portrait when they will finish it.
 *   **Nameplates (optional):** the liquid in enemy and friendly nameplates too, with your DoTs on every mob that carries them.
+*   **Party frames:** each member's health and power, in their class or power colours.
 *   **25 themes:** keep the game's colours, or pick Class Color, Fire, Frost, Arcane, Shadow, Void and more, many with particles of their own. Each frame's health and power get their own choice, and Class Color shows each player's own class.
 *   **Your call on every effect:** waves, swirl, bubbles, sparkles, theme particles and lightning can each be switched off, and so can each bar.
 *   **Mana regen build-up:** your mana bar builds up through the five seconds after a spell, and lets go in a burst of stars as your mana starts to regenerate again.
@@ -28,6 +30,32 @@ _Mage: every Fireball takes a bite out of your mana, and out of the kobold._
 ![A rogue's energy refilling smoothly and being spent on Sinister Strike and Eviscerate](https://raw.githubusercontent.com/Jordanburch101/smooth-animated-bars/refs/heads/main/branding/gallery/rogue.webp)
 
 _Rogue: energy flows back smoothly and pours out again on every strike._
+
+## Party frames
+
+![Four party members' frames stacked as in game, a warrior, a priest, a mage and a rogue, their health liquid green and their power in its own colour, red rage, blue mana and yellow energy, rising and falling through a fight](https://raw.githubusercontent.com/Jordanburch101/smooth-animated-bars/refs/heads/main/branding/gallery/party.webp)
+
+_Party: each member's health and power in their own colours, rising and falling with the fight._
+
+On by default, under Party in the settings, or right-click a party member's frame and choose Open Settings:
+
+*   **Each bar follows its own member,** wherever the game puts them, and stirs with every change to their health and power.
+*   **Colours:** Same as Yours follows your own; Class Color shows each member's class, and Game Colour each one's power type (blue mana, red rage, yellow energy).
+*   **While a member is offline** their bar goes back to the game's grey one, until they are back.
+*   **The game's party frames only.** With Use Raid-Style Party Frames on, they keep the game's bars. The game's own incoming heals and shields still show on them.
+
+## Personal Resource Display
+
+![The Personal Resource Display's two bronze bars: green health falling through a fight while the red rage below climbs, heating to a fiery orange and bursting in sparks with each Heroic Strike, then a bandage as a spring green liquid ahead of the health, throwing up green pluses](https://raw.githubusercontent.com/Jordanburch101/smooth-animated-bars/refs/heads/main/branding/gallery/prd.webp)
+
+_Personal Resource Display: the rage grows furious and bursts with every spend, then a bandage pours into the health._
+
+The extra health and power bars the game shows with its Personal Resource Display option on, wherever you place them with Edit Mode. On by default, under Personal Resource Display in the settings:
+
+*   **Shaped to the game's bronze bars,** with the liquid inside their rim and the bar text over it.
+*   **Everything your own frame has:** your heals, bandages, food and drink pour in, the mana bar builds up through the wait before mana regenerates, and a rage bar grows furious.
+*   **Colours:** Same as Yours follows your own; Game Colour takes the display's own, including its class colour setting in Edit Mode.
+*   **A druid in Cat or Bear Form** gets the liquid in the mana bar under the power bar too, with drink and the mana build-up there.
 
 ## Your heals on the way
 
@@ -123,9 +151,9 @@ On by default, under Rage in the settings.
 
 ![The player frame's health in eight colours: Game Colour, Class Color, Fire, Frost, Arcane, Fel, Cosmic and Void](https://raw.githubusercontent.com/Jordanburch101/smooth-animated-bars/refs/heads/main/branding/gallery/themes.png)
 
-Open the settings with `/sab`, from **Open Settings** when you right-click your frame (or your target's, pet's or focus's), or from **Options > AddOns > Smooth Animated Bars**:
+Open the settings with `/sab`, from **Open Settings** when you right-click your frame (or your target's, pet's, focus's or a party member's), or from **Options > AddOns > Smooth Animated Bars**:
 
-*   **Player, Target, Pet, Focus and Target of Target:** each frame's Health and Power, on or off, and while one is on, its colour: the game's own, any theme, or Same as Yours or Same as Target.
+*   **Player, Target, Pet, Focus, Target of Target, Party and Personal Resource Display:** each frame's Health and Power, on or off, and while one is on, its colour: the game's own, any theme, or Same as Yours or Same as Target.
 *   **Class Color** shows each unit's own, and you choose what it shows on mobs: Reaction, Game Colour, Mob's Class or Your Class.
 *   **Effects:** Liquid Waves, Magic Swirl, Bubbles, Sparkles, Theme Particles and Lightning.
 *   **Damage Over Time:** DoT Marker and Kill Icon.
@@ -133,7 +161,7 @@ Open the settings with `/sab`, from **Open Settings** when you right-click your 
 *   **Mana:** Mana Regen Build-Up.
 *   **Rage:** Rage Fury.
 *   **Nameplates:** Enemy Nameplates and their Colour, Your DoTs on Nameplates, and Friendly Nameplates with a Colour of their own.
-*   **Setup Wizard:** run the six-step setup again. **What's New:** what changed in the latest versions.
+*   **Setup Wizard:** run the seven-step setup again. **What's New:** what changed in the latest versions.
 
 ## Commands
 
@@ -147,15 +175,15 @@ Open the settings with `/sab`, from **Open Settings** when you right-click your 
 | `/sab dots` | Your DoTs on the target, and what the DoT tracking saw lately |
 | `/sab heals` | Your heals, food and drink on the way to you, and what the tracking saw lately |
 | `/sab mana` | The wait before your mana regenerates, and what it saw lately |
-| `/sab perf` | What the liquid costs each frame, the unit frames and the nameplates apart |
+| `/sab perf` | What the liquid costs each frame: the unit frames (the Personal Resource Display and the party apart), the nameplates, and the costliest bars |
 
 ## Good to know
 
 *   **WoW Forever only.** It draws on Forever's own unit frames.
-*   **Player, target, pet, focus and target-of-target frames, and nameplates.** Party frames keep the game's bars.
+*   **Player, target, pet, focus, target-of-target and party frames, the Personal Resource Display and nameplates.** Raid-style party frames keep the game's bars.
 *   **Always matches the game.** WoW Forever keeps health and power hidden from addons, so the game itself places the liquid on its own bar. That is also why a hit and someone else's heal both just stir the liquid.
 *   **Spell text in eight languages.** The DoT tracking reads your spells' tooltips in English, French, German, Spanish, Portuguese, Russian, Korean and Chinese (rogue poisons in English only). The heal tracking reads English only, so on other client languages it may not pick up your heals.
-*   **Light on your game.** Once the bars settle, the liquid drops to a low update rate.
+*   **Light on your game.** Once the bars settle, the liquid drops to a low update rate, and the party's small bars and the rage's fury keep to a lower one even in a fight.
 *   **DoesItDie users:** while DoesItDie is loaded, the DoT marker stays off so you don't get two.
 
 ## Credits
