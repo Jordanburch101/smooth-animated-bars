@@ -369,6 +369,13 @@ C_Secrets = {
         return __identitySecret[unit] == true
     end,
 }
+-- The game's controller interface (Blizzard_SharedXML InputUtil.IsGamepadUIEnabled): __gamepadUI = true turns it on.
+__gamepadUI = false
+C_InputInterfaceStyle = {
+    GetCurrentStyle = function()
+        return __gamepadUI and Enum.InputDeviceInterfaceType.Gamepad or Enum.InputDeviceInterfaceType.Mkb
+    end,
+}
 function GetRealmName() return __player.realm end
 -- Other units than the player: the target is __target, the rest __units[unit] (focus, targettarget, pet...). Each
 -- has its class (__secret() for one kept secret), reaction and isOtherPlayer.
@@ -816,7 +823,8 @@ function UnitHealthMax() return __secret() end
 function UnitPower() return __secret() end
 function UnitPowerMax() return __secret() end
 -- The client's own StatusBar smoothing (Forever).
-Enum = { StatusBarInterpolation = { Immediate = 0, ExponentialEaseOut = 1 }, LuaCurveType = { Linear = 0, Step = 1 } }
+Enum = { StatusBarInterpolation = { Immediate = 0, ExponentialEaseOut = 1 }, LuaCurveType = { Linear = 0, Step = 1 },
+         InputDeviceInterfaceType = { Mkb = 0, Gamepad = 1 } }
 
 -- Curves (C_CurveUtil): plain points, evaluated on a value the client keeps secret into another secret, which widgets
 -- take (Region:SetAlpha). UnitPowerPercent evaluates one on the unit's share of its power, __powerPercent[unit]

@@ -206,6 +206,19 @@ local function SecretIdentity(unit)
     return issecretvalue ~= nil and issecretvalue((UnitName(unit))) or false
 end
 
+-- Whether the game's controller interface is on. A menu opened there takes the gamepad's focus, which pushes the
+-- menu's bindings and has the gamepad action bar call SetPreferredGamepadInteractTarget, a protected function
+-- (Blizzard_GamepadActionBars, UpdateInteractIcons). With our entries in the menu that ran tainted and was blocked
+-- ("ADDON_ACTION_FORBIDDEN ... SetPreferredGamepadInteractTarget()", seen in game), and players reported the
+-- controller interface broken until a /reload. So the menus are left alone there.
+local function GamepadUI()
+    local style = C_InputInterfaceStyle and C_InputInterfaceStyle.GetCurrentStyle
+    local types = Enum and Enum.InputDeviceInterfaceType
+    if not (style and types and types.Gamepad) then return false end
+    local ok, current = pcall(style)
+    return ok and current == types.Gamepad
+end
+
 local function AddToUnitMenus()
     if not (Menu and Menu.ModifyMenu) then return end
     local frames = {}
@@ -216,7 +229,7 @@ local function AddToUnitMenus()
     for _, which in ipairs(UNIT_MENUS) do
         Menu.ModifyMenu("MENU_UNIT_" .. which, function(_, rootDescription, contextData)
             local section = type(contextData) == "table" and MenuSection(contextData.ownerFrame, frames)
-            if not section or SecretIdentity(contextData.unit) then return end
+            if not section or GamepadUI() or SecretIdentity(contextData.unit) then return end
             rootDescription:CreateDivider()
             rootDescription:CreateTitle("Smooth Animated Bars")
             rootDescription:CreateButton("Open Settings", function()

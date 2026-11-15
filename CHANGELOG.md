@@ -17,6 +17,13 @@ Sections are `### New` and `### Fixed`; skip one that would be empty.
   on their target's health bar too. Turn it off under Other Addons in
   the settings.
 
+### Fixed
+- **Controllers**: with the game's controller interface on, right-clicking
+  your target or another unit frame no longer blocks an action and breaks the
+  controller interface until a /reload. That happened when inviting someone
+  to your group or asking to join theirs. The Open Settings entry is left out
+  of those menus while the controller interface is on.
+
 ## 1.8.0
 
 ### New

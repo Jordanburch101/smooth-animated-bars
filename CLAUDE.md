@@ -331,7 +331,12 @@ Facts found while building this, which the code relies on and which are not obvi
   taints the layout, which errors (`FrameUtil.lua` `GetUnscaledFrameRect`, "a secret number value, while execution
   tainted by 'SmoothAnimatedBars'") and draws the menu on one line without its background (reported by players,
   error seen in game). So a menu whose unit has a secret identity (`C_Secrets.ShouldUnitIdentityBeSecret`, or a
-  secret `UnitName`) is left alone; seen in game in a dungeon, the menu right again.
+  secret `UnitName`) is left alone; seen in game in a dungeon, the menu right again. Forever has the game's own
+  controller interface (`Blizzard_Gamepad*`, `C_InputInterfaceStyle.GetCurrentStyle() == Enum.InputDeviceInterfaceType.Gamepad`).
+  There a menu taking the gamepad's focus pushes its bindings, and the gamepad action bar then calls the protected
+  `SetPreferredGamepadInteractTarget` (`MainActionBarFrame.lua`, `UpdateInteractIcons`). With our entries in the menu
+  that ran tainted: `ADDON_ACTION_FORBIDDEN` on right-clicking the target (seen in game), and players reported the
+  controller interface broken until `/reload` after inviting from it. So the menus are left alone while it is on; seen in game, no more errors.
 - **Other addons' bars** (`SmoothAnimatedBars.AddBar`, the global table in `SmoothAnimatedBars.lua`; `Bars.lua`,
   `External`; README "For addon authors"): asked for by Frames Forever (Halfdays), which hides the game's frames.
   Their bars are spots with `external` (the options) in `bars`, built by `NewBar`, set live by `Bars.Apply` under one

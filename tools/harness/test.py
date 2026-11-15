@@ -627,7 +627,13 @@ um.execute("__identitySecret.target = true")
 check(um.eval("#__openUnitMenu('TARGET', { ownerFrame = TargetFrame, unit = 'target', name = 'Target Marker Icon' })") == 0
       and um.eval("#__openUnitMenu('ENEMY_PLAYER', { ownerFrame = TargetFrame, unit = 'target' })") == 0,
       "the target's menu in an instance (its name secret): left alone, so the game can lay it out")
-um.execute("__identitySecret.target = nil")
+um.execute("__identitySecret.target = nil; __gamepadUI = true")
+check(um.eval("#__openUnitMenu('TARGET', { ownerFrame = TargetFrame, unit = 'target' })") == 0
+      and um.eval("#__openUnitMenu('SELF', { ownerFrame = PlayerFrame, unit = 'player' })") == 0,
+      "with the controller interface on: left alone, so the gamepad bar's protected call is not blocked")
+um.execute("__gamepadUI = false")
+check(um.eval("#__openUnitMenu('TARGET', { ownerFrame = TargetFrame, unit = 'target' })") == 3,
+      "and added again once it is off")
 check(um.eval("#__openUnitMenu('PLAYER', { name = 'Somebody' })") == 0
       and um.eval("#__openUnitMenu('PARTY', { ownerFrame = UIParent, unit = 'party1' })") == 0,
       "a player's menu from a chat name or a party frame: left alone")
