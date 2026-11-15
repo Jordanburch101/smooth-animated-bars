@@ -24,6 +24,10 @@
 -- health's front, so no seam is needed, and the plate mask and shading of the bar's liquid are the marker's too. Its
 -- own prediction of the player's heals is a texture on the bar (healthBar.myHealPrediction), kept transparent the same
 -- way.
+-- Other addons' player bars (SmoothAnimatedBars.AddBar) get markers too, while their liquid shows and they fill from the
+-- left (a bar filling from the right, Frames Forever's lost health, shows what is missing). Their liquid is raised a
+-- level or more over the bar (Bars.lua, External.Raise), so the marker takes the same level and lies under it by
+-- sublevels, with seams, as on the player frame. The addon's own heal prediction is its own and is left as it is.
 
 local _, ns = ...
 
@@ -205,14 +209,16 @@ end
 -- game's own fill when it does not, each cut exactly at its own ends, side by side.
 -- A flat bar's marker one level above the bar, under its liquid two up (Bars.lua, RaisePlate). Looked at again with
 -- each refresh, should the game move the bar.
+-- An other addon's bar's marker (spec.up) takes the level of the bar's liquid, however many it is above the bar.
 local function Raise(m)
-    if not m.spec.raised then return end
+    local up = m.spec.up and m.spec.up() or (m.spec.raised and 1)
+    if not up then return end
     local ok, level = pcall(m.bar.GetFrameLevel, m.bar)
-    if ok and type(level) == "number" and not Secret(level) then
-        if level == m.raisedOn then return end
-        m.raisedOn = level
+    if up > 0 and ok and type(level) == "number" and not Secret(level) then
+        if level + up == m.raisedOn then return end
+        m.raisedOn = level + up
         if m.clip.SetUsingParentLevel then m.clip:SetUsingParentLevel(false) end
-        m.clip:SetFrameLevel(level + 1)
+        m.clip:SetFrameLevel(level + up)
     else
         m.raisedOn = nil
         AtParentLevel(m.clip, m.bar)
@@ -532,11 +538,13 @@ local function SourceFor(m, read)
     end
 end
 
--- name: what the marker shows, "health" or "mana" (Heals.lua's resources); label: whose, for messages.
-local function BuildOn(bar, name, read, visible, label)
+-- name: what the marker shows, "health" or "mana" (Heals.lua's resources); label: whose, for messages. external: for
+-- another addon's bar, its mask and a function for its liquid's levels above the bar.
+local function BuildOn(bar, name, read, visible, label, external)
     if type(bar) ~= "table" or not bar.GetStatusBarTexture then return nil end
     local flatMask = ns.Bars.PlateMask(bar)
     local spec = { bar = bar, mask = flatMask or MaskOf(bar), visible = visible, raised = flatMask ~= nil }
+    if external then spec.mask, spec.up = external.mask, external.up end
     -- A raised marker shows only over the bar's own liquid: without it, the game's fill is at the bar's level, under
     -- the bar's dark background.
     if spec.raised then spec.visible = function() return ns.Bars.IsLive(bar) and visible() end end
@@ -573,6 +581,28 @@ local function BuildDisplay()
     end
 end
 
+-- Other addons' bars for the player (SmoothAnimatedBars.AddBar): a marker on each health bar, and on each power bar
+-- while it shows mana. Each shows only while the bar is still added for the player, filling from the left, with the
+-- liquid showing.
+local function BuildExternal()
+    for _, kind in ipairs({ "health", "power" }) do
+        for _, bar in ipairs(ns.Bars.ExternalBars("player", kind)) do
+            if not extra[bar] then
+                local base = kind == "health" and PlayerAlive or ManaShown
+                local function visible()
+                    local unit, k, _, _, mirror = ns.Bars.External(bar)
+                    return unit == "player" and k == kind and not mirror and ns.Bars.IsLive(bar) and base()
+                end
+                local _, _, _, mask = ns.Bars.External(bar)
+                local function up() return (select(3, ns.Bars.External(bar))) or 1 end
+                extra[bar] = BuildOn(bar, kind == "health" and "health" or "mana",
+                    kind == "health" and ns.Heals.Player or ns.Heals.Mana, visible,
+                    "other addon's " .. (kind == "health" and "health" or "power"), { mask = mask, up = up })
+            end
+        end
+    end
+end
+
 local function OnUpdate(_, elapsed)
     local dt = math.min(elapsed, 0.1)
     if dt <= 0 then return end
@@ -593,7 +623,10 @@ function HealMarker.Apply()
     local live = ns.Core.Get("heals") and true or false
     if live and not player then player = Build("playerHealth", ns.Heals.Player, PlayerAlive) end
     if live and not mana then mana = Build("playerPower", ns.Heals.Mana, ManaShown) end
-    if live then BuildDisplay() end
+    if live then
+        BuildDisplay()
+        BuildExternal()
+    end
     ns.Heals.Enable(live)
     Each(function(m)
         m.live = live

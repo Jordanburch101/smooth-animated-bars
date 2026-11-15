@@ -57,6 +57,8 @@ local function findBars()
     for _, key in ipairs({ "playerPower", "prdPower" }) do
         for _, found in ipairs(ns.Bars.FindAll(key)) do out[#out + 1] = found.bar end
     end
+    -- Other addons' bars for the player's power (SmoothAnimatedBars.AddBar); each draws it only while it shows mana.
+    for _, bar in ipairs(ns.Bars.ExternalBars("player", "power")) do out[#out + 1] = bar end
     waitBars = out
 end
 

@@ -311,6 +311,11 @@ function Options.Register(savedDB, defaultValues)
     Row(Settings.CreateDropdownInitializer(registered.mobClassColor, MobOptions, MOB_CLASS_TIP), nil,
         { indent = true, shown = ns.Core.PlatesUseClass })
 
+    Header("Other Addons")
+    Checkbox("externalBars", "Other Addons' Bars",
+        "Liquid in the health and power bars of unit frame addons that hand them to Smooth Animated Bars. They keep "
+        .. "the colours you set in that addon, unless it offers a theme from here.")
+
     Header("Effects")
     Checkbox("waves", "Liquid Waves", "Wobbling liquid front that ripples when the bar changes.")
     Checkbox("swirl", "Magic Swirl", "Glowing veins, clouds and light drifting inside the liquid.")

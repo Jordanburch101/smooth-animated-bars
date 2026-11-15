@@ -251,7 +251,7 @@ as it was.
 
 - **WoW Forever only.** It draws on Forever's own unit frames.
 - **Player, target, pet, focus, target-of-target and party frames, the Personal Resource Display and nameplates.**
-  Raid-style party frames keep the game's bars. A target of target's liquid follows its bar but is not stirred by
+  Raid-style party frames keep the game's bars. Unit frame addons can hand over their own bars (For addon authors). A target of target's liquid follows its bar but is not stirred by
   changes, as the game sends no events for it.
 - **Always matches the game.** WoW Forever keeps health and power hidden from addons, so the addon never knows
   how full a bar is: the game itself places the liquid on its own bar. That is why it always matches the game
@@ -259,6 +259,42 @@ as it was.
   effect of its own.
 - **Light on your game.** Once the bars settle, the liquid drops to a low update rate, and the party's small bars
   and the rage's fury keep to a lower one even in a fight.
+
+## For addon authors
+
+A unit frame addon that hides the game's frames can hand Smooth Animated Bars its own bars:
+
+```lua
+if SmoothAnimatedBars and SmoothAnimatedBars.AddBar then
+    -- bar: a horizontal StatusBar (its values may be secret); unit: "player", "target", "party1"...
+    -- kind: "health" or "power"
+    SmoothAnimatedBars.AddBar(bar, unit, kind, options)
+end
+SmoothAnimatedBars.RemoveBar(bar) -- the bar's own fill comes back
+SmoothAnimatedBars.HasBar(bar)
+```
+
+- Add `## OptionalDeps: SmoothAnimatedBars` to your toc, so the table is there when your addon loads. Calls made
+  before Smooth Animated Bars has loaded its settings are kept and done once it has.
+- The liquid follows whatever your bar shows: it copies the bar's value, secret or not, and makes the bar's own fill
+  texture transparent while it shows. Restyling the fill is fine; leave its alpha to us while the bar is added.
+- It keeps your bar's colour, secret ones included (a health gradient from the client's curves), and follows it as
+  it changes. A bar that fills from the right (`SetReverseFill`) gets the liquid flowing from the right; switching
+  it later is followed too.
+- The player's own bars get the rest of the player frame's liquid too: heals, bandages, food and drink on the way
+  (from the left; not on a bar filling from the right), the mana build-up and a warrior's Rage Fury. Your own heal
+  prediction is left as it is.
+- Call `AddBar` again with the new unit when a bar shows someone else (a party frame after a roster change).
+- The liquid sits one frame level above the bar, over the bar's own background. Draw what should stay on top
+  (text, heal prediction, shields) on frames two or more levels up, or pass `level`. Fading and resizing the bar carry over, as the liquid's frames are its
+  children.
+- `options` (all optional): `theme` (`"settings"` for the colours chosen in Smooth Animated Bars for that unit, or a
+  theme key; left out, the bar's own colour), `mask` (a MaskTexture to cut the liquid to, taken the first time),
+  `level` (frame levels above the bar, default 1; 0 for the bar's own level), `spill` (`true` lets the motes fly past the bar's edges),
+  `name` (your addon's name, shown in `/sab perf`).
+- `AddBar` returns true when it took the bar, false for a vertical bar, and raises an error for bad arguments.
+  `SmoothAnimatedBars.apiVersion` is 1.
+- Players can switch other addons' bars off under Other Addons in the settings.
 
 ## Install
 

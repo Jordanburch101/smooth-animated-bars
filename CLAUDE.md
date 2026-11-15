@@ -332,6 +332,22 @@ Facts found while building this, which the code relies on and which are not obvi
   tainted by 'SmoothAnimatedBars'") and draws the menu on one line without its background (reported by players,
   error seen in game). So a menu whose unit has a secret identity (`C_Secrets.ShouldUnitIdentityBeSecret`, or a
   secret `UnitName`) is left alone; seen in game in a dungeon, the menu right again.
+- **Other addons' bars** (`SmoothAnimatedBars.AddBar`, the global table in `SmoothAnimatedBars.lua`; `Bars.lua`,
+  `External`; README "For addon authors"): asked for by Frames Forever (Halfdays), which hides the game's frames.
+  Their bars are spots with `external` (the options) in `bars`, built by `NewBar`, set live by `Bars.Apply` under one
+  setting (`externalBars`) and not by our per-frame ones. The rule on game frames does not apply: the addon hands us the
+  bar and agrees to its fill going transparent. Frames Forever's code (in `_forever_\Interface\AddOns\Frames_Forever`):
+  its default health colour is a gradient from `UnitHealthPercent` curves, so secret, followed by the white liquid
+  and a `MOD` tint as on battleground plates; its "lost health" mode is `SetReverseFill(true)` with the bar showing
+  missing health, so the liquid is mirrored (`Liquid:SetMirror`); its text is three levels up. At the bar's own level the
+  liquid showed dim in game: the bar's background, a texture on the bar (dark at 80%), drew over it, as a plate's did.
+  So it is one level up by default (`level`); seen in game and right. Their heal prediction is a child frame one level
+  up too, past the fill's edge, so only the front's waves can meet it (not yet seen). Seen in game: the liquid on
+  their player bars, and their default health colour (secret) through the tint. `GetReverseFill` (the client's getter),
+  the colour and the level are looked at every 0.1 s.
+  The player's bars get the heal marker (`HealMarker.lua`, `BuildExternal`: at the liquid's level, under it by
+  sublevels with seams, as on the player frame; hidden on a bar filling from the right) and the mana build-up
+  (`ManaRule.lua`, `Bars.ExternalBars`); seen missing in game before that (eating, a bandage), and working after.
 - **Toc changes** (a new file) need a full game restart; `/reload` does not pick them up.
 - **Capture:** `/sab capture` uses `Screenshot()` and the `screenshotFormat` CVar (TGA, put back after).
   The screenshot is the full render resolution (an ultrawide 3440x1440 here), and the red "?" target

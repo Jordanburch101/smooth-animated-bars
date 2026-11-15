@@ -533,7 +533,16 @@ function StatusBar:GetStatusBarColor()
     local c = self.barColor or { 1, 1, 1 }
     return c[1], c[2], c[3], 1
 end
-function StatusBar:SetReverseFill(v) self.reverse = v end
+function StatusBar:SetReverseFill(v)
+    assert(type(v) == "boolean", "Usage: SetReverseFill(isReverseFill)")
+    self.reverse = v
+end
+function StatusBar:GetReverseFill() return self.reverse or false end
+function StatusBar:SetOrientation(o)
+    assert(o == "HORIZONTAL" or o == "VERTICAL", "Usage: SetOrientation(orientation)")
+    self.orientation = o
+end
+function StatusBar:GetOrientation() return self.orientation or "HORIZONTAL" end
 function StatusBar:SetStatusBarTexture(t)
     assert(type(t) == "table" and t.kind == "Texture", "SetStatusBarTexture takes a texture here")
     self.fill = t

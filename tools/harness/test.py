@@ -230,7 +230,7 @@ check(keys == ["playerHealth", "healthColor", "playerPower", "powerColor", "targ
                "totHealthColor", "totPower", "totPowerColor", "partyHealth", "partyHealthColor", "partyPower",
                "partyPowerColor", "prdHealth", "prdHealthColor", "prdPower", "prdPowerColor", "plateHealth",
                "plateHealthColor", "plateDots", "plateFriendly", "plateFriendlyColor", "mobClassColor",
-               "waves", "swirl", "bubbles", "sparkles", "ambient", "lightning", "dots", "dotKillIcon", "heals", "manaBuild", "rageFury"],
+               "externalBars", "waves", "swirl", "bubbles", "sparkles", "ambient", "lightning", "dots", "dotKillIcon", "heals", "manaBuild", "rageFury"],
       f"settings page rows: {keys}")
 check(not lua.eval("__sharedListTainted"), "nothing added to the game's shared settings list (Forever: Social blocked)")
 options = [o for o in rows if o.key == "healthColor"][0].options
@@ -2902,6 +2902,200 @@ nodata.execute("__ns.WhatsNewData = nil")  # as in a dev install, whatever Whats
 nodata.execute("SlashCmdList.SMOOTHANIMATEDBARS('changes')")
 check(any("no changelog" in m for m in chat(nodata)), "a dev install without notes says how to make them")
 check(not any("Error in" in m for m in chat(wn)), "no errors")
+
+print("== other addons' bars (SmoothAnimatedBars.AddBar)")
+ex = session("{ setupDone = true, heals = false, dots = false, manaBuild = false }")
+ex.execute("""
+    -- A unit frame addon's own bars, as Frames Forever builds them: plain StatusBars on a frame of its own, with
+    -- values from the client's secrets.
+    __uf = CreateFrame("Frame", nil, UIParent)
+    __uf.level = 5
+    function __ufBar(w, h)
+        local b = CreateFrame("StatusBar", nil, __uf)
+        b.w, b.h, b.level = w, h, 6
+        local fill = b:CreateTexture(nil, "ARTWORK")
+        b:SetStatusBarTexture(fill)
+        b:SetMinMaxValues(0, __secret())
+        b:SetValue(__secret())
+        b:SetStatusBarColor(0.2, 0.8, 0.2)
+        return b
+    end
+    __ufHealth, __ufPower, __ufParty = __ufBar(180, 24), __ufBar(180, 12), __ufBar(120, 16)
+""")
+check(ex.eval("type(SmoothAnimatedBars) == 'table' and SmoothAnimatedBars.apiVersion == 1 "
+              "and type(SmoothAnimatedBars.AddBar) == 'function'"), "a global table for other addons, with a version")
+check(ex.eval("SmoothAnimatedBarsDB.externalBars") is True, "allowed by default")
+taken = ex.eval("SmoothAnimatedBars.AddBar(__ufHealth, 'player', 'health')")
+run(ex, 0.5)
+n, shown, alpha, masked, free = ex.eval("__liquid(__ufHealth)")
+check(taken is True and shown > 0 and alpha == 0, f"a handed bar gets the liquid, its fill hidden ({shown}/{n})")
+check(masked == 0, "a plain rectangle takes no mask: the clip frame cuts it")
+check(ex.eval("""(function()
+    local _, clip = __ours(__ufHealth)
+    local tl, br = clip.points.TOPLEFT, clip.points.BOTTOMRIGHT
+    return not clip.useParentLevel and clip.level == 7 and tl.rel == __ufHealth and tl.x == 0 and tl.y == 0
+        and br.x == 0 and br.y == 0
+end)()"""), "a level above the bar, over the bar's own background (which drew over it at the bar's level in game), under "
+      "the addon's text higher up, motes kept in the bar")
+r, g, b = ex.eval("__tint(__ufHealth)")
+check(g > r and g > b, f"keeps the colour the addon gave its bar, not ours ({r:.2f}, {g:.2f}, {b:.2f})")
+ex.execute("__ufHealth:SetStatusBarColor(0.9, 0.1, 0.1)")
+run(ex, 0.3)
+r, g, b = ex.eval("__tint(__ufHealth)")
+check(r > g and r > b, f"and follows it when it changes ({r:.2f}, {g:.2f}, {b:.2f})")
+ex.execute("__ufHealth:SetStatusBarColor(__secret(0.9), __secret(0.5), __secret(0.1))")
+run(ex, 0.3)
+check(ex.eval("""(function()
+    local _, _, mover = __ours(__ufHealth)
+    for _, r in ipairs(__regions) do
+        if r.parent == mover and r.blend == "MOD" then return r.shown and r end
+    end
+end)()""") is not None, "a secret colour (a health gradient from the client's curves) goes onto a tint over a white liquid")
+ex.execute("__ns.Bars.Liquid(__ufHealth).energy = 0; __fire('UNIT_HEALTH', 'player')")
+run(ex, 0.05)
+check(ex.eval("__ns.Bars.Liquid(__ufHealth).energy") > 0, "the unit's changes stir it")
+
+ex.execute("__ufHealth:SetReverseFill(true)")
+run(ex, 0.3)
+check(ex.eval("""(function()
+    local proxy, clip, mover = __ours(__ufHealth)
+    local a = mover.points.TOPLEFT
+    return proxy.reverse == true and a and a.rel == proxy.fill and a.relPoint == "TOPLEFT"
+        and mover.points.TOPRIGHT == nil and __ns.Bars.Liquid(__ufHealth).mirror == true
+end)()"""), "a bar turned to fill from the right: the liquid follows its fill's left edge, drawn mirrored")
+check(ex.eval("""(function()
+    local liquid = __ns.Bars.Liquid(__ufHealth)
+    for _, t in ipairs(liquid.rows) do
+        if t.shown then return t.points.TOPRIGHT ~= nil and t.points.TOPLEFT == nil and t.points.TOPRIGHT.x <= 0 end
+    end
+end)()"""), "its slices laid out from the right edge")
+ex.execute("__ufHealth:SetReverseFill(false)")
+run(ex, 0.3)
+check(ex.eval("""(function()
+    local proxy, _, mover = __ours(__ufHealth)
+    local liquid = __ns.Bars.Liquid(__ufHealth)
+    return proxy.reverse == false and mover.points.TOPRIGHT ~= nil and mover.points.TOPLEFT == nil
+        and not liquid.mirror and liquid.rows[1].points.TOPRIGHT == nil
+end)()"""), "and back")
+
+taken = ex.eval("SmoothAnimatedBars.AddBar(__ufPower, 'player', 'power', { theme = 'arcane', level = 2, spill = true })")
+run(ex, 0.5)
+check(taken is True and ex.eval("""(function()
+    local _, clip = __ours(__ufPower)
+    return clip.level == 8 and not clip.useParentLevel and clip.points.TOPLEFT.y > 0
+end)()"""), "options: a level above the bar and motes free to fly")
+check(ex.eval("__ns.Bars.Liquid(__ufPower).theme.fillA[1]") != ex.eval("__ns.Bars.Liquid(__ufHealth).theme.fillA[1]"),
+      "and a theme of ours when asked for")
+check(ex.eval("__ns.Bars.FuryLiquid(__ufPower) ~= nil"), "a player's rage bar gets the fury")
+
+ex.execute("SmoothAnimatedBars.AddBar(__ufParty, 'party1', 'health')")
+run(ex, 0.3)
+check(ex.eval("(select(2, __liquid(__ufParty)))") > 0, "a party member's bar")
+ex.execute("SmoothAnimatedBars.AddBar(__ufParty, 'party2', 'health')")
+check(ex.eval("""(function()
+    local n = 0
+    for _, f in ipairs(__frames) do if f.parent == __ufParty and f.clipsChildren then n = n + 1 end end
+    return n
+end)()""") == 1, "added again with a new unit: the same liquid follows it")
+run(ex, 2)
+ex.execute("__ns.Bars.Liquid(__ufParty).energy = 0; __fire('UNIT_HEALTH', 'party1')")
+run(ex, 0.05)
+check(ex.eval("__ns.Bars.Liquid(__ufParty).energy") == 0, "and no longer stirs with the old one")
+ex.execute("__fire('UNIT_HEALTH', 'party2')")
+run(ex, 0.1)
+check(ex.eval("__ns.Bars.Liquid(__ufParty).energy") > 0, "but with the new one")
+
+check(ex.eval("SmoothAnimatedBars.RemoveBar(__ufParty)") is True, "RemoveBar takes it")
+run(ex, 0.2)
+check(ex.eval("(select(2, __liquid(__ufParty)))") == 0 and ex.eval("__ufParty.fill.alpha") == 1
+      and not ex.eval("SmoothAnimatedBars.HasBar(__ufParty)"), "and gives the bar its own fill back")
+ex.execute("__settings.playerHealth:SetValue(false)")
+run(ex, 0.2)
+check(ex.eval("(select(2, __liquid(__ufHealth)))") > 0, "our own bars' settings leave other addons' bars alone")
+ex.execute("__settings.externalBars:SetValue(false)")
+run(ex, 0.2)
+check(ex.eval("(select(2, __liquid(__ufHealth)))") == 0 and ex.eval("__ufHealth.fill.alpha") == 1,
+      "switched off: their bars get their own fill back")
+ex.execute("__settings.externalBars:SetValue(true)")
+run(ex, 0.2)
+check(ex.eval("(select(2, __liquid(__ufHealth)))") > 0 and ex.eval("(select(2, __liquid(__ufParty)))") == 0,
+      "and on again, without the removed one")
+for args, what in [("nil, 'player', 'health'", "not a bar"), ("__ufHealth, 5, 'health'", "no unit"),
+                   ("__ufHealth, 'player', 'mana'", "an unknown kind"),
+                   ("__ufHealth, 'player', 'health', { theme = 'nope' }", "an unknown theme")]:
+    err = ex.eval(f"select(2, pcall(SmoothAnimatedBars.AddBar, {args}))")
+    check(isinstance(err, str) and "SmoothAnimatedBars.AddBar:" in err, f"refuses {what} as the caller's error ({err})")
+ex.execute("__vbar = __ufBar(12, 60); __vbar:SetOrientation('VERTICAL')")
+check(ex.eval("SmoothAnimatedBars.AddBar(__vbar, 'player', 'health')") is False, "a vertical bar is declined")
+check(not any("Error in" in m or "Could not" in m for m in chat(ex)), "no errors")
+
+# Loaded before us (no OptionalDeps): the call comes before our settings are there.
+early = LuaRuntime(unpack_returned_tuples=True)
+early.execute(open(os.path.join(HERE, "wowmock.lua"), encoding="utf-8").read())
+early.execute(HELPERS)
+early.execute("SmoothAnimatedBarsDB = { setupDone = true }")
+early.globals().__ns = early.globals().__loadAddon(ADDON, "SmoothAnimatedBars")
+early.execute("""
+    __early = CreateFrame("StatusBar", nil, UIParent)
+    __early.w, __early.h = 150, 20
+    __early:SetMinMaxValues(0, __secret()); __early:SetValue(__secret())
+    __earlyTaken = SmoothAnimatedBars.AddBar(__early, 'target', 'health')
+""")
+early.execute("__fire('ADDON_LOADED', 'SmoothAnimatedBars'); __fire('PLAYER_ENTERING_WORLD', true, false)")
+run(early, 0.5)
+# Food, drink and heals on another addon's player bars: the heal marker on them too.
+eh = session("{ setupDone = true }", "__player.class = 'MAGE'; __player.power = 0")
+eh.execute("""
+    __spells[433] = { 'Food', 'Restores 61 health over 18 sec. Must remain seated while eating.' }
+    __spells[430] = { 'Drink', 'Restores 151 mana over 18 sec. Must remain seated while drinking.' }
+    function __use(id, guid)
+        __fire('UNIT_SPELLCAST_SENT', 'player', '', guid, id)
+        __fire('UNIT_SPELLCAST_SUCCEEDED', 'player', guid, id)
+    end
+    __uf = CreateFrame("Frame", nil, UIParent)
+    function __ufBar(w, h)
+        local b = CreateFrame("StatusBar", nil, __uf)
+        b.w, b.h, b.level = w, h, 6
+        b:SetStatusBarTexture(b:CreateTexture(nil, "ARTWORK"))
+        b:SetMinMaxValues(0, __secret()); b:SetValue(__secret())
+        return b
+    end
+    __ufHealth, __ufPower = __ufBar(180, 24), __ufBar(180, 12)
+    SmoothAnimatedBars.AddBar(__ufHealth, 'player', 'health')
+    SmoothAnimatedBars.AddBar(__ufPower, 'player', 'power')
+    function __marker(bar) return (select(3, __ns.HealMarker.State()))[bar] end
+""")
+eh.execute("__use(433, 'Cast-1'); __use(430, 'Cast-2')")
+run(eh, 1)
+check(eh.eval("__marker(__ufHealth) ~= nil and __marker(__ufHealth).clip.shown")
+      and eh.eval("__marker(__ufHealth).liquids[1].themeKey") == "honey"
+      and eh.eval("__marker(__ufPower).clip.shown") and eh.eval("__marker(__ufPower).liquids[1].themeKey") == "nagrand",
+      "another addon's player bars get food (Honey) ahead of the health and drink (Nagrand) ahead of the mana")
+check(eh.eval("__marker(__ufHealth).clip.level") == 7 and eh.eval("(select(2, __ours(__ufHealth))).level") == 7,
+      "the marker at the level of the bar's liquid, a level above the bar, under it by sublevels")
+check(eh.eval(INFLOW + "(__ufHealth, __marker(__ufHealth).liquids[1].liquid)") > 0,
+      "and pours into the bar's liquid")
+eh.execute("__ufHealth:SetReverseFill(true)")
+run(eh, 0.5)
+check(not eh.eval("__marker(__ufHealth).clip.shown"), "a bar filling from the right (missing health) shows no marker")
+eh.execute("__ufHealth:SetReverseFill(false)")
+run(eh, 0.5)
+check(eh.eval("__marker(__ufHealth).clip.shown"), "and shows it again filling from the left")
+eh.execute("SmoothAnimatedBars.RemoveBar(__ufHealth)")
+run(eh, 0.5)
+check(not eh.eval("__marker(__ufHealth).clip.shown"), "a removed bar's marker goes with it")
+check(eh.eval("""(function()
+    __ns.ManaRule.Apply()
+    __spellCosts[133] = { { type = 0, name = 'MANA', cost = 30 } }
+    __use(133, 'Cast-3')
+    return true
+end)()"""), "a spell that costs mana")
+run(eh, 1)
+check(eh.eval("__ns.Bars.Liquid(__ufPower).steady") > 0, "starts the mana build-up on another addon's power bar")
+check(not any("Error in" in m for m in chat(eh)), "no errors")
+
+check(early.eval("__earlyTaken") is True and early.eval("(select(2, __liquid(__early)))") > 0,
+      "a bar handed over before our settings loaded gets the liquid once they have")
 
 if failures:
     print(f"\n{len(failures)} check(s) failed:")

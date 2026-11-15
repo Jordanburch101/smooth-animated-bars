@@ -4,6 +4,18 @@ Player-facing notes for each release. Write for players: what they can now
 do or see, and what was broken and now works. Leave out internal changes.
 Sections are `### New` and `### Fixed`; skip one that would be empty.
 
+## 1.9.0
+
+### New
+- **Other unit frame addons**: addons that replace the game's unit frames
+  can now hand their own health and power bars to Smooth Animated Bars, so
+  the liquid fills their bars instead of the hidden game ones. Those bars
+  keep the colours you set in that addon, and bars that fill from the right
+  get the liquid flowing the other way. Your heals, bandages, food and drink
+  pour into your own bars there, and the mana bar builds up through the wait
+  before mana regenerates. Turn it off under Other Addons in
+  the settings.
+
 ## 1.8.0
 
 ### New

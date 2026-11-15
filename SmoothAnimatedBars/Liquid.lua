@@ -202,6 +202,8 @@ function Liquid.New(parent, width, height, theme, opts, rows)
     self.n = rows or Liquid.RowsFor(height)
     self.rowH = height / self.n
     self.textures = {} -- every texture made here, for HideAll and masks
+    -- Anchors and the x direction: from the parent's left edge, or its right edge when mirrored (SetMirror).
+    self.aTL, self.aBL, self.aL, self.sx = "TOPLEFT", "BOTTOMLEFT", "LEFT", 1
     self.drawLayers = {} -- texture -> { layer, sublevel } as made, for SetSublevelOffset
 
     local function Tex(layer, sublevel, file, blend, wrap)
@@ -225,8 +227,6 @@ function Liquid.New(parent, width, height, theme, opts, rows)
     end
 
     self.body = Tex("ARTWORK", 3)
-    self.body:SetPoint("TOPLEFT")
-    self.body:SetPoint("BOTTOMLEFT")
 
     self.rows, self.tips, self.pos, self.vel = {}, {}, {}, {}
     self.lean, self.leanShape = 0, {}
@@ -247,8 +247,6 @@ function Liquid.New(parent, width, height, theme, opts, rows)
     -- front plus a cap per slice carrying it on to that slice's end, so nothing spills into a dip.
     local function Layer(sublevel, file, blend)
         local layer = { main = Tex("ARTWORK", sublevel, MEDIA .. file, blend, "REPEAT"), caps = {}, u = 0, v = 0 }
-        layer.main:SetPoint("TOPLEFT")
-        layer.main:SetPoint("BOTTOMLEFT")
         for i = 1, self.n do
             layer.caps[i] = Tex("ARTWORK", sublevel, MEDIA .. file, blend, "REPEAT")
         end
@@ -294,8 +292,39 @@ function Liquid.New(parent, width, height, theme, opts, rows)
     self.flick, self.flickV, self.flickGoal, self.flickNext = 1, 0, 0, 0
     self.mixColor = { 1, 1, 1 }
     self.ambientAcc = {}
+    self:Anchor()
     self:SetTheme(theme)
     return self
+end
+
+-- The textures laid along the parent's edge once, rather than each update.
+function Liquid:Anchor()
+    local tl, bl = self.aTL, self.aBL
+    for _, t in ipairs({ self.body, self.cloudDark.main, self.cloudLight.main, self.core.main, self.swirlA.main,
+                         self.swirlB.main, self.shadeHot.main, self.shadeDark.main }) do
+        t:ClearAllPoints()
+        t:SetPoint(tl)
+        t:SetPoint(bl)
+    end
+end
+
+-- Mirrored, the liquid fills from the parent's right edge and its front faces left: for a bar that fills from the right
+-- (SetReverseFill, another addon's bars through SmoothAnimatedBars.AddBar). Everything is still worked out from the
+-- filled end, x growing toward the front; only where it is drawn changes.
+function Liquid:SetMirror(on)
+    on = on and true or false
+    if on == (self.mirror or false) then return end
+    self.mirror = on
+    if on then
+        self.aTL, self.aBL, self.aL, self.sx = "TOPRIGHT", "BOTTOMRIGHT", "RIGHT", -1
+    else
+        self.aTL, self.aBL, self.aL, self.sx = "TOPLEFT", "BOTTOMLEFT", "LEFT", 1
+    end
+    -- A point of another name would be added to the old one, not replace it.
+    for _, t in ipairs(self.textures) do t:ClearAllPoints() end
+    self:Anchor()
+    self:LayoutTips()
+    self:HideAll()
 end
 
 function Liquid:SetTheme(theme)
@@ -394,7 +423,12 @@ function Liquid:DrawLayer(layer, ku, kv, alpha)
     local u, v = layer.u, layer.v
     local main = layer.main
     main:SetWidth(back)
-    main:SetTexCoord(u, u + back * ku, v, v + self.height * kv)
+    local m = self.mirror
+    if m then
+        main:SetTexCoord(u + back * ku, u, v, v + self.height * kv)
+    else
+        main:SetTexCoord(u, u + back * ku, v, v + self.height * kv)
+    end
     main:SetAlpha(alpha)
     On(main)
     local ub = u + back * ku
@@ -402,9 +436,13 @@ function Liquid:DrawLayer(layer, ku, kv, alpha)
         local e = ends[i]
         if e and e - back >= 0.5 then
             local y = (i - 1) * rowH
-            cap:SetPoint("TOPLEFT", parent, "TOPLEFT", back, -y)
+            cap:SetPoint(self.aTL, parent, self.aTL, back * self.sx, -y)
             cap:SetSize(e - back, rowH)
-            cap:SetTexCoord(ub, u + e * ku, v + y * kv, v + (y + rowH) * kv)
+            if m then
+                cap:SetTexCoord(u + e * ku, ub, v + y * kv, v + (y + rowH) * kv)
+            else
+                cap:SetTexCoord(ub, u + e * ku, v + y * kv, v + (y + rowH) * kv)
+            end
             cap:SetAlpha(alpha)
             On(cap)
         else
@@ -425,7 +463,7 @@ function Liquid:LayoutTips()
             h, v1 = rowH * 1.25, 2 / 3
         end
         tip:SetSize(CFG.edgeW, h)
-        tip:SetTexCoord(0, 1, v0, v1)
+        if self.mirror then tip:SetTexCoord(1, 0, v0, v1) else tip:SetTexCoord(0, 1, v0, v1) end
         tip.dy = top
     end
 end
@@ -678,7 +716,7 @@ function Liquid:EmitMote(x, y, vx, vy, life, size, from, to, style, ambient)
         m.blend = style.blend
         tex:SetBlendMode(style.blend)
     end
-    if tex.SetRotation then tex:SetRotation((style.spin or style.orient) and m.rot or 0) end
+    if tex.SetRotation then tex:SetRotation((style.spin or style.orient) and m.rot * self.sx or 0) end
     m.active = true
     On(tex)
 end
@@ -814,12 +852,12 @@ function Liquid:UpdateBolts(dt)
             else
                 local lit = b.flash * b.power
                 b.tex:SetSize(w, h * 0.9)
-                b.tex:SetPoint("TOPLEFT", parent, "TOPLEFT", b.x, -h * 0.05)
+                b.tex:SetPoint(self.aTL, parent, self.aTL, b.x * self.sx, -h * 0.05)
                 b.tex:SetAlpha(min(1, cr.alpha * lit))
                 local gw = w * (b.sheet and 0.8 or 0.6)
                 local gx = max(b.x + gw / 2, min(b.x + w - gw / 2, b.x + w * b.at))
                 b.glow:SetSize(gw, h)
-                b.glow:SetPoint("CENTER", parent, "LEFT", gx, 0)
+                b.glow:SetPoint("CENTER", parent, self.aL, gx * self.sx, 0)
                 b.glow:SetAlpha(min(1, cr.glow * lit * (b.sheet and 1.3 or 1)))
                 storm = storm + lit
             end
@@ -830,6 +868,7 @@ end
 
 function Liquid:UpdateParticles(dt)
     local parent, h, edge, t = self.parent, self.height, self.edge, self.t
+    local bl, sx = self.aBL, self.sx
     local bubbleAlpha = self.bubbleStyle.alpha
 
     for _, b in ipairs(self.bubbles) do
@@ -857,7 +896,7 @@ function Liquid:UpdateParticles(dt)
                 b.tex:SetAlpha(bubbleAlpha * min(1, b.age / 0.25))
             end
             local a = b.phase + t * b.freq
-            b.tex:SetPoint("CENTER", parent, "BOTTOMLEFT", b.x + sin(a) * b.sway, b.y + cos(a) * b.sway * 0.6)
+            b.tex:SetPoint("CENTER", parent, bl, (b.x + sin(a) * b.sway) * sx, b.y + cos(a) * b.sway * 0.6)
         end
     end
 
@@ -913,15 +952,15 @@ function Liquid:UpdateParticles(dt)
                 if st.orient and m.tex.SetRotation then
                     -- Rotation is counter-clockwise from straight up.
                     m.rot = atan2(-m.vx, m.vy)
-                    m.tex:SetRotation(m.rot)
+                    m.tex:SetRotation(m.rot * sx)
                 elseif m.spin ~= 0 and m.tex.SetRotation then
                     m.rot = m.rot + m.spin * dt
-                    m.tex:SetRotation(m.rot)
+                    m.tex:SetRotation(m.rot * sx)
                 end
                 m.tex:SetSize(size, size)
                 m.tex:SetVertexColor(Lerp(m.r1, m.r2, p), Lerp(m.g1, m.g2, p), Lerp(m.b1, m.b2, p))
                 m.tex:SetAlpha(alpha * (st.alpha or 1))
-                m.tex:SetPoint("CENTER", parent, "BOTTOMLEFT", m.x, m.y)
+                m.tex:SetPoint("CENTER", parent, bl, m.x * sx, m.y)
             end
         end
     end
@@ -1065,7 +1104,11 @@ function Liquid:Draw(dt)
     self.gradC:SetRGBA(min(1, fb[1] * k), min(1, fb[2] * k), min(1, fb[3] * k), 1)
 
     if base >= 0.5 then
-        self.body:SetGradient("HORIZONTAL", self.gradA, self.gradB)
+        if self.mirror then
+            self.body:SetGradient("HORIZONTAL", self.gradB, self.gradA)
+        else
+            self.body:SetGradient("HORIZONTAL", self.gradA, self.gradB)
+        end
         self.body:SetWidth(base)
         On(self.body)
     else
@@ -1088,12 +1131,17 @@ function Liquid:Draw(dt)
             Off(tip)
         else
             local y = -(i - 1) * rowH
-            row:SetGradient("HORIZONTAL", self.gradB, self.gradC)
-            row:SetPoint("TOPLEFT", parent, "TOPLEFT", base, y)
+            if self.mirror then
+                row:SetGradient("HORIZONTAL", self.gradC, self.gradB)
+            else
+                row:SetGradient("HORIZONTAL", self.gradB, self.gradC)
+            end
+            row:SetPoint(self.aTL, parent, self.aTL, base * self.sx, y)
             row:SetWidth(rw)
             On(row)
             if right < w - 1 then
-                tip:SetPoint("TOPLEFT", parent, "TOPLEFT", right - 0.5 - CFG.edgeCore * CFG.edgeW, y + tip.dy)
+                -- Mirrored, the tip's right edge goes where its left edge would.
+                tip:SetPoint(self.aTL, parent, self.aTL, (right - 0.5 - CFG.edgeCore * CFG.edgeW) * self.sx, y + tip.dy)
                 local src = self.leader or self
                 tip:SetAlpha(min(1, tipAlpha + abs(src.vel[src:SliceAt(i, self.n)]) * 0.01))
                 On(tip)
@@ -1162,7 +1210,7 @@ function Liquid:Draw(dt)
     self:DrawLayer(self.shadeDark, 0, 1 / h, sh.dark * (1 - 0.3 * min(1, energy)))
 
     if edge > 1 and edge < w - 1 then
-        self.glow:SetPoint("CENTER", parent, "LEFT", edge, 0)
+        self.glow:SetPoint("CENTER", parent, self.aL, edge * self.sx, 0)
         self.glow:SetAlpha(min(1, (0.12 + 0.55 * energy) * k))
         On(self.glow)
     else

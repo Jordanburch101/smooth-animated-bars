@@ -275,6 +275,13 @@ local partyWaiting = false -- party bars wanted whose frames were not there: loo
 local partyBuilt = {}      -- party bar -> true, once it has its liquid
 local LookForParty         -- below
 local driver
+-- Other addons' bars handed to us with SmoothAnimatedBars.AddBar: their bar -> its spot (bars[spot] is its state). A
+-- removed bar keeps its spot and frames, hidden, for when it is added again.
+local externals = {}
+-- Their functions (below), in one table as the file is near Lua's limit of 200 locals. LOOK_EVERY: how often their
+-- colour, fill direction and level are looked at; their colour can follow the health on a gradient, so more often than a
+-- plate's. unitEvents: whether the unit events are registered (Bars.Apply), which a bar needs to be stirred.
+local External = { LOOK_EVERY = 0.1, KINDS = { health = true, power = true }, unitEvents = false }
 
 -- Every bar state, the game's, the previews' and the nameplates'.
 local function Each(fn)
@@ -350,7 +357,7 @@ end
 -- The bar's own colour: health green (a flat bar's its own, unless unflat), or the game's colour for the unit's power
 -- type (a preview bar, and the Personal Resource Display's mana under a druid's form, name their power type).
 GameColor = function(b, unflat)
-    if b.spot.flat and not unflat then return PlateColor(b), "HEALTH" end
+    if (b.spot.flat or b.spot.external) and not unflat then return PlateColor(b), "HEALTH" end
     if b.kind == "health" then return HEALTH_COLOR, "HEALTH" end
     local index, token
     if b.spot.token then
@@ -448,6 +455,12 @@ end
 -- A bar's colour choice: its frame's, which can be to follow the player's (target, pet) or the target's (focus,
 -- targets of target). A preview's bars are the player's or the target's.
 local function ChoiceFor(b)
+    -- Another addon's bar keeps the colour that addon gives it, unless it asked for one of ours (AddBar's theme).
+    local ext = b.spot.external
+    if ext then
+        if ext.theme == "settings" then return ns.Core.ColorChoice(b.spot.frame, b.kind) end
+        return ext.theme or "game"
+    end
     return ns.Core.ColorChoice(b.spot.frame or (b.unit == "target" and "target" or "player"), b.kind)
 end
 
@@ -457,7 +470,7 @@ local function ApplyColor(b, force)
     -- Power colours change with the power type only when the bar takes the game's colour, and Class Color with the
     -- unit's colour, falling back on the game's. A nameplate's own colour changes with the unit (tapped, hostile).
     local key = choice
-    if b.spot.flat then
+    if b.spot.flat or b.spot.external then
         token = b.plateSecret and "secret" or string.format("%.3f,%.3f,%.3f", own[1], own[2], own[3])
     end
     if choice == "game" then
@@ -777,7 +790,7 @@ local function NewBar(spot, bar)
     -- A nameplate's bar has no mask, so the clip frame is the bar itself: it cuts the waves at the bar's end, and the
     -- motes too, which would only clutter a crowd of plates. The Personal Resource Display is one frame, the player's
     -- own, so its motes fly free as on the unit frames; its plate mask cuts the waves.
-    local spill = spot.plate and 0 or SPILL
+    local spill = (spot.plate or (spot.external and not spot.external.spill)) and 0 or SPILL
     clip:SetPoint("TOPLEFT", bar, "TOPLEFT", 0, spill)
     clip:SetPoint("BOTTOMRIGHT", bar, "BOTTOMRIGHT", spill, -spill)
     clip:SetClipsChildren(true)
@@ -793,6 +806,7 @@ local function NewBar(spot, bar)
     mover:SetWidth(w)
     b.mover = mover
 
+    b.spill = spill
     b.liquid = ns.Liquid.New(mover, math.max(w, 1) + ROOM, math.max(h, 1), ns.Themes.Get(ns.Themes.default), ns.Core.db)
     -- The bar's mask cuts the liquid to the bar. Motes are left free to fly off the front. A nameplate's bar has no
     -- mask, and its bronze rim has cut corners that a square liquid would cover, so the liquid there takes a mask of
@@ -822,6 +836,19 @@ local function NewBar(spot, bar)
         tint:Hide()
         shade:Hide()
         b.shadeFrame, b.shadeTex, b.plateTint = shade, tex, tint
+    elseif spot.external then
+        -- Another addon's bar: the mask it hands us, if any; a plain rectangle needs none, the clip frame cuts it.
+        local m = spot.external.mask
+        if type(m) == "table" and m.GetObjectType and m:GetObjectType() == "MaskTexture" then b.mask = m end
+        -- Its colour can be secret (a health gradient from the client's curves): then the liquid is drawn white and
+        -- this, tinted with the secret colour, multiplies it, as on a battleground's plates (PlateColor). Over the
+        -- liquid in its own frame, so it reaches nothing of the other addon's above the bar.
+        local tint = mover:CreateTexture(nil, "OVERLAY", nil, 7)
+        tint:SetColorTexture(1, 1, 1, 1)
+        tint:SetBlendMode("MOD")
+        if b.mask then tint:AddMaskTexture(b.mask) end
+        tint:Hide()
+        b.plateTint = tint
     else
         b.mask = BarMask(bar, spot.kind)
     end
@@ -840,7 +867,7 @@ end
 local function Stir(b)
     local now = GetTime()
     if now < b.stirAt then return end
-    b.stirAt = now + (b.spot.party and PARTY_STIR_EVERY or STIR_EVERY)
+    b.stirAt = now + ((b.spot.party or b.spot.slow) and PARTY_STIR_EVERY or STIR_EVERY)
     b.liquid:Splash(STIR, b.width - 8, b.width)
 end
 
@@ -1022,7 +1049,8 @@ local function NewFury(b)
     f.glow = f.ready:CreateTexture(nil, "ARTWORK", nil, 7)
     f.glow:SetTexture(MEDIA .. "Glow")
     f.glow:SetBlendMode("ADD")
-    f.glow:SetPoint("CENTER", f.ready, "RIGHT")
+    f.glow:SetPoint("CENTER", f.ready, b.mirror and "LEFT" or "RIGHT")
+    if b.mirror then f.liquid:SetMirror(true) end
     if b.mask then
         local free = {}
         for _, m in ipairs(f.liquid.motes) do free[m.tex] = true end
@@ -1297,7 +1325,14 @@ local function UpdateBar(b, dt)
             SyncPlateTexts(b)
         end
     end
-    if b.spot.party then idleFps = PARTY_FPS end
+    if b.spot.external then
+        b.colorIn = (b.colorIn or 0) - dt
+        if b.colorIn <= 0 then
+            b.colorIn = External.LOOK_EVERY
+            External.Look(b)
+        end
+    end
+    if b.spot.party or b.spot.slow then idleFps = PARTY_FPS end
     if b.spot.plate then
         idleFps = PLATE_IDLE_FPS
     else
@@ -1314,7 +1349,7 @@ local function UpdateBar(b, dt)
     -- Once settled only the idle wobble remains, so it drops to the idle rate. A party bar keeps to its rate busy too.
     if b.drawNow then
         b.drawNow, b.idle = nil, 0
-    elseif b.spot.party or b.liquid:IsQuiet() then
+    elseif b.spot.party or b.spot.slow or b.liquid:IsQuiet() then
         b.idle = b.idle + dt
         if b.idle < 1 / idleFps then return end
         dt, b.idle = b.idle, 0
@@ -1322,6 +1357,95 @@ local function UpdateBar(b, dt)
         b.idle = 0
     end
     b.liquid:Update(dt, w)
+end
+
+--------------------------------------------------------------------------------
+-- Other addons' bars
+--------------------------------------------------------------------------------
+
+-- A bar that fills from the right (SetReverseFill): our hidden bar fills the same way, the liquid's frame ends on its
+-- fill's left edge, the liquid is drawn mirrored, and the motes fly off to the left. force lays it all out again.
+function External.SetMirror(b, on, force)
+    on = on and true or false
+    if on == (b.mirror or false) and not force then return end
+    b.mirror = on
+    b.proxy:SetReverseFill(on)
+    local bar, clip, mover, fill, spill = b.bar, b.clip, b.mover, b.proxy:GetStatusBarTexture(), b.spill or 0
+    clip:ClearAllPoints()
+    mover:ClearAllPoints()
+    if on then
+        clip:SetPoint("TOPLEFT", bar, "TOPLEFT", -spill, spill)
+        clip:SetPoint("BOTTOMRIGHT", bar, "BOTTOMRIGHT", 0, -spill)
+        mover:SetPoint("TOPLEFT", fill, "TOPLEFT")
+        mover:SetPoint("BOTTOMLEFT", fill, "BOTTOMLEFT")
+    else
+        clip:SetPoint("TOPLEFT", bar, "TOPLEFT", 0, spill)
+        clip:SetPoint("BOTTOMRIGHT", bar, "BOTTOMRIGHT", spill, -spill)
+        mover:SetPoint("TOPRIGHT", fill, "TOPRIGHT")
+        mover:SetPoint("BOTTOMRIGHT", fill, "BOTTOMRIGHT")
+    end
+    mover:SetWidth(b.width)
+    local tint = b.plateTint
+    if tint then
+        tint:ClearAllPoints()
+        if on then
+            tint:SetPoint("TOPRIGHT", bar, "TOPRIGHT")
+            tint:SetPoint("BOTTOMLEFT", fill, "BOTTOMLEFT", -TINT_PAST, 0)
+        else
+            tint:SetPoint("TOPLEFT", bar, "TOPLEFT")
+            tint:SetPoint("BOTTOMRIGHT", fill, "BOTTOMRIGHT", TINT_PAST, 0)
+        end
+    end
+    b.liquid:SetMirror(on)
+    local f = b.fury
+    if f then
+        f.liquid:SetMirror(on)
+        f.glow:ClearAllPoints()
+        f.glow:SetPoint("CENTER", f.ready, on and "LEFT" or "RIGHT")
+    end
+    if b.live then
+        Feed(b, false)
+        b.liquid:Snap(b.width)
+        b.drawNow = true
+    end
+end
+
+-- One level above the bar by default (AddBar's level), as many as the addon asks for, or 0 for the bar's own level. At
+-- the bar's own level the bar's background, a texture on the bar itself, drew over the liquid (seen in game on Frames
+-- Forever's bars, dark at 80%: the liquid showed dim), as the plates' did. The addon's text and heal prediction on
+-- frames higher up stay over it.
+function External.Raise(b)
+    local up = b.spot.external.level or 1
+    if up <= 0 then
+        b.raisedOn = nil
+        AtParentLevel(b.clip, b.bar)
+        return
+    end
+    local ok, level = pcall(b.bar.GetFrameLevel, b.bar)
+    if not ok or type(level) ~= "number" or Secret(level) then return end
+    if level + up == b.raisedOn then return end
+    b.raisedOn = level + up
+    if b.clip.SetUsingParentLevel then b.clip:SetUsingParentLevel(false) end
+    b.clip:SetFrameLevel(level + up)
+end
+
+-- Its colour, which way it fills and its level, any of which the other addon can change at any time.
+function External.Look(b)
+    local ok, reverse = pcall(b.bar.GetReverseFill, b.bar)
+    if ok and not Secret(reverse) then External.SetMirror(b, reverse) end
+    External.Raise(b)
+    ApplyColor(b)
+end
+
+-- Whose colour settings a unit's bar takes when the other addon asks for ours (theme "settings").
+function External.FrameOf(unit)
+    if unit == "player" or unit == "vehicle" then return "player" end
+    if unit == "pet" then return "pet" end
+    if unit == "focus" then return "focus" end
+    if unit == "targettarget" or unit == "focustarget" then return "tot" end
+    if unit:match("^party") or unit:match("^raid") then return "party" end
+    if unit:match("^nameplate") then return "plate" end
+    return "target"
 end
 
 --------------------------------------------------------------------------------
@@ -1480,9 +1604,10 @@ local perf = { done = {}, groups = {} }
 
 -- The unit frames' share is split again by group (PerfGroup), each with its own count of liquids showing: the
 -- Personal Resource Display and the party frames apart from the rest.
-local PERF_GROUPS = { "prd", "party" }
+local PERF_GROUPS = { "prd", "party", "addon" }
 
 local function PerfGroup(b)
+    if b.spot.external then return "addon" end
     if b.spot.party then return "party" end
     if b.spot.flat and not b.spot.plate and not b.spot.preview then return "prd" end
 end
@@ -1652,7 +1777,10 @@ local function OnEvent(_, event, unit, ...)
         -- in a raid or battleground would apply everything again.
         if partyWaiting and not InCombatLockdown() and PartyFramesNew() then Bars.Apply() end
         for _, b in pairs(bars) do
-            if b.live and b.spot.party then
+            if b.live and b.spot.external then
+                ApplyColor(b)
+                Feed(b, false)
+            elseif b.live and b.spot.party then
                 b.checkIn = 0
                 ApplyColor(b)
                 Feed(b, false)
@@ -1774,6 +1902,13 @@ function Bars.Apply()
             if b.live then live = live + 1 end
         end
     end
+    -- Other addons' bars (AddBar), on with their own setting.
+    local allowed = ns.Core.Get("externalBars") and true or false
+    for _, spot in pairs(externals) do
+        local b = bars[spot]
+        SetLive(b, allowed and not spot.removed and not b.err)
+        if b.live then live = live + 1 end
+    end
     partyWaiting = waiting
     -- Previews follow the same settings, so the wizard shows each choice on them.
     local any = live
@@ -1787,6 +1922,7 @@ function Bars.Apply()
         driver:SetScript("OnUpdate", OnUpdate)
         driver:SetScript("OnEvent", OnEvent)
     end
+    External.unitEvents = live > 0
     if driver then
         driver:SetShown(any > 0 or platesOn or waiting)
         for _, event in ipairs(EVENTS) do
@@ -1945,6 +2081,111 @@ function Bars.WaitOver(bar)
     end
     liquid:Splash(BUILD_SPLASH, w - 8, w)
     liquid:Warm(BUILD_ENERGY)
+end
+
+-- Another addon's bar (SmoothAnimatedBars.AddBar, below). The liquid follows whatever the bar shows, as it does the
+-- game's: our hidden bar takes its (secret) value, and its own fill is made transparent while the liquid shows. Its
+-- colour is the bar's own unless the addon asks for a theme, so the addon's colour settings keep working. Returns
+-- true when the bar has the liquid or will have it once the player allows other addons' bars.
+
+-- What is wrong with AddBar's arguments, or nil. The public AddBar raises it as the caller's error.
+function Bars.CheckAddBar(bar, unit, kind, options)
+    if not IsBar(bar) then return "SmoothAnimatedBars.AddBar: bar must be a StatusBar" end
+    if type(unit) ~= "string" or Secret(unit) or unit == "" then
+        return "SmoothAnimatedBars.AddBar: unit must be a unit token such as \"player\""
+    end
+    if not External.KINDS[kind] then return "SmoothAnimatedBars.AddBar: kind must be \"health\" or \"power\"" end
+    if options ~= nil and type(options) ~= "table" then return "SmoothAnimatedBars.AddBar: options must be a table" end
+    local theme = options and options.theme
+    if theme ~= nil and theme ~= "settings" and theme ~= "game" and not ns.Themes.list[theme] then
+        return "SmoothAnimatedBars.AddBar: unknown theme \"" .. tostring(theme) .. "\""
+    end
+end
+
+function Bars.AddBar(bar, unit, kind, options)
+    local bad = Bars.CheckAddBar(bar, unit, kind, options)
+    if bad then error(bad, 2) end
+    options = options or {}
+    local theme = options.theme
+    -- Vertical bars are not drawn: the liquid only runs along a bar.
+    local okO, orientation = pcall(bar.GetOrientation, bar)
+    if okO and orientation == "VERTICAL" then return false end
+    unit = unit:lower()
+
+    local spot = externals[bar]
+    local ext = { theme = theme, level = tonumber(options.level) or 1, spill = options.spill and true or false,
+                  mask = options.mask }
+    local b
+    if spot then
+        b = bars[spot]
+        ext.mask = spot.external.mask -- the mask is the one it was built with
+        local respill = ext.spill ~= spot.external.spill
+        spot.external, spot.unit, spot.kind, spot.removed = ext, unit, kind, nil
+        b.unit, b.kind = unit, kind
+        if respill then b.spill = ext.spill and SPILL or 0 end
+        b.err = nil
+    else
+        spot = { key = "externalBars", optional = true, external = ext, unit = unit, kind = kind }
+        b = NewBar(spot, bar)
+        bars[spot] = b
+        externals[bar] = spot
+    end
+    spot.frame = External.FrameOf(unit)
+    -- A party or raid member's bar is drawn and stirred as sparingly as the party frames' (PARTY_FPS).
+    spot.slow = (unit:match("^party") or unit:match("^raid")) and true or nil
+    spot.label = (options.name and tostring(options.name) or "addon") .. " " .. unit .. " " .. kind
+    local okR, reverse = pcall(bar.GetReverseFill, bar)
+    External.SetMirror(b, okR and not Secret(reverse) and reverse, true)
+    External.Raise(b)
+    b.colorIn = 0
+    ApplyColor(b, true)
+    -- A player's bar gets the heal marker (heals, bandages, food and drink pouring in), built once.
+    if unit == "player" and ns.HealMarker then ns.HealMarker.Apply() end
+    if not ns.Core.Get("externalBars") then return true end
+    if driver and driver:IsShown() and External.unitEvents then
+        SetLive(b, true)
+        if b.live then
+            Feed(b, false)
+            b.liquid:Snap(b.width)
+            b.drawNow = true
+        end
+    else
+        Bars.Apply()
+    end
+    return true
+end
+
+-- The bar back to its own fill. It can be added again later.
+function Bars.RemoveBar(bar)
+    local spot = externals[bar]
+    if not spot then return false end
+    spot.removed = true
+    SetLive(bars[spot], false)
+    return true
+end
+
+-- Another addon's bar, if added and not removed: its unit, kind, levels above the bar, mask and whether it fills from
+-- the right (for the heal marker on it, HealMarker.lua).
+function Bars.External(bar)
+    local spot = externals[bar]
+    if not spot or spot.removed then return nil end
+    local ext, b = spot.external, bars[spot]
+    return spot.unit, spot.kind, ext.level or 1, b.mask, b.mirror or false
+end
+
+-- The other addons' bars added for a unit and kind, in no particular order (the mana build-up's, ManaRule.lua).
+function Bars.ExternalBars(unit, kind)
+    local out = {}
+    for bar, spot in pairs(externals) do
+        if not spot.removed and spot.unit == unit and spot.kind == kind then out[#out + 1] = bar end
+    end
+    return out
+end
+
+-- Whether another addon's bar has been handed to us and not removed.
+function Bars.HasBar(bar)
+    local spot = externals[bar]
+    return spot ~= nil and not spot.removed
 end
 
 -- A region's width and height, or the fallbacks while the client keeps them secret (for the markers).
@@ -2175,7 +2416,8 @@ function Bars.Perf()
     out[#out + 1] = string.format("Over the last %d s (%d frames):", #perf.done, frames)
     out[#out + 1] = Line("unit frames", unitMs, units)
     -- Of which: the display's and the party's, where there were any.
-    for _, group in ipairs({ { "prd", "  of which the Personal Resource Display" }, { "party", "  of which the party" } }) do
+    for _, group in ipairs({ { "prd", "  of which the Personal Resource Display" }, { "party", "  of which the party" },
+                          { "addon", "  of which other addons' bars" } }) do
         local g, label = group[1], group[2]
         local ms, n = 0, 0
         for _, s in ipairs(perf.done) do ms, n = ms + (s[g .. "Ms"] or 0), math.max(n, s[g] or 0) end

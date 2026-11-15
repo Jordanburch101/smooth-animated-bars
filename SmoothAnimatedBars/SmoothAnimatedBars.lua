@@ -29,6 +29,8 @@ local DEFAULTS = {
     plateHealth  = false,
     -- Friendly nameplates' health, the same way (outside instances: the game keeps those there to itself)
     plateFriendly = false,
+    -- Bars other addons hand us with SmoothAnimatedBars.AddBar (unit frame addons that hide the game's frames)
+    externalBars = true,
     -- The DoT marker on enemy nameplates (Marker.lua), with plateHealth
     plateDots    = false,
     -- Colours: "game" for the bar's own colour, or a theme key (Themes.lua)
@@ -155,6 +157,7 @@ local SETTING_APPLY = {
     plateHealth = function() ApplyBars(false); ns.Marker.Apply() end,
     plateDots   = function() ns.Marker.Apply() end,
     plateFriendly = function() ApplyBars(false) end,
+    externalBars = function() ApplyBars(false) end,
 }
 for _, key in ipairs(BAR_KEYS) do SETTING_APPLY[key] = function() ApplyBars(true) end end
 -- The Personal Resource Display's heal markers are built once its bars have the liquid.
@@ -185,6 +188,70 @@ function Core.SetSetting(key, value)
         db[key] = value
         Core.OnSettingChanged(key)
     end
+end
+
+--------------------------------------------------------------------------------
+-- For other addons
+--------------------------------------------------------------------------------
+
+-- The public entry point, a global table: a unit frame addon that hides the game's frames can hand us its own bars.
+--   SmoothAnimatedBars.AddBar(bar, unit, kind [, options]) -> true if taken
+--     bar: a horizontal StatusBar (its value may be secret); unit: "player", "target", "party1"...; kind: "health" or
+--     "power". Call it again with a new unit when the bar shows another (a party frame after a roster change).
+--     options: theme (nil keeps the bar's own colour; "settings" takes this addon's colour settings for that unit; or a
+--     theme key), mask (a MaskTexture to cut the liquid, taken the first time), level (frame levels above the bar, 1 by
+--     default: over the bar's own background, under what the addon draws on frames higher up), spill (true lets motes fly
+--     past the bar's edges), name (the addon's name, for /sab perf).
+--   SmoothAnimatedBars.RemoveBar(bar): the bar's own fill comes back.
+--   SmoothAnimatedBars.HasBar(bar): whether it has been added and not removed.
+-- A bar that fills from the right (SetReverseFill) is followed from its fill's left edge, and its colour, fill
+-- direction and level are looked at again ten times a second. The player can switch it all off (externalBars).
+-- Calls made before this addon has loaded its settings are kept and done once it has.
+local API_VERSION = 1
+local early = {}  -- bar -> its AddBar arguments, from calls made before the settings loaded
+local failed = {} -- bar -> true once an error adding it has been reported
+
+local api = { apiVersion = API_VERSION }
+
+function api.AddBar(bar, unit, kind, options)
+    local bad = ns.Bars.CheckAddBar(bar, unit, kind, options)
+    if bad then error(bad, 2) end
+    if not db then
+        early[bar] = { unit, kind, options }
+        return true
+    end
+    local ok, taken = pcall(ns.Bars.AddBar, bar, unit, kind, options)
+    if not ok then
+        if not failed[bar] then
+            failed[bar] = true
+            Core.Print("Could not put the liquid on another addon's bar: " .. tostring(taken))
+        end
+        return false
+    end
+    return taken
+end
+
+function api.RemoveBar(bar)
+    if early[bar] then
+        early[bar] = nil
+        return true
+    end
+    local ok, removed = pcall(ns.Bars.RemoveBar, bar)
+    return ok and removed or false
+end
+
+function api.HasBar(bar)
+    if early[bar] then return true end
+    return ns.Bars.HasBar(bar)
+end
+
+SmoothAnimatedBars = api
+
+local function AddEarlyBars()
+    for bar, args in pairs(early) do
+        api.AddBar(bar, args[1], args[2], args[3])
+    end
+    wipe(early)
 end
 
 local events = CreateFrame("Frame")
@@ -230,6 +297,7 @@ events:SetScript("OnEvent", function(self, event, arg1, arg2)
         ns.SelfProbe.Load(db)
         ns.Options.Register(db, DEFAULTS)
         self:UnregisterEvent("ADDON_LOADED")
+        AddEarlyBars()
 
     elseif event == "PLAYER_ENTERING_WORLD" then
         local isLogin, isReload = arg1, arg2
