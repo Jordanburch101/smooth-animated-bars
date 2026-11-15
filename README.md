@@ -262,39 +262,65 @@ as it was.
 
 ## For addon authors
 
-A unit frame addon that hides the game's frames can hand Smooth Animated Bars its own bars:
+A unit frame addon that hides the game's frames can hand Smooth Animated Bars its own bars. The table is
+`SmoothAnimatedBars`, read-only, `apiVersion` 1:
 
 ```lua
-if SmoothAnimatedBars and SmoothAnimatedBars.AddBar then
-    -- bar: a horizontal StatusBar (its values may be secret); unit: "player", "target", "party1"...
-    -- kind: "health" or "power"
-    SmoothAnimatedBars.AddBar(bar, unit, kind, options)
-end
-SmoothAnimatedBars.RemoveBar(bar) -- the bar's own fill comes back
-SmoothAnimatedBars.HasBar(bar)
+SmoothAnimatedBars.AddBar(bar, unit, kind [, options]) -- true if taken, false if declined
+SmoothAnimatedBars.RemoveBar(bar)    -- true if it was added; your fill comes back
+SmoothAnimatedBars.HasBar(bar)       -- added and not removed
+SmoothAnimatedBars.IsLive(bar)       -- its liquid is showing now
+SmoothAnimatedBars.IsEnabled()       -- the player allows other addons' bars
+SmoothAnimatedBars.RegisterCallback(fn) -- fn("enabled", on) when the player switches that; UnregisterCallback(fn)
+SmoothAnimatedBars.GetThemes()       -- the theme keys options.theme takes
 ```
 
-- Add `## OptionalDeps: SmoothAnimatedBars` to your toc, so the table is there when your addon loads. Calls made
-  before Smooth Animated Bars has loaded its settings are kept and done once it has.
-- The liquid follows whatever your bar shows: it copies the bar's value, secret or not, and makes the bar's own fill
-  texture transparent while it shows. Restyling the fill is fine; leave its alpha to us while the bar is added.
-- It keeps your bar's colour, secret ones included (a health gradient from the client's curves), and follows it as
-  it changes. A bar that fills from the right (`SetReverseFill`) gets the liquid flowing from the right; switching
-  it later is followed too.
-- The player's own bars get the rest of the player frame's liquid too: heals, bandages, food and drink on the way
-  (from the left; not on a bar filling from the right), the mana build-up and a warrior's Rage Fury. Your own heal
-  prediction is left as it is.
-- Call `AddBar` again with the new unit when a bar shows someone else (a party frame after a roster change).
-- The liquid sits one frame level above the bar, over the bar's own background. Draw what should stay on top
-  (text, heal prediction, shields) on frames two or more levels up, or pass `level`. Fading and resizing the bar carry over, as the liquid's frames are its
-  children.
-- `options` (all optional): `theme` (`"settings"` for the colours chosen in Smooth Animated Bars for that unit, or a
-  theme key; left out, the bar's own colour), `mask` (a MaskTexture to cut the liquid to, taken the first time),
-  `level` (frame levels above the bar, default 1; 0 for the bar's own level), `spill` (`true` lets the motes fly past the bar's edges),
-  `name` (your addon's name, shown in `/sab perf`).
-- `AddBar` returns true when it took the bar, false for a vertical bar, and raises an error for bad arguments.
-  `SmoothAnimatedBars.apiVersion` is 1.
-- Players can switch other addons' bars off under Other Addons in the settings.
+A Frames Forever style example:
+
+```lua
+local function attachLiquid(frame, unit)
+    if not (SmoothAnimatedBars and SmoothAnimatedBars.AddBar) then return end
+    local w = frame.widgets
+    SmoothAnimatedBars.AddBar(w.Health, unit, "health", { name = "Frames Forever" })
+    SmoothAnimatedBars.AddBar(w.Power, unit, "power", { name = "Frames Forever" })
+end
+```
+
+**Loading.** Add `## OptionalDeps: SmoothAnimatedBars` to your toc so the table is there when your addon loads, or
+look for it again at `PLAYER_LOGIN`. Bars handed over before then are kept and go live once the player is in the
+world.
+
+**Calling.** `bar` is a horizontal StatusBar, its values secret or not; `unit` a unit token ("player", "target",
+"party1"...); `kind` "health" or "power". Calling `AddBar` again with the same arguments does nothing, so it is safe
+from your update code. With a new unit (a party frame after a roster change) the liquid follows it. Bad arguments
+raise an error in your code. `AddBar` declines (returns false) a vertical bar, a bar of Smooth Animated Bars' own, a
+nameplate unit, a bar that fails to set up, and more than ten party and raid members' bars at once (each is a liquid
+of its own; a raid frame would cost more than the game's frames together). Remove a bar before you throw it away.
+
+**Options**, all optional:
+- `theme`: left out, your bar's own colour; `"settings"`, the colours chosen in Smooth Animated Bars for that unit;
+  or a key from `GetThemes()`. A key it does not know (renamed, or from a later version) means your bar's colour.
+- `mask`: a MaskTexture to cut the liquid to, taken the first time the bar is added.
+- `level`: whole frame levels above your bar, 0 to 20, default 1.
+- `spill`: `true` lets the motes fly past the bar's edges.
+- `name`: your addon's name, shown in `/sab perf` and `/sab debug`.
+
+**What it does to your bar.**
+- It copies the bar's value, secret or not, and keeps your fill texture transparent while the liquid shows,
+  putting it back to fully opaque when it stops. Restyle the fill as you like; leave its alpha alone.
+- It follows your bar's colour, secret ones included (a health gradient from the client's curves), and its fill
+  direction: a bar that fills from the right (`SetReverseFill`) gets the liquid flowing from the right. Both are
+  looked at ten times a second, as are its orientation and frame level.
+- The liquid sits `level` frame levels above the bar, over your bar's own background. Draw what should stay on top
+  (text, heal prediction, shields) on frames higher up. Fading the bar or its parents carries over, as the liquid's
+  frames are its children; to save its cost while a bar is not wanted, `Hide()` it rather than setting its alpha to 0.
+  Resizing carries over too, though the liquid's front keeps the number of slices it got from the bar's height when
+  first added, so add a bar once it has its size.
+- The player's own bars get the rest of the player frame's liquid: heals, bandages, food and drink on the way (on a
+  bar filling from the left), the mana build-up and a warrior's Rage Fury. These are measured against the player's
+  real health and mana, so they fit a bar that shows a percentage. Your own heal prediction is left as it is.
+
+Players can switch other addons' bars off under Other Addons in the settings or with `/sab off`.
 
 ## Install
 

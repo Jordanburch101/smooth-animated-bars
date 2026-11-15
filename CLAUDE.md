@@ -348,6 +348,13 @@ Facts found while building this, which the code relies on and which are not obvi
   The player's bars get the heal marker (`HealMarker.lua`, `BuildExternal`: at the liquid's level, under it by
   sublevels with seams, as on the player frame; hidden on a bar filling from the right) and the mana build-up
   (`ManaRule.lua`, `Bars.ExternalBars`); seen missing in game before that (eating, a bandage), and working after.
+  Frames Forever's bars hold a percentage (`BarValue.lua`: range 0..100 when health is secret), so the marker takes
+  `UnitHealthMax`/`UnitPowerMax` for its range, not the bar's. Four review agents went over the first version; from
+  them: `AddBar` again with the same arguments does nothing (an addon may call it from its updates; it had snapped the
+  liquid and cleared its motes), options are checked and an unknown theme falls back, our own bars and nameplate units
+  are declined, at most `External.MAX_GROUP` (10) party and raid bars and no fury on them, a bar's errors are reported
+  once (`Bars.Reported`), bars added before `PLAYER_ENTERING_WORLD` wait for it (`Core.ready`) so the login order of
+  `Bars.Apply` and `HealMarker.Apply` holds, the heal seam takes a secret colour directly, and the table is read-only.
 - **Toc changes** (a new file) need a full game restart; `/reload` does not pick them up.
 - **Capture:** `/sab capture` uses `Screenshot()` and the `screenshotFormat` CVar (TGA, put back after).
   The screenshot is the full render resolution (an ultrawide 3440x1440 here), and the red "?" target

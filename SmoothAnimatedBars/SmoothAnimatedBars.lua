@@ -157,7 +157,11 @@ local SETTING_APPLY = {
     plateHealth = function() ApplyBars(false); ns.Marker.Apply() end,
     plateDots   = function() ns.Marker.Apply() end,
     plateFriendly = function() ApplyBars(false) end,
-    externalBars = function() ApplyBars(false) end,
+    externalBars = function()
+        ApplyBars(false)
+        ns.HealMarker.Apply()
+        Core.FireExternal("enabled", db.externalBars and true or false)
+    end,
 }
 for _, key in ipairs(BAR_KEYS) do SETTING_APPLY[key] = function() ApplyBars(true) end end
 -- The Personal Resource Display's heal markers are built once its bars have the liquid.
@@ -195,21 +199,28 @@ end
 --------------------------------------------------------------------------------
 
 -- The public entry point, a global table: a unit frame addon that hides the game's frames can hand us its own bars.
---   SmoothAnimatedBars.AddBar(bar, unit, kind [, options]) -> true if taken
+-- README.md, "For addon authors", is the contract; this is a summary.
+--   SmoothAnimatedBars.AddBar(bar, unit, kind [, options]) -> true if taken, false if declined
 --     bar: a horizontal StatusBar (its value may be secret); unit: "player", "target", "party1"...; kind: "health" or
---     "power". Call it again with a new unit when the bar shows another (a party frame after a roster change).
+--     "power". Calling it again with the same arguments does nothing; with a new unit the liquid follows it.
 --     options: theme (nil keeps the bar's own colour; "settings" takes this addon's colour settings for that unit; or a
---     theme key), mask (a MaskTexture to cut the liquid, taken the first time), level (frame levels above the bar, 1 by
---     default: over the bar's own background, under what the addon draws on frames higher up), spill (true lets motes fly
---     past the bar's edges), name (the addon's name, for /sab perf).
---   SmoothAnimatedBars.RemoveBar(bar): the bar's own fill comes back.
---   SmoothAnimatedBars.HasBar(bar): whether it has been added and not removed.
+--     theme key, an unknown one meaning the bar's own colour), mask (a MaskTexture, taken the first time), level (whole
+--     frame levels above the bar, 0 to 20, 1 by default), spill (true lets motes fly past the bar's edges), name (the
+--     addon's name, for /sab perf and /sab debug). Bad arguments raise an error in the caller.
+--     Declined: a vertical bar, one of this addon's own bars, a nameplate unit, or more than ten party and raid members'
+--     bars at once.
+--   SmoothAnimatedBars.RemoveBar(bar) -> true if it was added: the bar's own fill comes back.
+--   SmoothAnimatedBars.HasBar(bar): added and not removed. IsLive(bar): its liquid is showing now.
+--   SmoothAnimatedBars.IsEnabled(): whether the player allows other addons' bars (externalBars).
+--   SmoothAnimatedBars.RegisterCallback(fn) / UnregisterCallback(fn): fn("enabled", on) when that setting changes.
+--   SmoothAnimatedBars.GetThemes(): the theme keys options.theme takes.
 -- A bar that fills from the right (SetReverseFill) is followed from its fill's left edge, and its colour, fill
--- direction and level are looked at again ten times a second. The player can switch it all off (externalBars).
--- Calls made before this addon has loaded its settings are kept and done once it has.
+-- direction, orientation and level are looked at again ten times a second. Calls made before this addon has loaded its
+-- settings are kept and done once it has; a bar goes live once the player is in the world.
 local API_VERSION = 1
-local early = {}  -- bar -> its AddBar arguments, from calls made before the settings loaded
-local failed = {} -- bar -> true once an error adding it has been reported
+local early = {}     -- bar -> its AddBar arguments, from calls made before the settings loaded
+local failed = {}    -- bar -> true once an error adding it has been reported, until it is added again
+local callbacks = {} -- functions to tell when the externalBars setting changes
 
 local api = { apiVersion = API_VERSION }
 
@@ -217,17 +228,22 @@ function api.AddBar(bar, unit, kind, options)
     local bad = ns.Bars.CheckAddBar(bar, unit, kind, options)
     if bad then error(bad, 2) end
     if not db then
+        if ns.Bars.Declined(bar, unit) then return false end
         early[bar] = { unit, kind, options }
         return true
     end
     local ok, taken = pcall(ns.Bars.AddBar, bar, unit, kind, options)
     if not ok then
-        if not failed[bar] then
+        -- Whatever was set up is let go, so HasBar answers as AddBar did.
+        pcall(ns.Bars.RemoveBar, bar)
+        if not failed[bar] and not ns.Bars.Reported(bar) then
             failed[bar] = true
+            ns.Bars.Reported(bar, true)
             Core.Print("Could not put the liquid on another addon's bar: " .. tostring(taken))
         end
         return false
     end
+    if taken then failed[bar] = nil end
     return taken
 end
 
@@ -245,7 +261,49 @@ function api.HasBar(bar)
     return ns.Bars.HasBar(bar)
 end
 
-SmoothAnimatedBars = api
+function api.IsLive(bar)
+    return ns.Bars.HasBar(bar) and ns.Bars.IsLive(bar) or false
+end
+
+function api.IsEnabled()
+    return db ~= nil and db.externalBars and true or false
+end
+
+function api.GetThemes()
+    local out = {}
+    for i, key in ipairs(ns.Themes.order) do out[i] = key end
+    return out
+end
+
+function api.RegisterCallback(fn)
+    if type(fn) ~= "function" then error("SmoothAnimatedBars.RegisterCallback: fn must be a function", 2) end
+    for _, f in ipairs(callbacks) do if f == fn then return end end
+    callbacks[#callbacks + 1] = fn
+end
+
+function api.UnregisterCallback(fn)
+    for i, f in ipairs(callbacks) do
+        if f == fn then
+            table.remove(callbacks, i)
+            return
+        end
+    end
+end
+
+-- Each callback in turn; one that errors is reported and does not stop the others.
+function Core.FireExternal(event, ...)
+    for _, fn in ipairs(callbacks) do
+        local ok, err = pcall(fn, event, ...)
+        if not ok then Core.Print("An other addon's callback failed: " .. tostring(err)) end
+    end
+end
+
+-- Read-only, so no addon can replace a function another relies on.
+SmoothAnimatedBars = setmetatable({}, {
+    __index = api,
+    __newindex = function() error("SmoothAnimatedBars is read-only", 2) end,
+    __metatable = false,
+})
 
 local function AddEarlyBars()
     for bar, args in pairs(early) do
@@ -301,6 +359,7 @@ events:SetScript("OnEvent", function(self, event, arg1, arg2)
 
     elseif event == "PLAYER_ENTERING_WORLD" then
         local isLogin, isReload = arg1, arg2
+        Core.ready = true -- other addons' bars go live from here on (Bars.AddBar)
         ApplyBars(true)
         ns.Bars.ApplyColors() -- class and faction themes know the player now
         ns.Marker.Apply()
@@ -392,6 +451,7 @@ SlashCmdList.SMOOTHANIMATEDBARS = function(input)
         end
     elseif cmd == "on" or cmd == "off" then
         for _, key in ipairs(BAR_KEYS) do Core.SetSetting(key, cmd == "on") end
+        Core.SetSetting("externalBars", cmd == "on") -- other addons' bars too
         Core.Print(cmd == "on" and "Liquid in the unit frames' bars." or "The game's own bars again.")
     elseif cmd == "capture" then -- photographs the frame art for the gallery; see Capture.lua
         ns.Capture.Start()

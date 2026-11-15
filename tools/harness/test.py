@@ -3021,13 +3021,134 @@ run(ex, 0.2)
 check(ex.eval("(select(2, __liquid(__ufHealth)))") > 0 and ex.eval("(select(2, __liquid(__ufParty)))") == 0,
       "and on again, without the removed one")
 for args, what in [("nil, 'player', 'health'", "not a bar"), ("__ufHealth, 5, 'health'", "no unit"),
-                   ("__ufHealth, 'player', 'mana'", "an unknown kind"),
-                   ("__ufHealth, 'player', 'health', { theme = 'nope' }", "an unknown theme")]:
+                   ("__ufHealth, 'player', 'mana'", "an unknown kind")]:
     err = ex.eval(f"select(2, pcall(SmoothAnimatedBars.AddBar, {args}))")
     check(isinstance(err, str) and "SmoothAnimatedBars.AddBar:" in err, f"refuses {what} as the caller's error ({err})")
+for args, what in [("__ufHealth, 'player', 'health', { level = 2.5 }", "a level that is not whole"),
+                   ("__ufHealth, 'player', 'health', { level = -1 }", "a negative level"),
+                   ("__ufHealth, 'player', 'health', { level = 99 }", "a level past 20"),
+                   ("__ufHealth, 'player', 'health', { level = '2' }", "a level as text"),
+                   ("__ufHealth, 'player', 'health', { mask = {} }", "a mask that is no MaskTexture"),
+                   ("__ufHealth, 'player', 'health', { spill = 'yes' }", "spill as text"),
+                   ("__ufHealth, 'player', 'health', { name = 5 }", "a name that is no string"),
+                   ("__ufHealth, 'player', 'health', { theme = 5 }", "a theme that is no string")]:
+    err = ex.eval(f"select(2, pcall(SmoothAnimatedBars.AddBar, {args}))")
+    check(isinstance(err, str) and "SmoothAnimatedBars.AddBar:" in err, f"refuses {what} as the caller's error ({err})")
+ex.execute("__ufHealth:SetStatusBarColor(0.2, 0.8, 0.2)")
+taken = ex.eval("SmoothAnimatedBars.AddBar(__ufHealth, 'player', 'health', { theme = 'nope' })")
+run(ex, 0.3)
+check(taken is True
+      and ex.eval("__ns.Bars.Liquid(__ufHealth).theme.fillA[2]") > ex.eval("__ns.Bars.Liquid(__ufHealth).theme.fillA[1]"),
+      "an unknown theme (one renamed or added later) falls back to the bar's own colour rather than failing")
+ex.execute("SmoothAnimatedBars.AddBar(__ufHealth, 'player', 'health')")
+run(ex, 0.3)
+
+# Called again with nothing changed, as an addon may on every update: nothing happens.
+ex.execute("__ns.Bars.Liquid(__ufHealth):Splash(0.8, 170, 180)")
+run(ex, 0.05)
+before = ex.eval("__motes(__ufHealth)")
+ex.execute("""
+    __themeBefore = __ns.Bars.Liquid(__ufHealth).theme
+    local proxy = __ours(__ufHealth)
+    proxy:SetValue(__secret(), 'eased')
+    for _ = 1, 20 do SmoothAnimatedBars.AddBar(__ufHealth, 'player', 'health') end
+""")
+check(before > 0 and ex.eval("__motes(__ufHealth)") == before
+      and ex.eval("__ns.Bars.Liquid(__ufHealth).theme == __themeBefore")
+      and ex.eval("(__ours(__ufHealth)).interpolation") == "eased",
+      f"added again with the same arguments: no reset, its motes ({before}), theme and smoothing left as they were")
+
+# Declined bars.
+check(ex.eval("SmoothAnimatedBars.AddBar(PlayerFrame.healthbar, 'player', 'health')") is False
+      and ex.eval("""(function()
+          local n = 0
+          for _, f in ipairs(__frames) do if f.parent == PlayerFrame.healthbar and f.clipsChildren then n = n + 1 end end
+          return n
+      end)()""") == 1, "one of our own bars (the game's player health) is declined: no second liquid")
+check(ex.eval("SmoothAnimatedBars.AddBar(__ufBar(100, 10), 'nameplate3', 'health')") is False, "a nameplate unit is declined")
+ex.execute("__turning = __ufBar(120, 14); SmoothAnimatedBars.AddBar(__turning, 'target', 'health')")
+run(ex, 0.3)
+ex.execute("__turning:SetOrientation('VERTICAL')")
+run(ex, 0.3)
+check(not ex.eval("SmoothAnimatedBars.HasBar(__turning)") and ex.eval("(select(2, __liquid(__turning)))") == 0
+      and ex.eval("__turning.fill.alpha") == 1, "a bar turned vertical later loses the liquid and gets its fill back")
+
+# Party and raid members' bars: at most ten, no fury, a roster change resets only them.
+ex.execute("""
+    __units.party1 = { power = 1 }
+    __group = {}
+    for i = 1, 11 do __group[i] = __ufBar(80, 10) end
+    __taken = 0
+    for i = 1, 11 do
+        if SmoothAnimatedBars.AddBar(__group[i], 'raid' .. i, i % 2 == 0 and 'power' or 'health') then
+            __taken = __taken + 1
+        end
+    end
+    SmoothAnimatedBars.RemoveBar(__group[1])
+    SmoothAnimatedBars.AddBar(__group[1], 'party1', 'power')
+""")
+run(ex, 0.5)
+check(ex.eval("__taken") == 10 and not ex.eval("SmoothAnimatedBars.HasBar(__group[11])"),
+      "at most ten party and raid members' bars at once (a raid frame would cost more than the game's whole frame)")
+check(ex.eval("SmoothAnimatedBars.HasBar(__group[1])") and ex.eval("__ns.Bars.FuryLiquid(__group[1]) == nil"),
+      "a party warrior's rage bar has no fury, as on the game's party frames")
+ex.execute("""
+    local proxy = __ours(__ufHealth)
+    proxy:SetValue(__secret(), 'eased')
+    __fire('GROUP_ROSTER_UPDATE')
+""")
+check(ex.eval("(__ours(__ufHealth)).interpolation") == "eased",
+      "a roster change leaves the player's bar easing, only group members' bars start afresh")
+ex.execute("for i = 1, 11 do SmoothAnimatedBars.RemoveBar(__group[i]) end")
+
+# Errors: reported once, however often the addon adds the bar again.
+ex.execute("""
+    __broken = __ufBar(120, 14)
+    SmoothAnimatedBars.AddBar(__broken, 'target', 'health')
+    __broken.GetMinMaxValues = function() error('broken range') end
+""")
+run(ex, 0.2)
+for _ in range(5):
+    ex.execute("SmoothAnimatedBars.AddBar(__broken, 'focus', 'health'); SmoothAnimatedBars.AddBar(__broken, 'target', 'health')")
+    run(ex, 0.1)
+errors = [m for m in chat(ex) if "broken range" in m]
+check(len(errors) == 1, f"an error in a bar's update is reported once, however often it is added again ({len(errors)})")
+ex.execute("""
+    __bad = __ufBar(120, 14)
+    __bad.GetWidth = function() error('no width') end
+    __badTaken = SmoothAnimatedBars.AddBar(__bad, 'target', 'health')
+""")
+check(ex.eval("__badTaken") is False and not ex.eval("SmoothAnimatedBars.HasBar(__bad)"),
+      "a bar that fails to set up: AddBar says false and HasBar agrees")
+
+# What an author can ask, and be told.
+check(ex.eval("SmoothAnimatedBars.IsEnabled()") is True and ex.eval("SmoothAnimatedBars.IsLive(__ufHealth)") is True
+      and ex.eval("SmoothAnimatedBars.IsLive(__ufParty)") is False,
+      "IsEnabled, and IsLive for a bar showing the liquid and one removed")
+check(ex.eval("""(function()
+    for _, k in ipairs(SmoothAnimatedBars.GetThemes()) do if k == 'arcane' then return true end end
+end)()"""), "GetThemes lists the theme keys")
+ex.execute("""
+    __told = {}
+    SmoothAnimatedBars.RegisterCallback(function(event, on) __told[#__told + 1] = event .. ':' .. tostring(on) end)
+    SmoothAnimatedBars.RegisterCallback(function() error('a careless callback') end)
+""")
+ex.execute("SlashCmdList.SMOOTHANIMATEDBARS('off')")
+run(ex, 0.2)
+check(ex.eval("__told[1]") == "enabled:false" and ex.eval("(select(2, __liquid(__ufHealth)))") == 0
+      and not ex.eval("SmoothAnimatedBars.IsLive(__ufHealth)"),
+      "/sab off takes other addons' bars too, and a callback hears of it, even with another callback failing")
+ex.execute("SlashCmdList.SMOOTHANIMATEDBARS('on')")
+run(ex, 0.2)
+check(ex.eval("__told[2]") == "enabled:true" and ex.eval("SmoothAnimatedBars.IsLive(__ufHealth)") is True, "and /sab on")
+check(not ex.eval("(pcall(function() SmoothAnimatedBars.AddBar = nil end))")
+      and ex.eval("type(SmoothAnimatedBars.AddBar)") == "function", "the table is read-only: no addon can replace a function")
+check(any("other addon's" in line and "added" in line for line in ex.eval("__ns.Bars.Debug()").values()),
+      "/sab debug lists other addons' bars")
 ex.execute("__vbar = __ufBar(12, 60); __vbar:SetOrientation('VERTICAL')")
 check(ex.eval("SmoothAnimatedBars.AddBar(__vbar, 'player', 'health')") is False, "a vertical bar is declined")
-check(not any("Error in" in m or "Could not" in m for m in chat(ex)), "no errors")
+check(not any(("Error in" in m or "Could not" in m) and "broken range" not in m and "no width" not in m
+              and "careless" not in m for m in chat(ex)), "no other errors")
 
 # Loaded before us (no OptionalDeps): the call comes before our settings are there.
 early = LuaRuntime(unpack_returned_tuples=True)
@@ -3040,6 +3161,9 @@ early.execute("""
     __early.w, __early.h = 150, 20
     __early:SetMinMaxValues(0, __secret()); __early:SetValue(__secret())
     __earlyTaken = SmoothAnimatedBars.AddBar(__early, 'target', 'health')
+    __earlyV = CreateFrame("StatusBar", nil, UIParent)
+    __earlyV:SetOrientation('VERTICAL')
+    __earlyVTaken = SmoothAnimatedBars.AddBar(__earlyV, 'target', 'health')
 """)
 early.execute("__fire('ADDON_LOADED', 'SmoothAnimatedBars'); __fire('PLAYER_ENTERING_WORLD', true, false)")
 run(early, 0.5)
@@ -3075,6 +3199,20 @@ check(eh.eval("__marker(__ufHealth).clip.level") == 7 and eh.eval("(select(2, __
       "the marker at the level of the bar's liquid, a level above the bar, under it by sublevels")
 check(eh.eval(INFLOW + "(__ufHealth, __marker(__ufHealth).liquids[1].liquid)") > 0,
       "and pours into the bar's liquid")
+check(eh.eval("issecretvalue(__marker(__ufPower).liquids[1].run.max)"),
+      "the drink is measured against the player's real mana (secret), not the bar's range, which may be a percentage")
+eh.execute("""
+    __ufHealth:SetMinMaxValues(0, 100); __ufHealth:SetValue(50)  -- Frames Forever's bars hold a percentage
+""")
+run(eh, 0.3)
+check(eh.eval("issecretvalue(__marker(__ufHealth).liquids[1].run.max)"),
+      "and the food against the player's real health")
+eh.execute("__ufHealth:SetStatusBarColor(__secret(0.2), __secret(0.8), __secret(0.2))")
+run(eh, 0.5)
+check(eh.eval("""(function()
+    local s = __marker(__ufHealth).liquids[1].seam
+    return s.mover.shown and issecretvalue(s.rows[1].vc[1]) and not s.fade.shown
+end)()"""), "over a bar whose colour is secret, the seam takes that colour too, not the white under its tint")
 eh.execute("__ufHealth:SetReverseFill(true)")
 run(eh, 0.5)
 check(not eh.eval("__marker(__ufHealth).clip.shown"), "a bar filling from the right (missing health) shows no marker")
@@ -3094,8 +3232,35 @@ run(eh, 1)
 check(eh.eval("__ns.Bars.Liquid(__ufPower).steady") > 0, "starts the mana build-up on another addon's power bar")
 check(not any("Error in" in m for m in chat(eh)), "no errors")
 
+eh.execute("SmoothAnimatedBars.AddBar(__ufHealth, 'player', 'health'); SmoothAnimatedBars.AddBar(__ufHealth, 'player', 'power')")
+run(eh, 0.3)
+check(eh.eval("__marker(__ufHealth).name") == "mana",
+      "a player bar added again as the other kind gets the marker of that kind")
+
+# All our own bars off: the last other addon's bar removed stops the driver's unit events.
+keys = ["playerHealth", "playerPower", "targetHealth", "targetPower", "petHealth", "petPower", "focusHealth",
+        "focusPower", "totHealth", "totPower", "partyHealth", "partyPower", "prdHealth", "prdPower"]
+quiet = session("{ setupDone = true, " + ", ".join(k + " = false" for k in keys) + " }")
+quiet.execute("""
+    __q = CreateFrame("StatusBar", nil, UIParent)
+    __q.w, __q.h = 150, 20
+    __q:SetStatusBarTexture(__q:CreateTexture(nil, "ARTWORK"))
+    __q:SetMinMaxValues(0, __secret()); __q:SetValue(__secret())
+    function __listening(e)
+        for _, f in ipairs(__frames) do if f.events and f.events[e] then return true end end
+        return false
+    end
+    SmoothAnimatedBars.AddBar(__q, 'target', 'health')
+""")
+run(quiet, 0.3)
+on = quiet.eval("__listening('UNIT_MAXPOWER')") and quiet.eval("(select(2, __liquid(__q)))") > 0
+quiet.execute("SmoothAnimatedBars.RemoveBar(__q)")
+check(on and not quiet.eval("__listening('UNIT_MAXPOWER')"),
+      "with only another addon's bar live, removing it stops the unit events")
+
 check(early.eval("__earlyTaken") is True and early.eval("(select(2, __liquid(__early)))") > 0,
       "a bar handed over before our settings loaded gets the liquid once they have")
+check(early.eval("__earlyVTaken") is False, "and a vertical one is declined then too")
 
 if failures:
     print(f"\n{len(failures)} check(s) failed:")

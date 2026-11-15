@@ -249,8 +249,10 @@ local function GamePrediction(bar)
     if type(fill) == "table" and fill.SetAlpha and fill.GetAlpha then return fill end
 end
 
--- Hidden while ours shows (0), back when it does not (1). The game may reset it, so it is kept up each update.
+-- Hidden while ours shows (0), back when it does not (1). The game may reset it, so it is kept up each update. Another
+-- addon's bar is its own: whatever prediction it draws is left alone, whatever its fields are called.
 local function GameFill(m, alpha)
+    if m.spec.external then return end
     local fill = GamePrediction(m.bar)
     if not fill then return end
     local now = fill:GetAlpha() -- a secret if the game set it from one, which cannot be compared
@@ -274,13 +276,23 @@ local function DrawSeams(m)
         if show then
             local r, g, b = before.gradC:GetRGBA()
             local tip = before.inflowTheme and before.inflowTheme.tip or before.theme.tip
+            -- Another addon's bar whose colour is secret: its liquid is white under a tint in that colour (Bars.lua),
+            -- which does not reach the seam, so the seam takes the secret colour itself (SetVertexColor takes secrets)
+            -- and goes without its fade, whose gradient would need the colour as numbers.
+            local secret = i == 1 and ns.Bars.SecretColor(m.bar)
+            if secret then r, g, b, tip = secret[1], secret[2], secret[3], secret end
             local rowH = h / #s.rows
-            s.colorA:SetRGBA(r, g, b, 0)
-            s.colorB:SetRGBA(r, g, b, 1)
-            s.fade:SetGradient("HORIZONTAL", s.colorA, s.colorB)
-            s.fade:ClearAllPoints()
-            s.fade:SetPoint("TOPLEFT", s.mover, "TOPLEFT", w - OVERLAP - SEAM_FADE, 0)
-            s.fade:SetSize(SEAM_FADE, h)
+            if secret then
+                if s.fade:IsShown() then s.fade:Hide() end
+            else
+                if not s.fade:IsShown() then s.fade:Show() end
+                s.colorA:SetRGBA(r, g, b, 0)
+                s.colorB:SetRGBA(r, g, b, 1)
+                s.fade:SetGradient("HORIZONTAL", s.colorA, s.colorB)
+                s.fade:ClearAllPoints()
+                s.fade:SetPoint("TOPLEFT", s.mover, "TOPLEFT", w - OVERLAP - SEAM_FADE, 0)
+                s.fade:SetSize(SEAM_FADE, h)
+            end
             for row = 1, #s.rows do
                 local width = math.max(0.5, OVERLAP + before:FrontOffset(row, #s.rows))
                 local t, y = s.rows[row], -(row - 1) * rowH
@@ -508,7 +520,10 @@ end
 
 local player  -- the marker on the player frame's health bar, once built
 local mana    -- the one on its mana bar (drink)
-local extra = {} -- the Personal Resource Display's, by bar: its health, its power bar and the mana under a form
+local extra = {} -- the Personal Resource Display's, by bar: its health, its power bar and the mana under a form; and
+                 -- other addons' player bars
+local retired = {} -- other addons' markers replaced when their bar was added again as the other kind, never shown again
+local MANA = Enum and Enum.PowerType and Enum.PowerType.Mana or 0
 local driver
 
 local function Each(fn)
@@ -530,10 +545,18 @@ local function ManaShown()
     return token == "MANA"
 end
 
-local function SourceFor(m, read)
+-- maxOf: where the bar's range does not hold the unit's real health or mana (another addon's bar, which may show a
+-- percentage), the unit's maximum, secret or not; it only goes to our own bars' SetMinMaxValues.
+local function SourceFor(m, read, maxOf)
     return function()
         local total, list = read()
-        local _, max = m.bar:GetMinMaxValues()
+        local max
+        if maxOf then
+            max = maxOf()
+        else
+            local _
+            _, max = m.bar:GetMinMaxValues()
+        end
         return max, total, list
     end
 end
@@ -544,12 +567,12 @@ local function BuildOn(bar, name, read, visible, label, external)
     if type(bar) ~= "table" or not bar.GetStatusBarTexture then return nil end
     local flatMask = ns.Bars.PlateMask(bar)
     local spec = { bar = bar, mask = flatMask or MaskOf(bar), visible = visible, raised = flatMask ~= nil }
-    if external then spec.mask, spec.up = external.mask, external.up end
+    if external then spec.mask, spec.up, spec.external = external.mask, external.up, true end
     -- A raised marker shows only over the bar's own liquid: without it, the game's fill is at the bar's level, under
     -- the bar's dark background.
     if spec.raised then spec.visible = function() return ns.Bars.IsLive(bar) and visible() end end
     local m = New(spec)
-    spec.source = SourceFor(m, read)
+    spec.source = SourceFor(m, read, external and external.max)
     m.name, m.label = name, label
     Raise(m)
     return m
@@ -587,6 +610,15 @@ end
 local function BuildExternal()
     for _, kind in ipairs({ "health", "power" }) do
         for _, bar in ipairs(ns.Bars.ExternalBars("player", kind)) do
+            local want = kind == "health" and "health" or "mana"
+            local had = extra[bar]
+            -- Added again as the other kind: the old marker goes for good, a new one comes.
+            if had and had.name ~= want then
+                pcall(Hide, had)
+                had.retired = true
+                retired[#retired + 1] = had
+                extra[bar] = nil
+            end
             if not extra[bar] then
                 local base = kind == "health" and PlayerAlive or ManaShown
                 local function visible()
@@ -595,9 +627,12 @@ local function BuildExternal()
                 end
                 local _, _, _, mask = ns.Bars.External(bar)
                 local function up() return (select(3, ns.Bars.External(bar))) or 1 end
-                extra[bar] = BuildOn(bar, kind == "health" and "health" or "mana",
-                    kind == "health" and ns.Heals.Player or ns.Heals.Mana, visible,
-                    "other addon's " .. (kind == "health" and "health" or "power"), { mask = mask, up = up })
+                local function max()
+                    if kind == "health" then return UnitHealthMax("player") end
+                    return UnitPowerMax("player", MANA)
+                end
+                extra[bar] = BuildOn(bar, want, kind == "health" and ns.Heals.Player or ns.Heals.Mana, visible,
+                    "other addon's " .. (kind == "health" and "health" or "power"), { mask = mask, up = up, max = max })
             end
         end
     end
@@ -607,7 +642,7 @@ local function OnUpdate(_, elapsed)
     local dt = math.min(elapsed, 0.1)
     if dt <= 0 then return end
     Each(function(m)
-        if not m.live or m.err then return end
+        if not m.live or m.err or m.retired then return end
         local ok, err = pcall(Update, m, dt)
         if not ok then
             m.err = tostring(err)
