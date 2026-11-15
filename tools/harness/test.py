@@ -127,6 +127,23 @@ check(lua.eval("""(function()
     local tl, br = clip.points.TOPLEFT, clip.points.BOTTOMRIGHT
     return clip.clipsChildren and tl.rel == PlayerFrame.healthbar and tl.x == 0 and tl.y > 0 and br.x > 0 and br.y < 0
 end)()"""), "clip frame starts at the bar's left edge, with room above, below and past the end")
+check(lua.eval("__ns.Bars.Liquid(PlayerFrame.healthbar).n") == 15 and lua.eval("__ns.Bars.Liquid(PlayerFrame.manabar).n") == 8
+      and lua.eval("__ns.Bars.FuryLiquid(PlayerFrame.manabar) == nil or __ns.Bars.FuryLiquid(PlayerFrame.manabar).n == 8"),
+      "a front's slices by the bar's height: fifteen on the 20 px health, eight on the 10 px power, as many on its fury")
+check(lua.eval("""(function()
+    local L, theme = __ns.Liquid, __ns.Themes.Get(__ns.Themes.default)
+    local short, tall = L.New(UIParent, 100, 10, theme, SmoothAnimatedBarsDB), L.New(UIParent, 100, 20, theme, SmoothAnimatedBarsDB)
+    tall:Follow(short, 0.5)
+    short.pos[8] = 3
+    local ok = pcall(function()
+        for i = 1, tall.n do tall:FrontOffset(i) end
+        for i = 1, tall.n do short:FrontOffset(i, tall.n) end
+        tall:Update(1 / 30, 50)
+    end)
+    return ok and short.n == 8 and tall.n == 15 and short:SliceAt(15, 15) == 8 and short:SliceAt(1, 15) == 1
+        and short:SliceAt(8, 15) == 5 and tall:SliceAt(8, 8) == 15
+end)()"""), "fronts of different slice counts are matched by where the slice sits, without an error (a seam or a fury "
+      "along a liquid of another count)")
 loss = "PlayerFrame.healthbar.AnimatedLossBar"
 check(lua.eval(f"{loss}.fill.alpha") == 0, "the game's red health-loss bar is hidden with the fill")
 lua.execute(f"{loss}:Show(); {loss}:SetValue(__secret()); {loss}.fill:SetAlpha(1)")
@@ -1951,6 +1968,43 @@ cp.execute("SlashCmdList.SMOOTHANIMATEDBARS('capture')")
 check(cp.eval("SmoothAnimatedBarsCapture.shown") and not cp.eval(f"{grid}.shown"),
       "the frames' capture still works after it, on its own grid")
 check(not any("Error in" in m for m in chat(cp)), "no errors")
+
+print("== /sab capture party (party frame art)")
+cq = session()
+cq.execute("SlashCmdList.SMOOTHANIMATEDBARS('capture party')")
+grid = "SmoothAnimatedBarsCaptureParty"
+check(cq.eval(f"{grid}.shown") and cq.eval("__cvars.screenshotFormat") == "tga", "a grid of its own, captured as TGA")
+cells = cq.eval(f"""(function()
+    local out = {{}}
+    for _, cell in ipairs(__frames) do
+        if cell.parent == {grid} then
+            local parts = {{}}
+            for _, r in ipairs(__regions) do
+                if r.parent == cell and r.kind == "Texture" and r.shown then
+                    parts[#parts + 1] = (r.atlas or r.file or "?") .. (r.masks and #r.masks > 0 and ("/" .. r.masks[1].atlas) or "")
+                end
+            end
+            local p = cell.points.TOPLEFT
+            out[#out + 1] = p.x .. "," .. p.y .. " " .. cell.w .. "x" .. cell.h .. " " .. table.concat(parts, " ")
+        end
+    end
+    return table.concat(out, "; ")
+end)()""")
+check(cells == "20,-40 120x53 UI-HUD-UnitFrame-Party-PortraitOn; "
+      "160,-40 120x53 SOLID/UI-HUD-UnitFrame-Party-PortraitOn-Bar-Health-Mask; "
+      "300,-40 120x53 SOLID/UI-HUD-UnitFrame-Party-PortraitOn-Bar-Mana-Mask; "
+      "440,-40 120x53 classicon-warrior/CircleMask; 20,-110 120x53 classicon-priest/CircleMask; "
+      "160,-110 120x53 classicon-mage/CircleMask; 300,-110 120x53 classicon-rogue/CircleMask",
+      f"cells a member frame's size, four to a row: its art, its two bar masks (a white fill cut by each) and four class "
+      f"portraits in their circle, as capture_art.py --party cuts them: {cells}")
+run(cq, 0.6)
+cq.execute("__fire('SCREENSHOT_SUCCEEDED')")
+run(cq, 4.1)
+cq.execute("__fire('SCREENSHOT_SUCCEEDED')")
+check(cq.eval("__screenshots") == 2 and not cq.eval(f"{grid}.shown") and cq.eval("__cvars.screenshotFormat") == "jpg"
+      and any("capture_art.py --party" in m for m in chat(cq)),
+      "two screenshots, on black and white, then it hides, puts the format back and says what next")
+check(not any("Error in" in m for m in chat(cq)), "no errors")
 
 print("== personal resource display")
 # Forever's Personal Resource Display: the player's bars in a frame of their own, drawn with the plates' art and no

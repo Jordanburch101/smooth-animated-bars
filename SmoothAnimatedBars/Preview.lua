@@ -296,8 +296,33 @@ local PARTY = {
     power = { x = 44, y = -31, w = 74, h = 7,
               maskAtlas = "UI-HUD-UnitFrame-Party-PortraitOn-Bar-Mana-Mask", maskX = 16 - 44, maskY = -26 + 31 },
 }
+Preview.PARTY = PARTY -- for /sab capture party (Capture.lua)
 -- The class icons, by file ID, where the client has no class icon atlas.
 local CLASS_ICONS = { WARRIOR = 626008, PRIEST = 626004, MAGE = 626001, ROGUE = 626005 }
+
+-- A party member's portrait on f: the class's icon in a circle, 37 across at (7, -6), as the game shows a member.
+function Preview.PartyPortrait(f, class)
+    local portrait = f:CreateTexture(nil, "BACKGROUND", nil, 1)
+    portrait:SetSize(37, 37)
+    portrait:SetPoint("TOPLEFT", 7, -6)
+    if not Atlas(portrait, "classicon-" .. class:lower()) then portrait:SetTexture(CLASS_ICONS[class] or QUESTION_MARK) end
+    local mask = f:CreateMaskTexture()
+    if Atlas(mask, "CircleMask") then
+        mask:SetAllPoints(portrait)
+        portrait:AddMaskTexture(mask)
+    end
+    return portrait
+end
+
+-- A party member frame's art on f, at (1, -2) and its own size; nil where the client has no such atlas.
+function Preview.PartyArt(f)
+    local art = f:CreateTexture(nil, "BACKGROUND", nil, 2)
+    if Atlas(art, PARTY.art, true) then
+        art:SetPoint("TOPLEFT", 1, -2)
+        return art
+    end
+    art:Hide()
+end
 -- name, class, power type, most power
 local MEMBERS = {
     { "Brannoc", "WARRIOR", "RAGE", 100 },
@@ -326,17 +351,8 @@ local function Member(holder, spec)
     top:SetAllPoints()
     top:SetFrameLevel(f:GetFrameLevel() + 10)
 
-    local portrait = f:CreateTexture(nil, "BACKGROUND", nil, 1)
-    portrait:SetSize(37, 37)
-    portrait:SetPoint("TOPLEFT", 7, -6)
-    if not Atlas(portrait, "classicon-" .. class:lower()) then portrait:SetTexture(CLASS_ICONS[class] or QUESTION_MARK) end
-    local mask = f:CreateMaskTexture()
-    if Atlas(mask, "CircleMask") then
-        mask:SetAllPoints(portrait)
-        portrait:AddMaskTexture(mask)
-    end
-    local art = f:CreateTexture(nil, "BACKGROUND", nil, 2)
-    if Atlas(art, PARTY.art, true) then art:SetPoint("TOPLEFT", 1, -2) else art:Hide() end
+    Preview.PartyPortrait(f, class)
+    Preview.PartyArt(f)
 
     local label = top:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
     label:SetJustifyH("LEFT")

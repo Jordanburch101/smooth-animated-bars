@@ -2,7 +2,7 @@
 
 Usage: python gallery.py <addon dir> [out dir] [scenario ...]
 Default out dir: branding/gallery. Writes each scenario as an animated WebP (hero is the warrior, then
-mage, rogue, then warlock and rend, whose targets carry the DoT marker, priest, with the heal marker, druid, with both, eating, a meal up to its buff, mana, the build-up to mana regenerating, and fury, a warrior's rage building to full and spent), frames.png (a still of the warrior), themes.png (the player frame in a few themes) and plates.webp (four nameplates, from the plate art capture_art.py --plates cut out).
+mage, rogue, then warlock and rend, whose targets carry the DoT marker, priest, with the heal marker, druid, with both, eating, a meal up to its buff, mana, the build-up to mana regenerating, and fury, a warrior's rage building to full and spent), frames.png (a still of the warrior), themes.png (the player frame in a few themes) plates.webp (four nameplates, from the plate art capture_art.py --plates cut out) and prd.webp (a warrior's Personal Resource Display through a fight and a bandage, on the same plate art) and party.webp (four party members through a fight, from the party art capture_art.py --party cut out).
 A full run takes about a quarter of an hour.
 
 The frame art comes from branding/art, which tools/capture_art.py cuts out of the screenshots /sab
@@ -859,6 +859,284 @@ def plates():
     print(f"wrote plates.webp ({os.path.getsize(webp) // 1024} KB)")
 
 
+# ---------------------------------------------------------------------------- the personal resource display
+
+# Forever's Personal Resource Display (Blizzard_PersonalResourceDisplay): health over power, each a
+# PersonalResourceStatusBar on the plates' bronze background (plate-modern-bg, from /sab capture plates), with no mask
+# of the game's, so the liquid takes the addon's own (PlateMask) and the plates' shading (PlateShade), as Bars.lua does.
+# 200 wide at Edit Mode's default width; the bars' heights and the gap are Edit Mode settings, taken here as 12, 10 and
+# the game's minimum 4. The bronze rim is laid as measured on the plates (PLATE_BG).
+PRD_W, PRD_HEALTH_H, PRD_POWER_H, PRD_GAP = 200, 12, 10, 4
+PRD_LOOP = 14.0
+PRD_MAXES = (349, 100)
+# (seconds, health, rage): trading blows in combat, rage climbing to full and furious; two Heroic Strikes and a
+# Hamstring spend it; the mob falls, and out of combat a bandage (8 ticks a second apart) heals while the rage ebbs.
+PRD_SCRIPT = [(0.0, 1.00, 0.10), (0.8, 0.92, 0.26), (1.6, 0.92, 0.40), (2.4, 0.84, 0.55), (3.2, 0.84, 0.68),
+              (4.0, 0.76, 0.82), (4.8, 0.76, 0.94), (5.4, 0.68, 1.00), (6.6, 0.68, 0.85), (7.2, 0.68, 0.70),
+              (7.8, 0.68, 0.60), (9.6, 0.723, 0.57), (10.6, 0.766, 0.55), (11.6, 0.809, 0.52), (12.6, 0.852, 0.50),
+              (13.6, 0.895, 0.47)]
+PRD_EVENTS = [(6.6, "__rage(78, 'Cast-1')"), (7.2, "__rage(78, 'Cast-2')"), (7.8, "__rage(1715, 'Cast-3')"),
+              (8.6, "__channel(746, 'Cast-4')")]
+PRD_BANDAGE = {746: ("First Aid", "Heals 120 damage over 8 sec.")}
+
+
+def prd_session():
+    """The addon in the mock with the display shown, a warrior on rage with the heal marker; the bars' liquid frames
+    become __prdHealth and __prdPower, the bandage's liquid __prdHeal (its marker __prdHealMarker)."""
+    before = heals_setup("WARRIOR", PRD_BANDAGE) + RAGE_SETUP + f"""
+        SmoothAnimatedBarsDB.setupDone = true
+        UnitPowerType = function(unit) return 1, 'RAGE' end
+        local prd = PersonalResourceDisplayFrame
+        prd:Show()
+        local hb, pb = prd.HealthBarsContainer.healthBar, prd.PowerBar
+        hb.w, hb.h, pb.w, pb.h = {PRD_W}, {PRD_HEALTH_H}, {PRD_W}, {PRD_POWER_H}
+        pb:SetStatusBarColor(1, 0, 0)
+        for _, b in ipairs({{ hb, pb }}) do b:SetMinMaxValues(0, __secret()); b:SetValue(__secret()) end
+    """
+    after = """
+        local prd = PersonalResourceDisplayFrame
+        local hb, pb = prd.HealthBarsContainer.healthBar, prd.PowerBar
+        local function mover(bar)
+            for _, clip in ipairs(__frames) do
+                if clip.parent == bar and not clip.SetValue and clip.clipsChildren then
+                    for _, f in ipairs(__frames) do
+                        if f.parent == clip and not f.SetValue then
+                            f.w, f.h = bar.w, bar.h -- the client sizes it from its anchors
+                            return f
+                        end
+                    end
+                end
+            end
+        end
+        __prdHealth, __prdPower = mover(hb), mover(pb)
+        local m = select(3, __ns.HealMarker.State())[hb]
+        __prdHealMarker, __prdHeal = m, m.liquids[1].mover
+        __prdHeal.w, __prdHeal.h = hb.w, hb.h
+        -- The mock gives masks no size, so the renderer would blank what they cut; the plate mask is drawn here.
+        local unmasked = 0
+        function __unmask()
+            for i = unmasked + 1, #__regions do __regions[i].masks = nil end
+            unmasked = #__regions
+        end
+        __unmask()
+    """
+    off = {k: "false" for k in ("playerHealth", "playerPower", "targetHealth", "targetPower")}
+    return render.Session(ADDON, settings=off, before_login=before, after_login=after, scenario=PRD_EVENTS)
+
+
+def draw_prd_bar(session, img, bg, plate_mask, shade, bx, by, h, layers):
+    """One display bar onto img (RGB) with its top-left at (bx, by) in units: the bronze background, then each of
+    layers ((frame, right edge, left cut, right cut) in bar units, back to front) cut to the plate mask, the shading
+    over them, then their motes, which fly free in the clip frame's room (SPILL above, below and past the end)."""
+    gx, gy = bx - PLATE_BG[0], by - PLATE_BG[2]
+    gw, gh = PRD_W + PLATE_BG[0] + PLATE_BG[1], h + PLATE_BG[2] + PLATE_BG[3]
+    canvas = img.convert("RGBA")
+    canvas.alpha_composite(resize_rgba(bg, (round(gw * K), round(gh * K))), (round(gx * K), round(gy * K)))
+    base = canvas.convert("RGB")
+    box = (round(bx * K), round(by * K), round((bx + PRD_W) * K), round((by + h) * K))
+    mask = plate_mask.resize((box[2] - box[0], box[3] - box[1]), Image.LANCZOS)
+    for frame, right, lcut, rcut in layers:
+        session.frame = frame
+        full = session.render(base, bx * K + (right - PRD_W) * K, by * K, K, only=lambda r: not is_mote(r))
+        left, r = max(box[0], round((bx + lcut) * K)), min(box[2], round((bx + rcut) * K))
+        if r > left:
+            base.paste(full.crop((left, box[1], r, box[3])), (left, box[1]),
+                       mask.crop((left - box[0], 0, r - box[0], mask.height)))
+    canvas = base.convert("RGBA")
+    canvas.alpha_composite(resize_rgba(shade, (box[2] - box[0], box[3] - box[1])), box[:2])
+    base = canvas.convert("RGB")
+    room = (box[0], round((by - SPILL) * K), round((bx + PRD_W + SPILL) * K), round((by + h + SPILL) * K))
+    for frame, right, lcut, _ in layers:
+        session.frame = frame
+        motes = session.render(base, bx * K + (right - PRD_W) * K, by * K, K, only=is_mote)
+        left = max(room[0], round((bx + max(0.0, lcut)) * K))
+        base.paste(motes.crop((left, room[1], room[2], room[3])), (left, room[1]))
+    img.paste(base)
+
+
+def prd():
+    """A warrior's Personal Resource Display through a fight and a bandage: prd.webp."""
+    bg = plate_pieces()["plate-modern-bg"]
+    plate_mask = Image.open(os.path.join(ADDON, "Media", "PlateMask.tga")).getchannel("A")
+    shade = Image.open(os.path.join(ADDON, "Media", "PlateShade.tga")).convert("RGBA")
+    session = prd_session()
+    pad = 22
+    w, h = round((PRD_W + 2 * pad) * K), round((PRD_HEALTH_H + PRD_GAP + PRD_POWER_H + 2 * pad) * K)
+    back = backdrop(w, h)
+    hy, py = pad, pad + PRD_HEALTH_H + PRD_GAP
+
+    def at(t):
+        return [r for r in PRD_SCRIPT if r[0] <= t][-1][1:]
+
+    fills, shown = list(at(0)), at(0)
+    frames, t, dt = [], 0.0, 1 / FPS
+    while t < PRD_LOOP - 1e-9:
+        goal = at(t)
+        if round(goal[0] * PRD_MAXES[0]) != round(shown[0] * PRD_MAXES[0]):
+            session.lua.execute("__fire('UNIT_HEALTH', 'player')")
+        if round(goal[1] * PRD_MAXES[1]) != round(shown[1] * PRD_MAXES[1]):
+            session.lua.execute("__fire('UNIT_POWER_UPDATE', 'player', 'RAGE')")
+        shown = goal
+        # The client's share of the rage, for the fury's curve.
+        session.lua.execute(f"__powerPercent.player = {goal[1]}")
+        session.run_until(t)
+        session.lua.execute("__unmask()")
+        for i in (0, 1):
+            fills[i] += (goal[i] - fills[i]) * (1 - math.exp(-8 * dt))
+        img = back.copy()
+        health = fills[0] * PRD_W
+        layers = []
+        m = session.lua.eval("__prdHealMarker")
+        if m.clip.shown and m.liquids[1].pool.shown:
+            # The bandage's liquid ahead of the health, under it, reaching a little back under its front.
+            layers.append(("__prdHeal", health + m.liquids[1].shown / PRD_MAXES[0] * PRD_W, health - OVERLAP, PRD_W))
+        layers.append(("__prdHealth", health, 0, health + ROOM))
+        draw_prd_bar(session, img, bg, plate_mask, shade, pad, hy, PRD_HEALTH_H, layers)
+        rage = fills[1] * PRD_W
+        draw_prd_bar(session, img, bg, plate_mask, shade, pad, py, PRD_POWER_H, [("__prdPower", rage, 0, rage + ROOM)])
+        frames.append(img)
+        t += dt
+    os.makedirs(OUT, exist_ok=True)
+    webp = os.path.join(OUT, "prd.webp")
+    frames[0].save(webp, save_all=True, append_images=frames[1:], duration=round(1000 / FPS), loop=0,
+                   quality=92, method=6)
+    print(f"wrote prd.webp ({os.path.getsize(webp) // 1024} KB)")
+
+
+# ---------------------------------------------------------------------------- the party
+
+# Forever's party member frames (Mainline PartyFrameTemplates.xml), stacked as the game stacks them, from the pieces
+# /sab capture party captured (capture_art.py --party): each frame 120 x 53, its art and its class portrait filling
+# the frame's cell, the bars where Preview.lua's PARTY puts them (y measured down here), cut by the captured masks.
+PARTY_W, PARTY_H, PARTY_GAP = 120, 53, 8
+PARTY_NAME_AT = (48, 13)  # the name's left end and middle
+# The setup's example party (Preview.lua, MEMBERS): name, class, power type, most power.
+PARTY_MEMBERS = [("Brannoc", "WARRIOR", "RAGE", 100), ("Elisande", "PRIEST", "MANA", 300),
+                 ("Corvin", "MAGE", "MANA", 320), ("Tessaly", "ROGUE", "ENERGY", 100)]
+PARTY_HEALTH_MAX = 400
+PARTY_LOOP = 8.4
+# { seconds, each member's health and power as fractions }: the warrior takes the hits and builds rage, the priest
+# spends mana healing, the mage casting, the rogue's energy comes and goes (Preview.lua, PARTY_SCRIPT).
+PARTY_SCRIPT = [(0.0, 1.00, 0.10, 1.00, 0.90, 1.00, 1.00, 1.00, 1.00),
+                (1.2, 0.70, 0.40, 1.00, 0.90, 0.90, 0.80, 1.00, 0.60),
+                (2.2, 0.85, 0.55, 1.00, 0.75, 0.90, 0.65, 0.80, 0.40),
+                (3.0, 0.55, 0.70, 1.00, 0.75, 0.90, 0.50, 0.80, 0.75),
+                (4.0, 0.80, 0.30, 0.85, 0.60, 0.90, 0.50, 0.80, 0.35),
+                (5.0, 0.80, 0.30, 0.85, 0.60, 0.65, 0.35, 0.60, 0.70),
+                (6.0, 1.00, 0.20, 0.85, 0.45, 0.85, 0.35, 0.60, 1.00),
+                (7.2, 1.00, 0.10, 1.00, 0.90, 1.00, 1.00, 1.00, 1.00)]
+BARS[("party", "health")] = (47, 20, 70, 10)
+BARS[("party", "power")] = (44, 31, 74, 7)
+
+
+def party_pieces():
+    """The captured party pieces, at K px a unit, by name."""
+    path = os.path.join(ART, "party.json")
+    if not os.path.exists(path):
+        sys.exit(f"No party art in {ART}: run /sab capture party in game, then capture_art.py --party.")
+    names = json.load(open(path, encoding="utf-8"))["cells"]
+    size = (round(PARTY_W * K), round(PARTY_H * K))
+    return {n: resize_rgba(Image.open(os.path.join(ART, n + ".png")).convert("RGBA"), size) for n in names}
+
+
+def party_session():
+    """The addon in the mock with four party members shown; member i's liquid frames become __party<i>_health and
+    __party<i>_power."""
+    lines = []
+    for i, (_, cls, token, _) in enumerate(PARTY_MEMBERS, 1):
+        lines.append(f"__units.party{i} = {{ isOtherPlayer = true, class = {cls!r}, power = {POWER[token]} }}")
+    before = "\n".join(lines) + """
+        SmoothAnimatedBarsDB.setupDone = true
+        for i = 1, 4 do
+            local f = PartyFrame['MemberFrame' .. i]
+            for _, b in ipairs({ f.HealthBarContainer.HealthBar, f.ManaBar }) do
+                b:SetMinMaxValues(0, __secret()); b:SetValue(__secret())
+            end
+            f:Show()
+        end
+    """
+    after = """
+        __fire('GROUP_ROSTER_UPDATE')
+        for i = 1, 4 do
+            local f = PartyFrame['MemberFrame' .. i]
+            for kind, bar in pairs({ health = f.HealthBarContainer.HealthBar, power = f.ManaBar }) do
+                for _, clip in ipairs(__frames) do
+                    if clip.parent == bar and not clip.SetValue and clip.clipsChildren then
+                        for _, x in ipairs(__frames) do
+                            if x.parent == clip and not x.SetValue then
+                                x.w, x.h = bar.w, bar.h -- the client sizes it from its anchors
+                                _G['__party' .. i .. '_' .. kind] = x
+                            end
+                        end
+                        break
+                    end
+                end
+            end
+        end
+        -- The captured masks are applied here instead; the mock gives masks no size.
+        local unmasked = 0
+        function __unmask()
+            for i = unmasked + 1, #__regions do __regions[i].masks = nil end
+            unmasked = #__regions
+        end
+        __unmask()
+    """
+    off = {k: "false" for k in ("playerHealth", "playerPower", "targetHealth", "targetPower")}
+    return render.Session(ADDON, settings=off, before_login=before, after_login=after)
+
+
+def party():
+    """Four party members through a fight, stacked as the game shows them: party.webp."""
+    art = party_pieces()
+    session = party_session()
+    pad = 18
+    w = round((PARTY_W + 2 * pad) * K)
+    h = round((4 * PARTY_H + 3 * PARTY_GAP + 2 * pad) * K)
+    back = backdrop(w, h)
+    keys = [(i, kind) for i in range(4) for kind in ("health", "power")]
+    maxes = {(i, "health"): PARTY_HEALTH_MAX for i in range(4)}
+    maxes.update({(i, "power"): m[3] for i, m in enumerate(PARTY_MEMBERS)})
+
+    def at(t):
+        row = [r for r in PARTY_SCRIPT if r[0] <= t][-1]
+        return {(i, kind): row[1 + 2 * i + (kind == "power")] for i, kind in keys}
+
+    fills, shown = dict(at(0)), at(0)
+    frames, t, dt = [], 0.0, 1 / FPS
+    while t < PARTY_LOOP - 1e-9:
+        goal = at(t)
+        for i, kind in keys:
+            if round(goal[(i, kind)] * maxes[(i, kind)]) != round(shown[(i, kind)] * maxes[(i, kind)]):
+                if kind == "health":
+                    session.lua.execute(f"__fire('UNIT_HEALTH', 'party{i + 1}')")
+                else:
+                    session.lua.execute(f"__fire('UNIT_POWER_UPDATE', 'party{i + 1}', {PARTY_MEMBERS[i][2]!r})")
+        shown = goal
+        session.run_until(t)
+        session.lua.execute("__unmask()")
+        for k in keys:
+            fills[k] += (goal[k] - fills[k]) * (1 - math.exp(-8 * dt))
+        img = back.copy()
+        for i, (name, cls, _, _) in enumerate(PARTY_MEMBERS):
+            fx, fy = round(pad * K), round((pad + i * (PARTY_H + PARTY_GAP)) * K)
+            canvas = img.convert("RGBA")
+            canvas.alpha_composite(art[f"party-portrait-{cls.lower()}"], (fx, fy))
+            canvas.alpha_composite(art["party-art"], (fx, fy))
+            img.paste(canvas.convert("RGB"))
+            for kind in ("health", "power"):
+                draw_bar(session, img, art, fx, fy, "party", kind, fills[(i, kind)], frame=f"__party{i + 1}_{kind}")
+            draw = ImageDraw.Draw(img)
+            draw.text((fx + PARTY_NAME_AT[0] * K, fy + PARTY_NAME_AT[1] * K), name, font=render.font(9 * K),
+                      fill=(255, 209, 0), anchor="lm", stroke_width=max(1, round(K * 0.4)), stroke_fill=(0, 0, 0))
+        frames.append(img)
+        t += dt
+    os.makedirs(OUT, exist_ok=True)
+    webp = os.path.join(OUT, "party.webp")
+    frames[0].save(webp, save_all=True, append_images=frames[1:], duration=round(1000 / FPS), loop=0,
+                   quality=92, method=6)
+    print(f"wrote party.webp ({os.path.getsize(webp) // 1024} KB)")
+
+
 if __name__ == "__main__":
     if not ONLY or any(k in ONLY for k in list(SCENARIOS) + ["themes"]):
         art = load_art()
@@ -869,3 +1147,7 @@ if __name__ == "__main__":
             themes(art)
     if not ONLY or "plates" in ONLY:
         plates()
+    if not ONLY or "prd" in ONLY:
+        prd()
+    if not ONLY or "party" in ONLY:
+        party()

@@ -51,15 +51,10 @@ local PLATE_WAIT = 1              -- how long a new plate may take to get its un
 -- fight, so they were stirred every STIR_EVERY and never settled, each updating every frame. In a party in combat the
 -- unit frames' liquids took 4.3 ms a frame (15% of it at 36 fps, /sab perf in game), and in the mock the party's eight
 -- made more widget calls than the player's, target's and display's together. So they update at most PARTY_FPS times a
--- second, busy or not, as small as the plates' bars, and stir at most every PARTY_STIR_EVERY.
+-- second, busy or not, as small as the plates' bars, and stir at most every PARTY_STIR_EVERY. (Their fronts, like every
+-- short bar's, have fewer slices: Liquid.RowsFor.)
 local PARTY_FPS = 20
 local PARTY_STIR_EVERY = 1.2
--- And their fronts have a slice for every PARTY_ROW_PX of the bar's height (8 for health, 6 for power) instead of
--- fifteen: each slice is nine textures redrawn every update, and fifteen on a bar 7 px high were half a pixel each.
-local PARTY_ROW_PX = 1.25
-local function PartyRows(h)
-    return math.max(6, math.min(15, math.floor(h / PARTY_ROW_PX)))
-end
 
 -- Inflow (Bars.Inflow): while something is on the way into a bar, its particles drift back from the front into
 -- the bar's liquid, and the front ripples where the two meet.
@@ -105,7 +100,10 @@ local BUILD_STEADY_SECONDS = 2.5    -- and eases off over this after it
 local FURY_CURVE = { { 0, 0 }, { 0.5, 0 }, { 0.75, 0.3 }, { 0.95, 1 } } -- rage share -> how much of the fury shows
 local READY_CURVE = { { 0, 0 }, { 0.97, 0 }, { 0.99, 1 } }               -- and of the full bar's throb
 local FURY_EVERY = 0.05     -- seconds between asking the client for those
-local FURY_FPS = 30         -- the fury's update rate, unless it is bursting
+-- The fury's update rate, unless it is bursting. It was 30, but the fury is a second liquid on the bar and runs even
+-- where its curve has faded it out (below half rage), which the addon cannot know: counted in the mock it was about
+-- half of a rage bar's widget calls, nearly 40% of all in combat. Its churning flames read the same at 20.
+local FURY_FPS = 20
 local FURY_ENERGY = 0.5
 local FURY_STORM = 1.2
 local FURY_TREMBLE = 0.7    -- px of quick tremble on the fury's front
@@ -792,8 +790,7 @@ local function NewBar(spot, bar)
     mover:SetWidth(w)
     b.mover = mover
 
-    b.liquid = ns.Liquid.New(mover, math.max(w, 1) + ROOM, math.max(h, 1), ns.Themes.Get(ns.Themes.default), ns.Core.db,
-        spot.party and PartyRows(h) or nil)
+    b.liquid = ns.Liquid.New(mover, math.max(w, 1) + ROOM, math.max(h, 1), ns.Themes.Get(ns.Themes.default), ns.Core.db)
     -- The bar's mask cuts the liquid to the bar. Motes are left free to fly off the front. A nameplate's bar has no
     -- mask, and its bronze rim has cut corners that a square liquid would cover, so the liquid there takes a mask of
     -- the addon's own in the shape of the game's fill (PlateMask.tga, make_media.py). So do the Personal Resource
@@ -1010,8 +1007,9 @@ local function NewFury(b)
     end
     f.frame:SetAlpha(0)
     f.ready:SetAlpha(0)
+    -- As many slices as the bar's liquid, whose front it follows slice by slice.
     f.liquid = ns.Liquid.New(f.inner, math.max(b.width, 1) + ROOM, math.max(b.height, 1), FuryTheme(b.liquid.theme),
-        ns.Core.db)
+        ns.Core.db, b.liquid.n)
     f.liquid:Follow(b.liquid, FURY_TREMBLE)
     -- The full bar's throb: a glow on the front at the bar's end and the whole liquid lighting up with it.
     f.wash = f.ready:CreateTexture(nil, "ARTWORK", nil, 6)

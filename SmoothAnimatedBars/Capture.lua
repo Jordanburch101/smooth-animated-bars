@@ -14,6 +14,10 @@
 -- used here only, for the gallery, never in what players see. The source leaves the bar's place inside the border
 -- to the plate's container, so a real plate (the target's, if it has one up) is measured too and saved as
 -- SmoothAnimatedBarsDB.plateArt for capture_art.py --plates.
+--
+-- /sab capture party does the same for the party member frame (Mainline PartyFrameTemplates.xml), built by Preview.lua
+-- as the setup's party step shows it: its art, its health and power masks, and the four class portraits the gallery's
+-- party uses, each in a cell the frame's size (120 x 53), on a grid of its own drawn large, for capture_art.py --party.
 
 local _, ns = ...
 
@@ -59,6 +63,35 @@ local PLATE_CELLS = {
 }
 Capture.PLATE_CELLS = PLATE_CELLS
 
+-- The party grid: four cells to a row, each a member frame's 120 x 53, 140 and 70 apart, from (20, 40); marks as above,
+-- 540 apart. Cells: file name, then what goes in it: the art, a bar's mask, or a class's portrait.
+local PARTY_GRID_W, PARTY_GRID_H = 580, 190
+local PARTY_MARKS = { 8, 548 }
+local PARTY_CELL_W, PARTY_CELL_H, PARTY_STEP_X, PARTY_STEP_Y = 120, 53, 140, 70
+local PARTY_CELLS = {
+    { "party-art", "art" }, { "party-health-mask", "health" }, { "party-power-mask", "power" },
+    { "party-portrait-warrior", "WARRIOR" }, { "party-portrait-priest", "PRIEST" }, { "party-portrait-mage", "MAGE" },
+    { "party-portrait-rogue", "ROGUE" },
+}
+Capture.PARTY_CELLS = PARTY_CELLS
+
+-- One piece of the party frame in its cell, placed as on the preview's member frames.
+local function PartyPiece(cell, piece)
+    local P = ns.Preview
+    if piece == "art" then
+        P.PartyArt(cell)
+    elseif piece == "health" or piece == "power" then
+        local spec = P.PARTY[piece]
+        local fill = cell:CreateTexture(nil, "ARTWORK")
+        fill:SetAllPoints()
+        fill:SetColorTexture(1, 1, 1, 1)
+        local mask = cell:CreateMaskTexture()
+        if P.PlaceMask(mask, spec, cell, spec.x, spec.y) then fill:AddMaskTexture(mask) else fill:Hide() end
+    else
+        P.PartyPortrait(cell, piece)
+    end
+end
+
 local grid, bg, step, oldFormat
 local grids, mode = {}, nil
 
@@ -92,10 +125,14 @@ local function Piece(cell, which, piece)
     end
 end
 
+local GRID_NAMES = { frames = "SmoothAnimatedBarsCapture", plates = "SmoothAnimatedBarsCapturePlates",
+                     party = "SmoothAnimatedBarsCaptureParty" }
+
 local function Build(which)
-    local plates = which == "plates"
-    local gridW, gridH = plates and PLATE_GRID_W or GRID_W, plates and PLATE_GRID_H or GRID_H
-    grid = CreateFrame("Frame", plates and "SmoothAnimatedBarsCapturePlates" or "SmoothAnimatedBarsCapture", UIParent)
+    local plates, party = which == "plates", which == "party"
+    local gridW = plates and PLATE_GRID_W or party and PARTY_GRID_W or GRID_W
+    local gridH = plates and PLATE_GRID_H or party and PARTY_GRID_H or GRID_H
+    grid = CreateFrame("Frame", GRID_NAMES[which], UIParent)
     grid:SetFrameStrata("FULLSCREEN_DIALOG")
     grid:EnableMouse(true)
     local scale = 0.98 * math.min(UIParent:GetWidth() / gridW, UIParent:GetHeight() / gridH)
@@ -105,13 +142,20 @@ local function Build(which)
     bg = grid:CreateTexture(nil, "BACKGROUND", nil, -8)
     bg:SetAllPoints()
     grids[which] = { grid = grid, bg = bg }
-    for _, x in ipairs(plates and PLATE_MARKS or MARKS) do
+    for _, x in ipairs(plates and PLATE_MARKS or party and PARTY_MARKS or MARKS) do
         local mark = grid:CreateTexture(nil, "OVERLAY", nil, 7)
         mark:SetColorTexture(1, 0, 0, 1)
         mark:SetSize(6, 6)
         mark:SetPoint("TOPLEFT", x, -8)
     end
-    if plates then
+    if party then
+        for i, c in ipairs(PARTY_CELLS) do
+            local cell = CreateFrame("Frame", nil, grid)
+            cell:SetSize(PARTY_CELL_W, PARTY_CELL_H)
+            cell:SetPoint("TOPLEFT", 20 + (i - 1) % 4 * PARTY_STEP_X, -(40 + math.floor((i - 1) / 4) * PARTY_STEP_Y))
+            PartyPiece(cell, c[2])
+        end
+    elseif plates then
         for _, c in ipairs(PLATE_CELLS) do
             local t = grid:CreateTexture(nil, "ARTWORK")
             if c.atlas then
@@ -212,9 +256,14 @@ function Capture.Finish(problem)
     grid:Hide()
     if oldFormat then SetCVar("screenshotFormat", oldFormat) end
     step, oldFormat = nil, nil
-    local plates = mode == "plates"
+    local what = mode
     mode = nil
-    ns.Core.Print(problem or ("Captured the " .. (plates and "nameplate" or "frame") .. " art: two screenshots, on black "
-        .. "and on white. " .. (plates and "/reload, then run tools/capture_art.py --plates to cut it out."
-        or "Run tools/capture_art.py to cut it out.")))
+    local done = {
+        frames = "frame art: two screenshots, on black and on white. Run tools/capture_art.py to cut it out.",
+        plates = "nameplate art: two screenshots, on black and on white. /reload, then run tools/capture_art.py "
+            .. "--plates to cut it out.",
+        party = "party frame art: two screenshots, on black and on white. Run tools/capture_art.py --party to cut it "
+            .. "out.",
+    }
+    ns.Core.Print(problem or ("Captured the " .. (done[what] or done.frames)))
 end

@@ -7,6 +7,8 @@ Sections are `### New` and `### Fixed`; skip one that would be empty.
 ## 1.8.0
 
 ### New
+- **Lighter**: the liquid takes much less of each frame, most of all in
+  combat, with a party, and on a warrior's furious rage bar.
 - **Party frames**: the liquid now fills your party members' health and
   power bars too. Each bar follows its own member: Class Color shows each
   one's class, and Game Colour each one's power type. While a member is

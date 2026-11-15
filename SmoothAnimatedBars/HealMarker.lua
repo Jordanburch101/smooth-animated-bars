@@ -276,7 +276,7 @@ local function DrawSeams(m)
             s.fade:SetPoint("TOPLEFT", s.mover, "TOPLEFT", w - OVERLAP - SEAM_FADE, 0)
             s.fade:SetSize(SEAM_FADE, h)
             for row = 1, #s.rows do
-                local width = math.max(0.5, OVERLAP + before:FrontOffset(row))
+                local width = math.max(0.5, OVERLAP + before:FrontOffset(row, #s.rows))
                 local t, y = s.rows[row], -(row - 1) * rowH
                 t:SetVertexColor(r, g, b, 1)
                 t:ClearAllPoints()

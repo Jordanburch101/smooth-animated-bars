@@ -268,7 +268,8 @@ local HELP = {
     "/sab mana - the wait before your mana regenerates, and what it saw lately",
     "/sab self on | off - note what the game lets the addon read about DoTs and hits on you, saved for /reload; "
         .. "/sab self shows it (self clear: start afresh)",
-    "/sab perf [note] - what the liquid costs each frame, the unit frames and the nameplates apart, saved for "
+    "/sab perf [note] - what the liquid costs each frame, the unit frames (the display and party apart) and the "
+        .. "nameplates, and the costliest bars, saved for "
         .. "tools/perf_report.py after /reload (perf reset: time afresh, perf clear: forget the saved ones)",
     "/sab party [note] - what the game lets the addon read about the party frames, saved for /reload "
         .. "(party clear: forget the saved ones)",
@@ -328,6 +329,8 @@ SlashCmdList.SMOOTHANIMATEDBARS = function(input)
         ns.Capture.Start()
     elseif cmd == "capture plates" then -- the same for a nameplate's art
         ns.Capture.Start("plates")
+    elseif cmd == "capture party" then -- and a party member frame's
+        ns.Capture.Start("party")
     elseif cmd == "setup" then
         ns.Wizard.Open()
     elseif cmd == "changes" then

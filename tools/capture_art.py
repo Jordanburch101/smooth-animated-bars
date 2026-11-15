@@ -10,6 +10,8 @@ Defaults: the Forever client's Screenshots folder, and branding/art.
   --plates         the pair /sab capture plates takes: the Classic nameplate's border and bar fill, written as
                    plate-border.png and plate-fill.png with plates.json (their scale, and the layout measured on a
                    real plate, read from the saved variables after a /reload)
+  --party          the pair /sab capture party takes: the party member frame's art, its bar masks and four class
+                   portraits, each 120 x 53 grid units, written as party-*.png with party.json (their scale)
 
 A pair is the grid on black and then on white. A pixel drawn with colour c and opacity a over black
 shows a*c, over white a*c + (1 - a), so a = 1 - (white - black) and c = black / a. Two red squares
@@ -45,6 +47,12 @@ PLATE_CELLS = [("plate-border", 20, 40, 128, 16), ("plate-fill", 160, 43, 128, 1
                ("plate-level-skull", 105, 92, 18, 18), ("plate-selected", 140, 92, 139, 19),
                ("plate-deselected", 20, 130, 128, 10)]
 PLATE_MARK_APART = 280
+
+# The party grid (Capture.lua's PARTY_CELLS): cells a member frame's size, four to a row; marks 540 apart.
+PARTY_CELLS = ["party-art", "party-health-mask", "party-power-mask", "party-portrait-warrior",
+               "party-portrait-priest", "party-portrait-mage", "party-portrait-rogue"]
+PARTY_CELL_W, PARTY_CELL_H, PARTY_STEP_X, PARTY_STEP_Y = 120, 53, 140, 70
+PARTY_MARK_APART = 540
 SAVED = r"C:\Program Files (x86)\World of Warcraft\_forever_\WTF\Account\*\SavedVariables\SmoothAnimatedBars.lua"
 
 
@@ -76,6 +84,7 @@ def main():
     parser.add_argument("--portrait", help="keep only the player's portrait, as portrait-NAME.png")
     parser.add_argument("--pair", type=int, default=1, help="the Nth newest pair of screenshots")
     parser.add_argument("--plates", action="store_true", help="cut the nameplate capture (/sab capture plates)")
+    parser.add_argument("--party", action="store_true", help="cut the party frame capture (/sab capture party)")
     args = parser.parse_args()
 
     shots = sorted(glob.glob(os.path.join(args.shots, "*.tga")), key=os.path.getmtime)
@@ -89,8 +98,8 @@ def main():
     if black[2:6, 2:6].mean() > 0.1 or white[2:6, 2:6].mean() < 0.9:
         raise SystemExit(f"Expected the black shot then the white one:\n  {black_path}\n  {white_path}")
 
-    (x1, y1), (x2, _) = markers(black, 6 if args.plates else 25)
-    ppu = (x2 - x1) / (PLATE_MARK_APART if args.plates else MARK_APART)
+    (x1, y1), (x2, _) = markers(black, 6 if args.plates or args.party else 25)
+    ppu = (x2 - x1) / (PLATE_MARK_APART if args.plates else PARTY_MARK_APART if args.party else MARK_APART)
     print(f"black {os.path.basename(black_path)}, white {os.path.basename(white_path)}: {ppu:.3f} px per unit")
 
     alpha = np.clip(1 - (white - black).mean(axis=2), 0, 1)
@@ -100,6 +109,8 @@ def main():
     os.makedirs(args.out, exist_ok=True)
     if args.plates:
         return cut_plates(rgba, x1, y1, ppu, args.out)
+    if args.party:
+        return cut_party(rgba, x1, y1, ppu, args.out)
     w, h = round(CELL_W * ppu), round(CELL_H * ppu)
     wanted = ["player-portrait"] if args.portrait else CELLS
     for i, name in enumerate(CELLS):
@@ -159,6 +170,22 @@ def cut_plates(rgba, x1, y1, ppu, out):
     with open(os.path.join(out, "plates.json"), "w", encoding="utf-8") as f:
         json.dump({"ppu": ppu, "cells": {n: [w, h] for n, _, _, w, h in PLATE_CELLS}, "layout": layout}, f, indent=2)
     print(f"wrote plates.json ({ppu:.2f} px per unit) to {out}")
+
+
+def cut_party(rgba, x1, y1, ppu, out):
+    w, h = round(PARTY_CELL_W * ppu), round(PARTY_CELL_H * ppu)
+    for i, name in enumerate(PARTY_CELLS):
+        gx, gy = 20 + i % 4 * PARTY_STEP_X, 40 + i // 4 * PARTY_STEP_Y
+        left = round(x1 + (gx - MARK_CENTRE[0]) * ppu)
+        top = round(y1 + (gy - MARK_CENTRE[1]) * ppu)
+        piece = rgba[top:top + h, left:left + w]
+        if piece[..., 3].max() < 0.05:
+            print(f"warning: {name} came out empty: the game may not have loaded its art")
+        Image.fromarray((piece * 255 + 0.5).astype(np.uint8), "RGBA").save(os.path.join(out, name + ".png"))
+        print("wrote", name + ".png")
+    with open(os.path.join(out, "party.json"), "w", encoding="utf-8") as f:
+        json.dump({"ppu": ppu, "cell": [PARTY_CELL_W, PARTY_CELL_H], "cells": PARTY_CELLS}, f, indent=2)
+    print(f"wrote party.json ({ppu:.2f} px per unit) to {out}")
 
 
 if __name__ == "__main__":

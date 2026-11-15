@@ -31,7 +31,9 @@ local function Off(t)
 end
 
 local CFG = {
-    rows        = 15,      -- horizontal slices that make up the liquid front (Liquid.New can take fewer)
+    rows        = 15,      -- most horizontal slices that make up the liquid front (Liquid.RowsFor)
+    rowPx       = 1.25,    -- a slice for every this many px of height, down to minRows
+    minRows     = 6,
     step        = 1 / 120, -- fixed physics step
     energyDecay = 0.8,     -- per second
     bubbles     = 36,      -- pool sizes
@@ -182,12 +184,22 @@ Liquid.__index = Liquid
 ns.Liquid = Liquid
 
 -- opts holds the user toggles (waves, swirl, bubbles, sparkles, ambient, lightning) and is read live.
--- rows: how many slices make up the front (CFG.rows unless given). A short bar can take fewer: each slice is several
--- textures redrawn every update, and on a bar 7 px high fifteen of them were half a pixel each (the party's).
+-- How many slices make up the front of a liquid this many px high: one per CFG.rowPx, from CFG.minRows to CFG.rows.
+-- Each slice is nine textures redrawn every update (its row, its bright edge and a cap of each inside layer), and on
+-- the unit frames' bars, 7 to 12 px high, fifteen were under a pixel each. Counted in the mock, eight on a 10 px bar
+-- (power bars, the Personal Resource Display) cut the bar's widget calls by about a third, and drawn at six times the
+-- size the front looked the same. A 20 px bar (the player's and target's health) keeps fifteen. Every liquid of a
+-- height takes the same count: the bar's own, its Rage Fury and the markers' liquids on it, whose fronts are matched
+-- slice by slice (Follow, FrontOffset).
+function Liquid.RowsFor(height)
+    return math.max(CFG.minRows, math.min(CFG.rows, math.floor(height / CFG.rowPx)))
+end
+
+-- rows: how many slices make up the front, Liquid.RowsFor(height) unless given.
 function Liquid.New(parent, width, height, theme, opts, rows)
     local self = setmetatable({}, Liquid)
     self.parent, self.width, self.height, self.opts = parent, width, height, opts
-    self.n = rows or CFG.rows
+    self.n = rows or Liquid.RowsFor(height)
     self.rowH = height / self.n
     self.textures = {} -- every texture made here, for HideAll and masks
     self.drawLayers = {} -- texture -> { layer, sublevel } as made, for SetSublevelOffset
@@ -575,11 +587,20 @@ function Liquid:Wobble()
 end
 
 -- How far slice i of the front (1 = top) stands past the liquid's edge right now, px.
-function Liquid:FrontOffset(i)
+-- The slice of this liquid at the same height as slice i of a front of n slices (another liquid's): liquids of
+-- different heights, or made with different counts, are matched by where the slice sits.
+function Liquid:SliceAt(i, n)
+    if not n or n == self.n then return i end
+    return max(1, min(self.n, floor((i - 0.5) * self.n / n) + 1))
+end
+
+-- n: how many slices i counts in, if not this liquid's (a seam drawn along it by a liquid of another count).
+function Liquid:FrontOffset(i, n)
+    i = self:SliceAt(i, n)
     local t = self.t
     if self.leader then
         local tr = self.opts.waves and self.tremble or 0
-        return self.leader:FrontOffset(i) + tr * (0.6 * sin(t * 37 + i * 1.7) + 0.4 * sin(t * 53 - i * 2.9))
+        return self.leader:FrontOffset(i, self.n) + tr * (0.6 * sin(t * 37 + i * 1.7) + 0.4 * sin(t * 53 - i * 2.9))
     end
     local wobble = self.opts.waves and self:Wobble() or 0
     return self.pos[i] + wobble * (sin(t * 2.3 + i * 0.6) + 0.5 * sin(t * 3.7 - i * 1.1))
@@ -1073,7 +1094,8 @@ function Liquid:Draw(dt)
             On(row)
             if right < w - 1 then
                 tip:SetPoint("TOPLEFT", parent, "TOPLEFT", right - 0.5 - CFG.edgeCore * CFG.edgeW, y + tip.dy)
-                tip:SetAlpha(min(1, tipAlpha + abs((self.leader or self).vel[i]) * 0.01))
+                local src = self.leader or self
+                tip:SetAlpha(min(1, tipAlpha + abs(src.vel[src:SliceAt(i, self.n)]) * 0.01))
                 On(tip)
             else
                 Off(tip)

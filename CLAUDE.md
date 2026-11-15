@@ -23,10 +23,11 @@ for players; `docs/DEVELOPMENT.md` covers the layout and tools; this file holds 
 - **Visual changes:** render a preview (`tools/harness/preview.py`) and look at it. Rebuild the gallery
   (`tools/harness/gallery.py`) when the liquid's look changes, and look at it before committing.
 - **Gallery:** `branding/gallery/` holds the README's images: animated WebP for each scenario (`hero`,
-  `mage`, `rogue`, `warlock` and `rend` with the DoT marker, `priest` with the heal marker, `druid` with both, `eating`, a meal up to its buff, `mana`, the build-up to mana regenerating, `fury`, a warrior's rage building to full and spent back to 40%, and `plates`, four Normal-style nameplates drawn from the captured plate art (`gallery.py`, `PLATES`), two with DoTs) and PNG stills (`frames.png`, `themes.png`), at full quality (`K = 3.0`, 20 fps). No GIFs.
+  `mage`, `rogue`, `warlock` and `rend` with the DoT marker, `priest` with the heal marker, `druid` with both, `eating`, a meal up to its buff, `mana`, the build-up to mana regenerating, `fury`, a warrior's rage building to full and spent back to 40%, `plates`, four Normal-style nameplates drawn from the captured plate art (`gallery.py`, `PLATES`), two with DoTs, and `prd`, a warrior's Personal Resource Display through a fight to furious rage and a bandage, on the same plate art, its bar sizes Edit Mode's defaults as guessed, and `party`, four party members stacked as in game, on the party art with the setup's example party and its class icons for portraits) and PNG stills (`frames.png`, `themes.png`), at full quality (`K = 3.0`, 20 fps). No GIFs.
   A full run takes about a quarter of an hour, so run it in the background.
 - **Frame art:** `branding/art/` is Forever's own unit frame art, captured in game with `/sab capture` and
-  cut out by `tools/capture_art.py`. It is only for the gallery and is never packaged. The layout numbers
+  cut out by `tools/capture_art.py` (`/sab capture plates` and `--plates` for the nameplates' pieces, `/sab capture
+  party` and `--party` for the party member frame's: its art, bar masks and four class portraits). It is only for the gallery and is never packaged. The layout numbers
   live in `Preview.lua` (`LAYOUT`) and are repeated in `gallery.py`; change both together.
 - **Commits:** stage the files you changed by name, never `git add -A`. Commit messages are plain and
   professional.
@@ -262,12 +263,15 @@ Facts found while building this, which the code relies on and which are not obvi
   fronts have a slice per 1.25 px of height (8 and 6 instead of 15; `Liquid.New`'s `rows`, looked the same zoomed in).
   `Liquid.lua` shows and hides its textures only when that changes (`On`, `Off`): a third of a quiet liquid's calls
   were Show and Hide on textures already so. Together a party's eight went from about 4500 calls a frame to 820 in a
-  stream of events, and the player's and target's four from 2700 to 2100. Fewer slices on the other short bars
-  (power bars, the display, plates) would save more but changes the gallery's look, so not yet. `/sab perf` also lists
-  the six costliest unit frame bars with their Rage Fury's share (`PerfBars`). After the party changes, in game in a
-  party in combat at 24 fps: party 0.2 ms a frame per liquid, the full-size bars about 0.85 ms each, the display's two
-  2.1 ms with its fury. In the mock the fury is about half of a rage bar's cost: it runs at 30 fps even when the curve
-  has faded it out (below half rage), as the addon cannot know how much of it shows. Addons cannot write
+  stream of events, and the player's and target's four from 2700 to 2100. `/sab perf` also lists the six costliest
+  unit frame bars with their Rage Fury's share (`PerfBars`). After the party changes, in game in a party in combat at
+  24 fps: party 0.2 ms a frame per liquid, the full-size bars about 0.85 ms each, the display's two 2.1 ms with its
+  fury. Matched against `tools/harness/bench.py`'s call counts for the same bars, each widget call cost about 1.7 to
+  2 microseconds in game. The bench then showed the fury at nearly 40% of all calls in combat: it ran at 30 fps even
+  where its curve has faded it out (below half rage), which the addon cannot know. So the fury runs at 20 fps
+  (`FURY_FPS`), and every liquid's front has a slice per 1.25 px of height (`Liquid.RowsFor`: 15 on 20 px health, 8 on
+  10 px bars), all liquids of a height alike, their fronts matched by position (`SliceAt`) where counts differ.
+  Together, by the bench, a warrior with a party of three in combat went from about 9.9 ms to 6.1. Addons cannot write
   files, so each `/sab perf` is kept in `SmoothAnimatedBarsDB.perfLog` (last 50), which the client writes on
   `/reload`; `tools/perf_report.py` turns the newest saved file under Forever's WTF folder into
   `perf/perf_report.txt` (git-ignored). The DoT marker on plates (`plateDots`, needs `plateHealth`): `Dots.lua`
