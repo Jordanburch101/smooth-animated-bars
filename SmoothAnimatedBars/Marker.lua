@@ -390,6 +390,8 @@ end
 -- One marker
 --------------------------------------------------------------------------------
 
+local RaiseExternal -- another addon's bar's marker to its liquid's level (below)
+
 -- spec: { bar = the health bar, mask = its mask or nil, iconHost = the frame the kill icon belongs to,
 -- portrait = the region it sits on, source = function() returning max, health, total, list (max and health
 -- may be secret; list as Dots.Target's), visible = function() whether the target is there, plate = true on an
@@ -496,6 +498,7 @@ end
 
 -- Just above the frame the icon belongs to. Some of the game's frames report a secret level on Forever.
 local function RaiseIcon(m)
+    if m.spec.external then return end -- no kill icon there
     local ok, level = pcall(m.spec.iconHost.GetFrameLevel, m.spec.iconHost)
     if ok and type(level) == "number" and not Secret(level) and level ~= m.iconLevel then
         m.iconLevel = level
@@ -647,6 +650,7 @@ local function Update(m, dt)
         end
         if not Refresh(m) then return Hide(m) end
         Layer(m)
+        if m.spec.up then RaiseExternal(m) end
     end
     if not m.clip:IsShown() then return end
 
@@ -788,8 +792,51 @@ local function SyncPlates(dt)
     end
 end
 
+-- Other addons' target health bars (SmoothAnimatedBars.AddBar): a marker each, as the target frame's, with the DoTs on
+-- the target. The bar may show a percentage (Frames Forever's do), so the range is the target's real health. No kill
+-- icon: where the addon puts its portrait is its own. At the level of the bar's liquid (Bars.lua, External.Raise),
+-- under it by sublevels, as on the target frame. Hidden while the bar shows another unit or fills from the right.
+local externalMarkers = {} -- other addon's bar -> marker
+
+RaiseExternal = function(m)
+    local up = m.spec.up()
+    local ok, level = pcall(m.bar.GetFrameLevel, m.bar)
+    if up > 0 and ok and type(level) == "number" and not Secret(level) then
+        if level + up == m.raisedOn then return end
+        m.raisedOn = level + up
+        if m.clip.SetUsingParentLevel then m.clip:SetUsingParentLevel(false) end
+        m.clip:SetFrameLevel(level + up)
+    else
+        m.raisedOn = nil
+        AtParentLevel(m.clip, m.bar)
+    end
+end
+
+local function BuildExternal()
+    for _, bar in ipairs(ns.Bars.ExternalBars("target", "health")) do
+        if not externalMarkers[bar] then
+            local _, _, _, mask = ns.Bars.External(bar)
+            local spec = { bar = bar, mask = mask, iconHost = bar, external = true }
+            spec.up = function() return (select(3, ns.Bars.External(bar))) or 1 end
+            spec.visible = function()
+                local unit, kind, _, _, mirror = ns.Bars.External(bar)
+                return unit == "target" and kind == "health" and not mirror and ns.Bars.IsLive(bar) and TargetThere()
+            end
+            spec.source = function()
+                local total, list = ns.Dots.Target()
+                return UnitHealthMax("target"), UnitHealth("target"), total, list
+            end
+            local m = New(spec)
+            m.hasIcon = false
+            RaiseExternal(m)
+            externalMarkers[bar] = m
+        end
+    end
+end
+
 local function Each(fn)
     if target then fn(target) end
+    for _, m in pairs(externalMarkers) do fn(m) end
     for _, m in ipairs(previews) do fn(m) end
     for _, m in pairs(plateMarkers) do fn(m) end
 end
@@ -861,13 +908,18 @@ function Marker.Apply()
         target.live = live
         if not live then Hide(target) end
     end
+    if live then BuildExternal() end
+    for _, m in pairs(externalMarkers) do
+        m.live = live
+        if not live then Hide(m) end
+    end
     if not platesLive then
         for _, m in pairs(plateMarkers) do
             m.live, m.spec.token = false, nil
             Hide(m)
         end
     end
-    local any = (live and target) or platesLive
+    local any = (live and (target or next(externalMarkers))) or platesLive
     -- A preview on a nameplate (the setup's nameplate step) follows the plates' DoT setting, the others the target's.
     for _, m in ipairs(previews) do
         local on = (m.spec.plate and wantPlates) or (not m.spec.plate and want) or false
@@ -904,20 +956,25 @@ function Marker.Landed(m)
     Landed(m)
 end
 
-ns.Dots.Listen(function(event)
-    if not target then return end
+-- The target's markers: the target frame's and other addons' target bars'.
+local function OnTargetEvent(m, event)
     if event == "applied" then
-        Landed(target)
+        Landed(m)
     elseif event == "crit" then
         -- A crit tears the wound open: a bleed's liquid gushes at once (DOT_LOOKS.blood).
-        for _, d in ipairs(target.liquids) do
+        for _, d in ipairs(m.liquids) do
             if d.themeKey == "blood" and d.pool:IsShown() then d.liquid.gush = true end
         end
     else
         -- Read again on the next frame; another target's DoTs grow in from nothing.
-        if event == "target" and target.clip:IsShown() then Hide(target) end
-        target.since = REFRESH_EVERY
+        if event == "target" and m.clip:IsShown() then Hide(m) end
+        m.since = REFRESH_EVERY
     end
+end
+
+ns.Dots.Listen(function(event)
+    if target then OnTargetEvent(target, event) end
+    for _, m in pairs(externalMarkers) do OnTargetEvent(m, event) end
 end)
 
 -- The DoT liquids on a nameplate sit one frame level above its bar, as the plate's health liquid does (Bars.lua,
@@ -932,9 +989,9 @@ function RaisePlateMarker(m)
     end
 end
 
--- For the tests: the target frame's marker (nil until built) and the previews'.
+-- For the tests: the target frame's marker (nil until built), the previews', the nameplates' and other addons'.
 function Marker.State()
-    return target, previews, plateMarkers
+    return target, previews, plateMarkers, externalMarkers
 end
 
 -- For /sab dots.

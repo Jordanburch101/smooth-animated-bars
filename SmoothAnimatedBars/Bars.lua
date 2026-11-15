@@ -2020,6 +2020,10 @@ function Bars.Front(bar, region)
     if region then
         mover:SetPoint("TOPRIGHT", region, "TOPLEFT")
         mover:SetPoint("BOTTOMRIGHT", region, "BOTTOMLEFT")
+    elseif b.mirror then -- another addon's bar filling from the right (External.SetMirror)
+        local fill = b.proxy:GetStatusBarTexture()
+        mover:SetPoint("TOPLEFT", fill, "TOPLEFT")
+        mover:SetPoint("BOTTOMLEFT", fill, "BOTTOMLEFT")
     else
         local fill = b.proxy:GetStatusBarTexture()
         mover:SetPoint("TOPRIGHT", fill, "TOPRIGHT")
@@ -2242,8 +2246,10 @@ function Bars.AddBar(bar, unit, kind, options)
     end
     -- Before the player is in the world, Bars.Apply and HealMarker.Apply at login pick it up, in their usual order.
     if not ns.Core.ready then return true end
-    -- A player's bar gets the heal marker (heals, bandages, food and drink pouring in).
+    -- A player's bar gets the heal marker (heals, bandages, food and drink pouring in), a target's health bar the DoT
+    -- marker.
     if unit == "player" and unitChanged and ns.HealMarker then ns.HealMarker.Apply() end
+    if unit == "target" and kind == "health" and unitChanged and ns.Marker then ns.Marker.Apply() end
     if not ns.Core.Get("externalBars") then return true end
     External.Wake()
     SetLive(b, true)

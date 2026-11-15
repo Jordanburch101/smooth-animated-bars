@@ -355,6 +355,9 @@ Facts found while building this, which the code relies on and which are not obvi
   are declined, at most `External.MAX_GROUP` (10) party and raid bars and no fury on them, a bar's errors are reported
   once (`Bars.Reported`), bars added before `PLAYER_ENTERING_WORLD` wait for it (`Core.ready`) so the login order of
   `Bars.Apply` and `HealMarker.Apply` holds, the heal seam takes a secret colour directly, and the table is read-only.
+  A target's health bar gets the DoT marker (`Marker.lua`, `BuildExternal`, `RaiseExternal`): seen missing in game (a
+  Rend on Frames Forever's target), and working after. Measured against `UnitHealthMax("target")`, at the liquid's level, no kill icon,
+  hidden on a bar filling from the right; `Bars.Front` puts a mirrored bar's front back on its fill's left edge.
 - **Toc changes** (a new file) need a full game restart; `/reload` does not pick them up.
 - **Capture:** `/sab capture` uses `Screenshot()` and the `screenshotFormat` CVar (TGA, put back after).
   The screenshot is the full render resolution (an ultrawide 3440x1440 here), and the red "?" target

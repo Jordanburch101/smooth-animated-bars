@@ -3150,6 +3150,55 @@ check(ex.eval("SmoothAnimatedBars.AddBar(__vbar, 'player', 'health')") is False,
 check(not any(("Error in" in m or "Could not" in m) and "broken range" not in m and "no width" not in m
               and "careless" not in m for m in chat(ex)), "no other errors")
 
+# DoTs on the target, on another addon's target health bar.
+ed = session("{ setupDone = true, dots = true, heals = false, manaBuild = false, rageFury = false }")
+ed.execute("""
+    __spells[172] = { 'Corruption', 'Corrupts the target, causing 90 Shadow damage over 18 sec.' }
+    function __cast(id, guid)
+        __fire('UNIT_SPELLCAST_SENT', 'player', __target and __target.name or '', guid, id)
+        __fire('UNIT_SPELLCAST_SUCCEEDED', 'player', guid, id)
+    end
+    __ufT = CreateFrame("StatusBar", nil, UIParent)
+    __ufT.w, __ufT.h, __ufT.level = 180, 24, 6
+    __ufT:SetStatusBarTexture(__ufT:CreateTexture(nil, "ARTWORK"))
+    __ufT:SetMinMaxValues(0, 100); __ufT:SetValue(65)  -- a percentage, as Frames Forever's bars hold
+    SmoothAnimatedBars.AddBar(__ufT, 'target', 'health')
+    function __em() return (select(4, __ns.Marker.State()))[__ufT] end
+    __target = { guid = 'Creature-0-1-2-3-299-0001', name = 'Mottled Boar' }
+    __fire('PLAYER_TARGET_CHANGED')
+""")
+run(ed, 0.3)
+check(ed.eval("__em() ~= nil") and not ed.eval("__em().clip.shown"),
+      "another addon's target health bar gets a DoT marker, hidden with no DoTs")
+ed.execute("__cast(172, 'Cast-1')")
+run(ed, 1)
+check(ed.eval("__em().clip.shown") and ed.eval("__em().liquids[1].themeKey") == "shadow"
+      and ed.eval("__em().liquids[1].run.value") == 90,
+      "Corruption on the target shows there as a Shadow liquid of 90 damage to come")
+check(ed.eval("issecretvalue(__em().liquids[1].run.max)") and ed.eval("issecretvalue(__em().liquids[1].clamp.max)"),
+      "measured against the target's real health, not the bar's percentage")
+check(ed.eval("__em().clip.level") == 7 and not ed.eval("__em().window.shown"),
+      "at the level of the bar's liquid, with no kill icon (the addon's portrait is its own)")
+check(ed.eval("""(function()
+    local _, _, mover = __ours(__ufT)
+    local a = mover.points.TOPRIGHT
+    return a and a.rel == __em().endFill and a.relPoint == "TOPLEFT"
+end)()"""), "the bar's liquid ends where the health will end, the DoTs past it")
+ed.execute("__ufT:SetReverseFill(true)")
+run(ed, 0.5)
+check(not ed.eval("__em().clip.shown") and ed.eval("""(function()
+    local proxy, _, mover = __ours(__ufT)
+    local a = mover.points.TOPLEFT
+    return a and a.rel == proxy.fill and mover.points.TOPRIGHT == nil
+end)()"""), "a bar filling from the right: no marker, and the liquid's front back on the fill's left edge")
+ed.execute("__ufT:SetReverseFill(false)")
+run(ed, 0.5)
+check(ed.eval("__em().clip.shown"), "and back")
+ed.execute("__target = { guid = 'Creature-0-1-2-3-300-0002', name = 'Kobold' }; __fire('PLAYER_TARGET_CHANGED')")
+run(ed, 0.5)
+check(not ed.eval("__em().clip.shown"), "a new target without DoTs: hidden")
+check(not any("Error in" in m for m in chat(ed)), "no errors")
+
 # Loaded before us (no OptionalDeps): the call comes before our settings are there.
 early = LuaRuntime(unpack_returned_tuples=True)
 early.execute(open(os.path.join(HERE, "wowmock.lua"), encoding="utf-8").read())

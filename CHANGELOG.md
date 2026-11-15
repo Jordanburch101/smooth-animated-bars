@@ -13,7 +13,8 @@ Sections are `### New` and `### Fixed`; skip one that would be empty.
   keep the colours you set in that addon, and bars that fill from the right
   get the liquid flowing the other way. Your heals, bandages, food and drink
   pour into your own bars there, and the mana bar builds up through the wait
-  before mana regenerates. Turn it off under Other Addons in
+  before mana regenerates. With the DoT Marker on, your damage over time shows
+  on their target's health bar too. Turn it off under Other Addons in
   the settings.
 
 ## 1.8.0

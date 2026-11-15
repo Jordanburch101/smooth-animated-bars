@@ -319,6 +319,8 @@ of its own; a raid frame would cost more than the game's frames together). Remov
 - The player's own bars get the rest of the player frame's liquid: heals, bandages, food and drink on the way (on a
   bar filling from the left), the mana build-up and a warrior's Rage Fury. These are measured against the player's
   real health and mana, so they fit a bar that shows a percentage. Your own heal prediction is left as it is.
+- A target's health bar gets the DoT marker (when the player has it on): the player's damage over time on the target
+  as liquids past the health, measured against the target's real health. No kill icon, as your portrait is your own.
 
 Players can switch other addons' bars off under Other Addons in the settings or with `/sab off`.
 
