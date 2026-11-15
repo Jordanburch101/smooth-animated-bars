@@ -534,6 +534,9 @@ local function SetLive(b, live)
     if live then
         Feed(b, false)
         b.liquid:Snap(b.width) -- the liquid is always full on its frame
+        -- Drawn on its first update: new, it counts as quiet, and waiting for the idle rate left the bar empty (the
+        -- game's fill already hidden) for a moment after login or a setting, and on every gallery image's first frame.
+        b.drawNow = true
     else
         b.liquid:HideAll()
         if b.fury then FuryOff(b) end
@@ -2079,7 +2082,27 @@ local function UnitReport(unit)
         Ask(rawget(_G, "UnitHealthMax"), unit), Ask(rawget(_G, "UnitCanAttack"), "player", unit))
 end
 
+-- Where a region sits in a member frame: "x,y wxh" from the frame's top-left (y down), with its atlas; for matching the
+-- gallery's party art (/sab capture party) to the game's own layout. "?" where the client will not say.
+local function Placed(region, frame)
+    if type(region) ~= "table" or not region.GetLeft then return "none" end
+    local ok, l, t, fl, ft, w, h = pcall(function()
+        return region:GetLeft(), region:GetTop(), frame:GetLeft(), frame:GetTop(), region:GetWidth(), region:GetHeight()
+    end)
+    local atlas = region.GetAtlas and select(2, pcall(region.GetAtlas, region)) or nil
+    local where = "?"
+    if ok and type(l) == "number" and type(fl) == "number" and not Secret(l) and not Secret(t) and not Secret(fl)
+        and not Secret(ft) and not Secret(w) and not Secret(h) then
+        where = string.format("%.1f,%.1f %.1fx%.1f", l - fl, ft - t, w, h)
+    end
+    return where .. (type(atlas) == "string" and (" " .. atlas) or "")
+end
+
 local function MemberReport(out, label, frame, health, power)
+    out[#out + 1] = string.format("  layout: art %s; health %s, its mask %s; power %s, its mask %s",
+        Placed(frame.Texture, frame), Placed(Path(frame, "HealthBarContainer"), frame),
+        Placed(Path(frame, "HealthBarContainer", "HealthBarMask"), frame), Placed(frame.ManaBar, frame),
+        Placed(Path(frame, "ManaBar", "ManaBarMask"), frame))
     out[#out + 1] = string.format("%s: shown %s, visible %s, layoutIndex %s, unit %s, unitToken %s, overrideUnit %s, "
         .. "displayedUnit %s", label, Call(frame, "IsShown"), Call(frame, "IsVisible"), Show(frame.layoutIndex),
         Show(frame.unit), Show(frame.unitToken), Show(frame.overrideUnit), Show(frame.displayedUnit))

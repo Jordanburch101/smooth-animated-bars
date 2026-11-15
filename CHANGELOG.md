@@ -25,6 +25,10 @@ Sections are `### New` and `### Fixed`; skip one that would be empty.
   warrior's rage grows furious. A druid's mana under the power bar in Cat or
   Bear Form gets the liquid as well.
 
+### Fixed
+- A bar no longer shows empty for a moment after you log in or switch its
+  liquid on.
+
 ## 1.7.3
 
 ### Fixed

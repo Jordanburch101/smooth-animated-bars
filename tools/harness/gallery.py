@@ -865,8 +865,13 @@ def plates():
 # PersonalResourceStatusBar on the plates' bronze background (plate-modern-bg, from /sab capture plates), with no mask
 # of the game's, so the liquid takes the addon's own (PlateMask) and the plates' shading (PlateShade), as Bars.lua does.
 # 200 wide at Edit Mode's default width; the bars' heights and the gap are Edit Mode settings, taken here as 12, 10 and
-# the game's minimum 4. The bronze rim is laid as measured on the plates (PLATE_BG).
+# the game's minimum 4. The background is anchored as PersonalResourceStatusBar anchors it (Blizzard_PersonalResourceDisplay
+# .xml): from 2 left of and 3 above the bar to 6 right of and 7 below it. The capture drew it untrimmed in a cell from 2
+# left and 3 above a 128 x 10 bar to 6 right and 6 below (Capture.lua, plate-modern-bg), so that whole cell is stretched
+# over the display's anchors, as the game stretches the atlas. (Laid with the plates' measured rim, PLATE_BG, it did not
+# sit around the bar.)
 PRD_W, PRD_HEALTH_H, PRD_POWER_H, PRD_GAP = 200, 12, 10, 4
+PRD_BG = (2, 3, 6, 7)  # left, top, right, bottom of the bar
 PRD_LOOP = 14.0
 PRD_MAXES = (349, 100)
 # (seconds, health, rage): trading blows in combat, rage climbing to full and furious; two Heroic Strikes and a
@@ -928,8 +933,8 @@ def draw_prd_bar(session, img, bg, plate_mask, shade, bx, by, h, layers):
     """One display bar onto img (RGB) with its top-left at (bx, by) in units: the bronze background, then each of
     layers ((frame, right edge, left cut, right cut) in bar units, back to front) cut to the plate mask, the shading
     over them, then their motes, which fly free in the clip frame's room (SPILL above, below and past the end)."""
-    gx, gy = bx - PLATE_BG[0], by - PLATE_BG[2]
-    gw, gh = PRD_W + PLATE_BG[0] + PLATE_BG[1], h + PLATE_BG[2] + PLATE_BG[3]
+    gx, gy = bx - PRD_BG[0], by - PRD_BG[1]
+    gw, gh = PRD_W + PRD_BG[0] + PRD_BG[2], h + PRD_BG[1] + PRD_BG[3]
     canvas = img.convert("RGBA")
     canvas.alpha_composite(resize_rgba(bg, (round(gw * K), round(gh * K))), (round(gx * K), round(gy * K)))
     base = canvas.convert("RGB")
@@ -956,7 +961,7 @@ def draw_prd_bar(session, img, bg, plate_mask, shade, bx, by, h, layers):
 
 def prd():
     """A warrior's Personal Resource Display through a fight and a bandage: prd.webp."""
-    bg = plate_pieces()["plate-modern-bg"]
+    bg = Image.open(os.path.join(ART, "plate-modern-bg.png")).convert("RGBA")  # untrimmed: its cell is its anchors
     plate_mask = Image.open(os.path.join(ADDON, "Media", "PlateMask.tga")).getchannel("A")
     shade = Image.open(os.path.join(ADDON, "Media", "PlateShade.tga")).convert("RGBA")
     session = prd_session()
@@ -1025,8 +1030,13 @@ PARTY_SCRIPT = [(0.0, 1.00, 0.10, 1.00, 0.90, 1.00, 1.00, 1.00, 1.00),
                 (5.0, 0.80, 0.30, 0.85, 0.60, 0.65, 0.35, 0.60, 0.70),
                 (6.0, 1.00, 0.20, 0.85, 0.45, 0.85, 0.35, 0.60, 1.00),
                 (7.2, 1.00, 0.10, 1.00, 0.90, 1.00, 1.00, 1.00, 1.00)]
+# The power mask, placed by Forever's source (Camelot ArtLayoutInfo.Player: 16, -26 from the frame), came out over the
+# gold divider above the mana slot and its left border in the captured art, which the game's own fill does not reach in
+# game. Measured on the captured art, the slot's dark interior runs from 31.7 to 39.1 down and from 46.1 across, the
+# mask from 30.1 and 45.1: so in the gallery the mask and the bar sit PARTY_POWER_SHIFT further right and down.
+PARTY_POWER_SHIFT = (1.5, 1.9)
 BARS[("party", "health")] = (47, 20, 70, 10)
-BARS[("party", "power")] = (44, 31, 74, 7)
+BARS[("party", "power")] = (44 + PARTY_POWER_SHIFT[0], 31 + PARTY_POWER_SHIFT[1], 74, 7)
 
 
 def party_pieces():
@@ -1036,7 +1046,11 @@ def party_pieces():
         sys.exit(f"No party art in {ART}: run /sab capture party in game, then capture_art.py --party.")
     names = json.load(open(path, encoding="utf-8"))["cells"]
     size = (round(PARTY_W * K), round(PARTY_H * K))
-    return {n: resize_rgba(Image.open(os.path.join(ART, n + ".png")).convert("RGBA"), size) for n in names}
+    pieces = {n: resize_rgba(Image.open(os.path.join(ART, n + ".png")).convert("RGBA"), size) for n in names}
+    shifted = Image.new("RGBA", size, (0, 0, 0, 0))
+    shifted.paste(pieces["party-power-mask"], (round(PARTY_POWER_SHIFT[0] * K), round(PARTY_POWER_SHIFT[1] * K)))
+    pieces["party-power-mask"] = shifted
+    return pieces
 
 
 def party_session():

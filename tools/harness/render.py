@@ -86,6 +86,9 @@ class Session:
                          + "; __fire('PLAYER_ENTERING_WORLD', true, false); " + after_login)
         self.pending = sorted(scenario, key=lambda e: e[0])
         self.t = 0.0
+        # One update before the first frame: the liquid draws nothing until its first update, so without it every
+        # image began on an empty bar (what a page shows as an image's still).
+        self._step(1 / FPS)
         self._media = {}
         # The frame's regions, and its text on a child frame (the bar over the game's has its text on
         # one, raised above the game's art).

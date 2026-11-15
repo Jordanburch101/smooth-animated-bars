@@ -246,6 +246,10 @@ check(lua.eval("(select(2, __liquid(PlayerFrame.healthbar)))") == 0 and lua.eval
 lua.execute("__settings.playerHealth:SetValue(true)")
 run(lua, 0.2)
 check(lua.eval("(select(2, __liquid(PlayerFrame.healthbar)))") > 0, "and on again")
+lua.execute("__settings.playerHealth:SetValue(false); __step(1 / 144); __settings.playerHealth:SetValue(true); __step(1 / 144)")
+check(lua.eval("(select(2, __liquid(PlayerFrame.healthbar)))") > 0 and lua.eval("PlayerFrame.healthbar.fill.alpha") == 0,
+      "switched on, it draws on its very first update: new, it counts as quiet, and waiting for the idle rate left an "
+      "empty bar, the game's fill already hidden")
 lua.execute("__settings.healthColor:SetValue('class')")
 run(lua, 0.2)
 r, g, b = lua.eval("__tint(PlayerFrame.healthbar)")
