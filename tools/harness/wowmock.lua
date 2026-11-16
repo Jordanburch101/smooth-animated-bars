@@ -695,6 +695,44 @@ for i = 1, 4 do
     f:Hide()
     PartyFrame["MemberFrame" .. i] = f
 end
+-- The mirror timers (Blizzard_MirrorTimer/Mainline, forever branch): MirrorTimerContainer holds three
+-- MirrorTimerTemplate frames in .mirrorTimers, each hidden until the game hands it a timer, named in its .timer
+-- (BREATH, EXHAUSTION, FEIGNDEATH; nil once cleared). Its StatusBar (195x13) is lowered to the frame's own level
+-- (LowerFrameLevel), and the dark background, the text box and the border are textures on the frame itself, with
+-- the label (.Text) under the bar. The game sets the bar's value every frame from GetMirrorTimerProgress.
+-- __startMirror(i, timer, scale) shows one as MIRROR_TIMER_START does; GetMirrorTimerInfo(i) answers from the frames,
+-- its paused a number as Forever's docs give it.
+MirrorTimerContainer = CreateFrame("Frame", "MirrorTimerContainer", UIParent)
+MirrorTimerContainer.mirrorTimers = {}
+for i = 1, 3 do
+    local f = CreateFrame("Frame", nil, MirrorTimerContainer)
+    f.level, f.layoutIndex = 3, i
+    f.StatusBar = KeyedStatusBar("MirrorTimerContainer.MirrorTimer" .. i .. ".StatusBar", f, 195, 13)
+    f.StatusBar.level = 3
+    f.TextBorder = f:CreateTexture(nil, "BACKGROUND", nil, 0)
+    f.Background = f:CreateTexture(nil, "BACKGROUND", nil, 1)
+    f.Text = f:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+    f.Text:SetPoint("TOPLEFT", f.StatusBar, "BOTTOMLEFT", 0, 0)
+    f.Border = f:CreateTexture(nil, "OVERLAY")
+    f.scale, f.paused = 0, 0
+    f:Hide()
+    MirrorTimerContainer.mirrorTimers[i] = f
+end
+function __startMirror(i, timer, scale, label)
+    local f = MirrorTimerContainer.mirrorTimers[i]
+    f.timer, f.scale, f.paused = timer, scale or -1, 0
+    f.StatusBar:SetMinMaxValues(0, 60)
+    f.StatusBar:SetValue(scale and scale > 0 and 0 or 60)
+    f.Text:SetText(label or "Breath")
+    f:Show()
+    __fire("MIRROR_TIMER_START", timer, 60000, 60000, f.scale, 0, label or "Breath")
+end
+function GetMirrorTimerInfo(i)
+    assert(type(i) == "number", "GetMirrorTimerInfo(timerIndex)")
+    local f = MirrorTimerContainer.mirrorTimers[i]
+    if not (f and f.timer) then return "UNKNOWN", 0, 0, 1, 0, "", 0 end
+    return f.timer, 60000, 60000, f.scale, f.paused, f.Text:GetText() or "", 0
+end
 -- The target's portrait, on the frame's container (TargetFrame.xml).
 TargetFrame.TargetFrameContainer = CreateFrame("Frame", nil, TargetFrame)
 TargetFrame.TargetFrameContainer.Portrait = TargetFrame.TargetFrameContainer:CreateTexture(nil, "BACKGROUND")

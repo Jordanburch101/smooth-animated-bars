@@ -4,6 +4,18 @@ Player-facing notes for each release. Write for players: what they can now
 do or see, and what was broken and now works. Leave out internal changes.
 Sections are `### New` and `### Fixed`; skip one that would be empty.
 
+## 1.11.0
+
+### New
+- **Breath bar**: the bar the game shows while you hold your breath under
+  water now fills with the liquid too, in its own blue or any theme. Fatigue
+  and Feign Death keep the game's own bar. Turn it off, or pick its colour,
+  under Breath in the settings.
+- **Bubbles while holding breath**: as your breath runs out, bubbles escape
+  from the end of the breath bar and float up out of it, popping as they go.
+  None come while your breath is coming back. Turn them off with Bubbles
+  While Holding Breath under Breath in the settings.
+
 ## 1.10.0
 
 ### New

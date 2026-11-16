@@ -29,6 +29,8 @@ short setup on the first login lets you choose the look, or skip it.
 - **Nameplates (optional):** the liquid in enemy and friendly nameplates too, with your DoTs on every mob that
   carries them.
 - **Party frames:** each member's health and power, in their class or power colours.
+- **The breath bar:** the liquid in the bar the game shows under water, with bubbles rising off it as your breath
+  runs out.
 - **Your heals on the way:** your own heals over time, bandages and the heal you are casting on yourself show
   ahead of your health as far as they will still bring it, and pour into it.
 - **Food and drink:** what you are eating and drinking shows ahead of your health and mana, and food with a buff
@@ -218,6 +220,8 @@ your target's, pet's, focus's or a party member's), or from Options > AddOns > S
   your target's, focus's or target of target's bars show it, Class Color on Mobs says what it shows on a mob:
   Reaction (red if hostile, yellow if neutral, green if friendly), Game Colour (so only players show a class),
   Mob's Class or Your Class.
+- **Breath:** Breath Bar and its Colour (its own blue, any theme, or Same as Your Power), and Bubbles While Holding
+  Breath.
 - **Effects:** Liquid Waves, Magic Swirl, Bubbles, Sparkles, Theme Particles and Lightning.
 - **Damage Over Time:** DoT Marker and Kill Icon.
 - **Healing:** Heal Marker, for your heals, bandages, food and drink.
@@ -251,7 +255,7 @@ as it was.
 ## Good to know
 
 - **WoW Forever only.** It draws on Forever's own unit frames.
-- **Player, target, pet, focus, target-of-target and party frames, the Personal Resource Display and nameplates.**
+- **Player, target, pet, focus, target-of-target and party frames, the Personal Resource Display, the breath bar and nameplates.**
   Raid-style party frames keep the game's bars. Unit frame addons can hand over their own bars (For addon authors). A target of target's liquid follows its bar but is not stirred by
   changes, as the game sends no events for it.
 - **Always matches the game.** WoW Forever keeps health and power hidden from addons, so the addon never knows

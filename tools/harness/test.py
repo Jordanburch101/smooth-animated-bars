@@ -228,7 +228,8 @@ check(keys == ["playerHealth", "healthColor", "playerPower", "powerColor", "targ
                "targetPower", "targetPowerColor", "mobClassColor", "petHealth", "petHealthColor", "petPower",
                "petPowerColor", "focusHealth", "focusHealthColor", "focusPower", "focusPowerColor", "totHealth",
                "totHealthColor", "totPower", "totPowerColor", "partyHealth", "partyHealthColor", "partyPower",
-               "partyPowerColor", "prdHealth", "prdHealthColor", "prdPower", "prdPowerColor", "plateHealth",
+               "partyPowerColor", "prdHealth", "prdHealthColor", "prdPower", "prdPowerColor", "breath", "breathColor",
+               "breathBubbles", "plateHealth",
                "plateHealthColor", "plateDots", "plateKillIcon", "plateFriendly", "plateFriendlyColor", "mobClassColor",
                "externalBars", "waves", "swirl", "bubbles", "sparkles", "ambient", "lightning", "dots", "dotKillIcon", "heals", "manaBuild", "rageFury"],
       f"settings page rows: {keys}")
@@ -3335,7 +3336,7 @@ check(eh.eval("__marker(__ufHealth).name") == "mana",
 
 # All our own bars off: the last other addon's bar removed stops the driver's unit events.
 keys = ["playerHealth", "playerPower", "targetHealth", "targetPower", "petHealth", "petPower", "focusHealth",
-        "focusPower", "totHealth", "totPower", "partyHealth", "partyPower", "prdHealth", "prdPower"]
+        "focusPower", "totHealth", "totPower", "partyHealth", "partyPower", "prdHealth", "prdPower", "breath"]
 quiet = session("{ setupDone = true, " + ", ".join(k + " = false" for k in keys) + " }")
 quiet.execute("""
     __q = CreateFrame("StatusBar", nil, UIParent)
@@ -3357,6 +3358,109 @@ check(on and not quiet.eval("__listening('UNIT_MAXPOWER')"),
 check(early.eval("__earlyTaken") is True and early.eval("(select(2, __liquid(__early)))") > 0,
       "a bar handed over before our settings loaded gets the liquid once they have")
 check(early.eval("__earlyVTaken") is False, "and a vertical one is declined then too")
+
+print("== breath bar (the mirror timers)")
+# Forever's mirror timers (Blizzard_MirrorTimer): three pooled frames, each showing whichever timer the game hands it.
+# The breath bar's liquid shows while a frame shows BREATH, a level above the bar over the frame's dark background,
+# with the label copied over it, and bubbles rise off its front while breath runs out.
+MT = "MirrorTimerContainer.mirrorTimers"
+B1, B2 = MT + "[1].StatusBar", MT + "[2].StatusBar"
+br = session()
+br.execute("""
+    function __bubbles(bar)
+        local _, clip = __ours(bar)
+        local n, top, anchored = 0, -100, true
+        for _, f in ipairs(__frames) do
+            if f.parent == bar and f ~= clip then
+                for _, r in ipairs(__regions) do
+                    if r.parent == f and r.kind == "Texture" and r.file and r.file:sub(-6) == "Bubble" and r.shown then
+                        n = n + 1
+                        local p = r.points.CENTER
+                        if not (p and p.rel == (__ours(bar)).fill and p.relPoint == "RIGHT") then anchored = false end
+                        if p then top = math.max(top, p.y) end
+                    end
+                end
+            end
+        end
+        return n, top, anchored
+    end
+""")
+
+
+def breath(lua, per_second, seconds, bar=B1):
+    for _ in range(int(seconds * 60)):
+        lua.execute(f"local b = {bar}; local v = b:GetValue(); "
+                    f"if not issecretvalue(v) then b:SetValue(math.max(0, math.min(60, v + ({per_second}) / 60))) end")
+        lua.globals().__step(1 / 60)
+
+
+run(br, 0.3)
+check(br.eval(f"__ours({B1}) ~= nil") and br.eval(f"__ours({B2}) ~= nil")
+      and not any("Error in" in m or "Could not find" in m for m in chat(br)),
+      "a liquid is built on each of the game's mirror timer bars at login, hidden with them, nothing reported")
+br.execute("__startMirror(1, 'BREATH', -1)")
+breath(br, -1, 0.3)
+n, shown, alpha, masked, free = br.eval(f"__liquid({B1})")
+check(shown > 0 and alpha == 0, f"under water: liquid in the breath bar, the game's fill hidden ({shown}/{n}, alpha {alpha})")
+check(br.eval(f"""(function()
+    local _, clip = __ours({B1})
+    local tl, br = clip.points.TOPLEFT, clip.points.BOTTOMRIGHT
+    return clip.useParentLevel == false and clip.level == {B1}:GetFrameLevel() + 1
+        and tl.x == 0 and tl.y == 0 and br.x == 0 and br.y == 0
+end)()"""), "a level above the bar, over the timer frame's dark background, and kept inside the bar under its border")
+r, g, b = br.eval(f"__tint({B1})")
+check(b > 0.8 and r < 0.3, f"Game Colour: the breath bar's blue ({r:.2f}, {g:.2f}, {b:.2f})")
+check(br.eval(f"""(function()
+    local theirs = {MT}[1].Text
+    for _, r in ipairs(__regions) do
+        if r.kind == "FontString" and r.over == theirs then
+            return r.shown and r.text == "Breath" and r.parent.level == {B1}:GetFrameLevel() + 2
+        end
+    end
+    return false
+end)()"""), "its label is copied a level above the liquid")
+breath(br, -1, 1.5)
+n, top, anchored = br.eval(f"__bubbles({B1})")
+check(n > 0 and anchored and top > 6.5,
+      f"breath running out: bubbles rise off the front, out past the bar's top ({n} shown, highest {top:.1f} px)")
+breath(br, 6, 3)
+n, _, _ = br.eval(f"__bubbles({B1})")
+check(n == 0, f"breath coming back: no new bubbles, and the last ones have popped ({n})")
+br.execute(f"{B1}:SetMinMaxValues(0, __secret()); {B1}:SetValue(__secret())")
+breath(br, 0, 1)
+n, _, _ = br.eval(f"__bubbles({B1})")
+check(n > 0, f"with the bar's value secret, the timer's own scale says breath runs out ({n})")
+br.execute(f"{MT}[1].paused = 1")
+breath(br, 0, 3)
+n, _, _ = br.eval(f"__bubbles({B1})")
+check(n == 0, f"and paused, none ({n})")
+br.execute(f"{MT}[1].paused = 0; __settings.breathBubbles:SetValue(false)")
+breath(br, 0, 1)
+n, _, _ = br.eval(f"__bubbles({B1})")
+check(n == 0 and br.eval(f"(select(2, __liquid({B1})))") > 0, f"Bubbles While Holding Breath off: none, liquid stays ({n})")
+br.execute("__settings.breathBubbles:SetValue(true)")
+br.execute(f"{MT}[1].timer = 'EXHAUSTION'")
+breath(br, 0, 0.3)
+check(br.eval(f"(select(2, __liquid({B1})))") == 0 and br.eval(f"{B1}.fill.alpha") == 1
+      and br.eval(f"__bubbles({B1})")[0] == 0,
+      "the same frame showing fatigue instead keeps the game's own bar, with no bubbles")
+br.execute(f"{MT}[1].timer = 'BREATH'")
+breath(br, 0, 0.3)
+check(br.eval(f"(select(2, __liquid({B1})))") > 0 and br.eval(f"{B1}.fill.alpha") == 0,
+      "and back to breath, the liquid again")
+br.execute(f"{B2}:SetMinMaxValues(0, 60); __startMirror(2, 'BREATH', -1)")
+breath(br, -1, 0.3, B2)
+check(br.eval(f"(select(2, __liquid({B2})))") > 0, "breath on the second timer frame gets it too")
+br.execute("SlashCmdList.SMOOTHANIMATEDBARS('debug')")
+check(any(m.find("breath bar 1: timer BREATH") >= 0 for m in chat(br)), "/sab debug tells which timer each breath bar shows")
+br.execute("__settings.breathColor:SetValue('fire')")
+breath(br, 0, 0.2)
+check(br.eval(f"__ns.Bars.Liquid({B1}).theme.fillA ~= nil") and br.eval(f"__tint({B1})")[2] < 0.8,
+      "a theme of its own")
+br.execute("__settings.breath:SetValue(false)")
+breath(br, 0, 0.2)
+check(br.eval(f"(select(2, __liquid({B1})))") == 0 and br.eval(f"{B1}.fill.alpha") == 1
+      and br.eval(f"__bubbles({B1})")[0] == 0, "Breath Bar off: the game's own bar back")
 
 if failures:
     print(f"\n{len(failures)} check(s) failed:")

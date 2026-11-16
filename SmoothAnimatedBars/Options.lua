@@ -300,6 +300,18 @@ function Options.Register(savedDB, defaultValues)
         power = "Same as Yours follows your own power colour. A druid's mana under the power bar in Cat or Bear Form "
             .. "gets the liquid too." })
 
+    Header("Breath")
+    Checkbox("breath", "Breath Bar",
+        "Liquid in the breath bar the game shows while you are under water. Fatigue and Feign Death keep the game's "
+        .. "own bar.")
+    Dropdown("breathColor", "Colour",
+        "Game Colour keeps the breath bar blue. Same as Your Power follows your power bar's theme (with Game Colour "
+        .. "there it stays blue). A theme brings its own colours and particles.",
+        SameAsOptions("Same as Your Power"), { indent = true, shown = On("breath") })
+    Row(Settings.CreateCheckboxInitializer(Register("breathBubbles", "Bubbles While Holding Breath"), nil,
+        "Bubbles escape from the end of the breath bar and float up out of it while your breath runs out, not while it "
+        .. "comes back. Needs the Bubbles effect on."), nil, { indent = true, shown = On("breath") })
+
     Header("Nameplates")
     Checkbox("plateHealth", "Enemy Nameplates",
         "Liquid in the health bars of enemy nameplates. Friendly nameplates in dungeons are locked to addons. In a "

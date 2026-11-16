@@ -164,6 +164,62 @@ end
 local PLATE_TEXTS = { "Text", "LeftText", "RightText" }
 local PRD_TEXTS = { "TextString", "LeftText", "RightText" }
 
+-- The breath bar: the game's mirror timers, a small pool of bars (MirrorTimerContainer.mirrorTimers on the retail
+-- branch, MirrorTimer1..3 with MirrorTimerNStatusBar on the classic one) that each show whichever timer the game hands
+-- them: BREATH, EXHAUSTION (fatigue) or FEIGNDEATH, named in the timer frame's .timer. Each frame gets a spot, and its
+-- liquid shows only while that frame shows breath; the others keep the game's own fill (Mirror.Away). In one table, as
+-- the file is near Lua's limit of 200 locals.
+local Mirror = { TIMER = "BREATH", COUNT = 3, COLOR = { 0, 0.5, 1 } }
+
+function Mirror.IsBar(bar)
+    return type(bar) == "table" and bar.GetStatusBarTexture and bar.GetValue and true or false
+end
+
+-- The i-th mirror timer frame, or nil.
+function Mirror.Frame(i)
+    local c = rawget(_G, "MirrorTimerContainer")
+    local f = Path(c, "mirrorTimers", i)
+    if type(f) ~= "table" and type(c) == "table" and c.GetChildren then
+        local n = 0
+        for _, child in ipairs({ c:GetChildren() }) do
+            if Mirror.IsBar(Path(child, "StatusBar")) then
+                n = n + 1
+                if n == i then f = child break end
+            end
+        end
+    end
+    if type(f) ~= "table" then f = rawget(_G, "MirrorTimer" .. i) end
+    return type(f) == "table" and f or nil
+end
+
+-- Its status bar: .StatusBar, or the classic named one.
+function Mirror.Bar(i)
+    local f = Mirror.Frame(i)
+    if not f then return nil end
+    local bar = Path(f, "StatusBar")
+    if not Mirror.IsBar(bar) then
+        local name = f.GetName and f:GetName()
+        bar = name and rawget(_G, name .. "StatusBar")
+    end
+    return Mirror.IsBar(bar) and bar or nil
+end
+
+-- Whether a mirror bar shows some other timer than breath now. A frame that does not say is taken as breath.
+function Mirror.Away(b)
+    local f = b.bar:GetParent()
+    local t = type(f) == "table" and f.timer
+    if type(t) ~= "string" or Secret(t) then return false end
+    return t ~= Mirror.TIMER
+end
+
+-- The game's breath colour: MirrorTimerColors where the client has it, else its blue. The retail branch draws the
+-- timers with coloured atlases instead, and leaves the bar's colour white.
+function Mirror.Color()
+    local c = type(MirrorTimerColors) == "table" and MirrorTimerColors[Mirror.TIMER]
+    if type(c) == "table" and type(c.r) == "number" and not Secret(c.r, c.g, c.b) then return { c.r, c.g, c.b } end
+    return Mirror.COLOR
+end
+
 -- UnitFrame_Initialize stores each unit frame's bars as .healthbar and .manabar; the paths are where
 -- Forever's PlayerFrame.xml and TargetFrame.xml put them. key is the bar's on/off setting.
 local SPOTS = {
@@ -235,6 +291,12 @@ local SPOTS = {
         return Path(rawget(_G, "PersonalResourceDisplayFrame"), "AlternatePowerBar")
     end },
 }
+-- The breath bar, one spot per mirror timer frame (Mirror above). bare: no mask and no spill, so the liquid stays
+-- inside the bar's rectangle under its border.
+for i = 1, Mirror.COUNT do
+    SPOTS[#SPOTS + 1] = { key = "breath", frame = "breath", optional = true, bare = true, mirror = i, unit = "player",
+                          kind = "breath", label = "breath bar " .. i, find = function() return Mirror.Bar(i) end }
+end
 
 -- The party frames (Blizzard_UnitFrame/Shared/PartyFrame.lua): a pool of four member buttons, named MemberFrame1..4 by
 -- their place each time the party frame is shown, each with its health bar in a container that holds its mask (as the
@@ -363,6 +425,7 @@ end
 -- The bar's own colour: health green (a flat bar's its own, unless unflat), or the game's colour for the unit's power
 -- type (a preview bar, and the Personal Resource Display's mana under a druid's form, name their power type).
 GameColor = function(b, unflat)
+    if b.kind == "breath" then return Mirror.Color(), "BREATH" end
     if (b.spot.flat or b.spot.external) and not unflat then return PlateColor(b), "HEALTH" end
     if b.kind == "health" then return HEALTH_COLOR, "HEALTH" end
     local index, token
@@ -549,6 +612,11 @@ local function SetLive(b, live)
     b.live = live
     b.clip:SetShown(live and not b.away)
     if b.texts then b.texts.frame:SetShown(live) end
+    if b.mirrorTexts then b.mirrorTexts.frame:SetShown(live and not b.away) end
+    if b.breathBubbles then
+        b.breathBubbles.frame:SetShown(live and not b.away)
+        if not live then Mirror.ClearBubbles(b) end
+    end
     if b.shadeFrame then b.shadeFrame:SetShown(live) end
     HideGameFill(b.bar, (live and not b.away) and 0 or 1, b.spot.external)
     if live then
@@ -821,6 +889,184 @@ function Over.Apply(b)
     end
 end
 
+-- The breath bar has its background on the bar itself (as the plates' and other addons' bars do), which drew over a
+-- liquid at the bar's level: the game's fill hidden and nothing seen, the bar looking empty. So its liquid goes a level
+-- above the bar, and every text on the bar or its timer frame (the "Breath" label) is copied a level above that, as
+-- the plates' are, drawn exactly over the game's own.
+function Mirror.Raise(b)
+    local ok, level = pcall(b.bar.GetFrameLevel, b.bar)
+    if not ok or type(level) ~= "number" or Secret(level) then return end
+    if level == b.raisedOn then return end
+    b.raisedOn = level
+    if b.clip.SetUsingParentLevel then b.clip:SetUsingParentLevel(false) end
+    b.clip:SetFrameLevel(level + 1)
+    if b.mirrorTexts then b.mirrorTexts.frame:SetFrameLevel(level + 2) end
+    if b.breathBubbles then b.breathBubbles.frame:SetFrameLevel(level + 3) end
+end
+
+-- Bubbles let go from the breath bar's front while breath runs out (not while it comes back), rising out of the bar
+-- and past its top before they pop. They are textures of their own on an unclipped frame a level above the bar, so
+-- they fly free of the bar's edges, and are placed from the hidden bar's fill edge: the front, which the client moves,
+-- so the addon need not know how full the bar is. Whether breath is running out: the bar's value going down where it
+-- can be read, else the breath timer's scale (GetMirrorTimerInfo: below 0 while draining) and not paused.
+Mirror.BUBBLE = { count = 20, rate = 7, hold = 0.3, rise = { 14, 28 }, life = { 1.3, 2.4 }, size = { 3, 6.5 },
+                  alpha = 0.8, pop = 0.15, white = 0.55, texture = "Interface\\AddOns\\SmoothAnimatedBars\\Media\\Bubble" }
+
+function Mirror.Rand(r) return r[1] + (r[2] - r[1]) * math.random() end
+
+function Mirror.NewBubbles(b)
+    local frame = CreateFrame("Frame", nil, b.bar)
+    frame:SetAllPoints(b.bar)
+    local pool = {}
+    for i = 1, Mirror.BUBBLE.count do
+        local t = frame:CreateTexture(nil, "OVERLAY")
+        t:SetTexture(Mirror.BUBBLE.texture)
+        t:Hide()
+        pool[i] = { tex = t, active = false }
+    end
+    frame:SetShown(b.live and not b.away)
+    b.breathBubbles = { frame = frame, pool = pool, acc = 0, hold = 0 }
+end
+
+-- The breath timer's own say: draining (scale below 0) and not paused. False when the client will not tell.
+function Mirror.TimerDraining()
+    if not GetMirrorTimerInfo then return false end
+    for i = 1, Mirror.COUNT do
+        local ok, timer, _, _, scale, paused = pcall(GetMirrorTimerInfo, i)
+        if ok and type(timer) == "string" and not Secret(timer, scale, paused) and timer == Mirror.TIMER then
+            return type(scale) == "number" and scale < 0 and (paused == nil or paused == false or paused == 0)
+        end
+    end
+    return false
+end
+
+-- Whether breath is running out now, held a moment so a frame with no change between two reads does not cut it off.
+function Mirror.Draining(b, dt)
+    local bb = b.breathBubbles
+    local ok, v = pcall(b.bar.GetValue, b.bar)
+    if ok and type(v) == "number" and not Secret(v) then
+        if bb.last and v < bb.last then bb.hold = Mirror.BUBBLE.hold end
+        bb.last = v
+    else
+        bb.last = nil
+        if Mirror.TimerDraining() then bb.hold = Mirror.BUBBLE.hold end
+    end
+    bb.hold = bb.hold - dt
+    return bb.hold > 0
+end
+
+-- One bubble from the front: somewhere up its height, just behind it, in the liquid's own tip colour paled.
+function Mirror.Emit(b, bb)
+    local B = Mirror.BUBBLE
+    for _, p in ipairs(bb.pool) do
+        if not p.active then
+            local h = b.height
+            p.x, p.y = Mirror.Rand({ -4, 1 }), Mirror.Rand({ -h / 2 + 2, h / 2 - 2 })
+            p.vx, p.vy = Mirror.Rand({ -5, 3 }), Mirror.Rand(B.rise)
+            p.life, p.size, p.age = Mirror.Rand(B.life), Mirror.Rand(B.size), 0
+            p.phase, p.freq, p.sway = Mirror.Rand({ 0, 6.28 }), Mirror.Rand({ 2.5, 5 }), Mirror.Rand({ 1, 2.5 })
+            local c = (b.liquid.theme and b.liquid.theme.tip) or WHITE
+            local k = B.white
+            p.tex:SetVertexColor(c[1] + (1 - c[1]) * k, c[2] + (1 - c[2]) * k, c[3] + (1 - c[3]) * k)
+            p.active = true
+            p.tex:Show()
+            return
+        end
+    end
+end
+
+function Mirror.ClearBubbles(b)
+    local bb = b.breathBubbles
+    if not bb then return end
+    bb.acc, bb.hold, bb.last = 0, 0, nil
+    for _, p in ipairs(bb.pool) do
+        if p.active then
+            p.active = false
+            p.tex:Hide()
+        end
+    end
+end
+
+-- Each frame: new bubbles while breath runs out (with the Bubbles effect and the breath bubbles setting on), and the
+-- ones out there rising, swaying, growing a little and popping at the end of their life.
+function Mirror.UpdateBubbles(b, dt)
+    local bb = b.breathBubbles
+    if not bb then return end
+    local B = Mirror.BUBBLE
+    local on = ns.Core.Get("breathBubbles") and ns.Core.Get("bubbles")
+    if on and Mirror.Draining(b, dt) then
+        bb.acc = bb.acc + dt * B.rate
+        while bb.acc >= 1 do
+            bb.acc = bb.acc - 1
+            Mirror.Emit(b, bb)
+        end
+    else
+        bb.acc = 0
+        if not on then bb.last = nil end
+    end
+    local fill = b.proxy:GetStatusBarTexture()
+    for _, p in ipairs(bb.pool) do
+        if p.active then
+            p.age = p.age + dt
+            local k = p.age / p.life
+            if k >= 1 then
+                p.active = false
+                p.tex:Hide()
+            else
+                p.vy = p.vy + 6 * dt -- buoyant: a little faster as it rises
+                p.vx = p.vx * math.exp(-1.5 * dt)
+                p.x, p.y = p.x + p.vx * dt, p.y + p.vy * dt
+                local size, alpha = p.size * (1 + 0.4 * k), math.min(1, p.age / 0.2)
+                local popAt = 1 - B.pop / p.life
+                if k > popAt then
+                    local q = (k - popAt) / (1 - popAt)
+                    size, alpha = size * (1 + 0.7 * q), 1 - q
+                end
+                local sway = math.sin(p.phase + p.age * p.freq) * p.sway
+                p.tex:SetSize(size, size)
+                p.tex:SetAlpha(alpha * B.alpha)
+                p.tex:SetPoint("CENTER", fill, "RIGHT", p.x + sway, p.y)
+            end
+        end
+    end
+end
+
+function Mirror.Setup(b)
+    if not b.mirrorTexts then
+        local theirs = {}
+        for _, owner in ipairs({ b.bar, b.bar:GetParent() }) do
+            if type(owner) == "table" and owner.GetRegions then
+                for _, r in ipairs({ owner:GetRegions() }) do
+                    if r.GetObjectType and r:GetObjectType() == "FontString" then theirs[#theirs + 1] = r end
+                end
+            end
+        end
+        local frame = CreateFrame("Frame", nil, b.bar)
+        frame:SetAllPoints(b.bar)
+        local t = { frame = frame, theirs = theirs }
+        for i in ipairs(theirs) do
+            t[i] = frame:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+            t[i]:Hide()
+        end
+        frame:SetShown(b.live and not b.away)
+        b.mirrorTexts = t
+    end
+    if not b.breathBubbles then Mirror.NewBubbles(b) end
+    b.raisedOn = nil
+    Mirror.Raise(b)
+    Mirror.SyncTexts(b)
+end
+
+function Mirror.SyncTexts(b)
+    local t = b.mirrorTexts
+    if not t then return end
+    for i, theirs in ipairs(t.theirs) do
+        local ok, shown = pcall(theirs.IsVisible, theirs)
+        if not ok then shown = false elseif not Secret(shown) then shown = shown == true end
+        CopyText(t[i], theirs, shown, false, false)
+    end
+end
+
 local function NewBar(spot, bar)
     local w, h = Size(bar, spot.plate and PLATE_W or spot.flat and PRD_W or 1,
         spot.plate and PLATE_H or spot.flat and PRD_H or 1)
@@ -843,7 +1089,7 @@ local function NewBar(spot, bar)
     -- A nameplate's bar has no mask, so the clip frame is the bar itself: it cuts the waves at the bar's end, and the
     -- motes too, which would only clutter a crowd of plates. The Personal Resource Display is one frame, the player's
     -- own, so its motes fly free as on the unit frames; its plate mask cuts the waves.
-    local spill = (spot.plate or (spot.external and not spot.external.spill)) and 0 or SPILL
+    local spill = (spot.plate or spot.bare or (spot.external and not spot.external.spill)) and 0 or SPILL
     clip:SetPoint("TOPLEFT", bar, "TOPLEFT", 0, spill)
     clip:SetPoint("BOTTOMRIGHT", bar, "BOTTOMRIGHT", spill, -spill)
     clip:SetClipsChildren(true)
@@ -1328,6 +1574,24 @@ local function UpdateBar(b, dt)
     if b.spot.party then
         PartyFollow(b, dt)
         if b.away then return end
+    end
+    -- A mirror timer frame showing fatigue or feign death rather than breath keeps the game's own fill.
+    if b.spot.mirror then
+        SetAway(b, Mirror.Away(b))
+        if b.mirrorTexts then b.mirrorTexts.frame:SetShown(not b.away) end
+        if b.breathBubbles then b.breathBubbles.frame:SetShown(not b.away) end
+        if b.away then
+            Mirror.ClearBubbles(b)
+            return
+        end
+        Mirror.UpdateBubbles(b, dt)
+        -- The game can move the bar's level; the text copies follow the game's text.
+        b.textIn = (b.textIn or 0) - dt
+        if b.textIn <= 0 then
+            b.textIn = TEXT_EVERY
+            Mirror.Raise(b)
+            Mirror.SyncTexts(b)
+        end
     end
     -- The game can swap or reset its fill textures; keep them hidden under the liquid.
     HideGameFill(bar, 0, b.spot.external)
@@ -1889,6 +2153,35 @@ local EVENTS = { "PLAYER_TARGET_CHANGED", "UNIT_DISPLAYPOWER", "UNIT_HEALTH", "U
 local PLATE_EVENTS = { "NAME_PLATE_UNIT_ADDED", "NAME_PLATE_UNIT_REMOVED", "UNIT_FACTION" }
 local BOTH = { UNIT_HEALTH = true, UNIT_MAXHEALTH = true } -- the frames' events that the plates use too
 
+-- The mirror timers' events. A timer frame the game makes only on first use is built on once it is there (a frame later,
+-- after the game's own handler has set it up), and a breath bar stirs as its timer starts, turns or pauses.
+Mirror.events = CreateFrame("Frame")
+Mirror.events:SetScript("OnEvent", function(_, event, timer)
+    if not ns.Core.Get("breath") then return end
+    if type(timer) == "string" and not Secret(timer) and timer ~= Mirror.TIMER then return end
+    local missing = false
+    for _, spot in ipairs(SPOTS) do
+        if spot.mirror and not bars[spot] then missing = true end
+    end
+    if missing then
+        C_Timer.After(0, function()
+            for _, spot in ipairs(SPOTS) do
+                if spot.mirror and not bars[spot] and spot.find() then
+                    Bars.Apply()
+                    return
+                end
+            end
+        end)
+    end
+    if event == "MIRROR_TIMER_STOP" then return end
+    for spot, b in pairs(bars) do
+        if spot.mirror and b.live and not b.away then Stir(b) end
+    end
+end)
+for _, event in ipairs({ "MIRROR_TIMER_START", "MIRROR_TIMER_PAUSE", "MIRROR_TIMER_STOP" }) do
+    pcall(Mirror.events.RegisterEvent, Mirror.events, event)
+end
+
 --------------------------------------------------------------------------------
 -- API
 --------------------------------------------------------------------------------
@@ -1960,6 +2253,8 @@ function Bars.Apply()
                 if spot.flat then
                     PlateTexts(b)
                     RaisePlate(b)
+                elseif spot.mirror then
+                    Mirror.Setup(b)
                 elseif Over.bars[bar] then
                     Over.Apply(b) -- the DoT marker was there first
                 end
@@ -2456,6 +2751,31 @@ function Bars.Debug()
                 YesNo(Secret(bar:GetValue())), YesNo(b.mask), YesNo(b.live),
                 fill and (Secret(fill:GetAlpha()) and "secret" or tostring(fill:GetAlpha())) or "none", shown, #b.liquid.textures,
                 b.err and (", error: " .. b.err) or "")
+        end
+    end
+    -- The breath bars: which timer each shows, the levels, and what the game draws on the bar and its frame.
+    for _, spot in ipairs(SPOTS) do
+        local b = spot.mirror and bars[spot]
+        if b then
+            local f = b.bar:GetParent()
+            local function Level(x)
+                local ok, l = pcall(x.GetFrameLevel, x)
+                return ok and not Secret(l) and tostring(l) or "?"
+            end
+            local regions = {}
+            for _, owner in ipairs({ b.bar, f }) do
+                if type(owner) == "table" and owner.GetRegions then
+                    for _, r in ipairs({ owner:GetRegions() }) do
+                        local ok, layer = pcall(r.GetDrawLayer, r)
+                        regions[#regions + 1] = (owner == b.bar and "bar." or "frame.") .. r:GetObjectType()
+                            .. "/" .. (ok and tostring(layer) or "?")
+                    end
+                end
+            end
+            out[#out + 1] = string.format("%s: timer %s, away %s, bar level %s, liquid level %s, %d text copies; %s",
+                spot.label, (type(f) == "table" and Secret(f.timer)) and "secret" or tostring(type(f) == "table" and f.timer),
+                YesNo(b.away), Level(b.bar), Level(b.clip),
+                b.mirrorTexts and #b.mirrorTexts.theirs or 0, table.concat(regions, " "))
         end
     end
     -- Other addons' bars (SmoothAnimatedBars.AddBar).

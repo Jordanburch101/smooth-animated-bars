@@ -25,6 +25,10 @@ local DEFAULTS = {
     -- The Personal Resource Display's bars (the game shows them with its Personal Resource Display option on)
     prdHealth    = true,
     prdPower     = true,
+    -- The breath bar under water (the game's mirror timer, Bars.lua, Mirror)
+    breath       = true,
+    -- Bubbles rising off the breath bar's front while breath runs out (read live, with the Bubbles effect)
+    breathBubbles = true,
     -- Enemy nameplates' health (Bars.lua), off until it has been tried in a crowd
     plateHealth  = false,
     -- Friendly nameplates' health, the same way (outside instances: the game keeps those there to itself)
@@ -53,6 +57,8 @@ local DEFAULTS = {
     prdHealthColor    = "same",
     prdPowerColor     = "same",
     plateHealthColor  = "same",
+    -- The breath bar: the game's blue by default, or "same" for the player's power colour
+    breathColor       = "game",
     -- Friendly nameplates: their own colour by default, or "same" for the enemy plates'
     plateFriendlyColor = "game",
     -- What Class Color gives a mob: "reaction", "game" (the bar's own colour), "class" (its own) or "own" (the player's)
@@ -100,14 +106,18 @@ local COLOR_KEYS = {
     prd    = { health = "prdHealthColor", power = "prdPowerColor" },
     plate  = { health = "plateHealthColor" },
     friend = { health = "plateFriendlyColor" },
+    breath = { breath = "breathColor" },
 }
 local FOLLOWS = { target = "player", pet = "player", focus = "target", tot = "target", party = "player", prd = "player",
-                  plate = "target", friend = "plate" }
+                  plate = "target", friend = "plate", breath = "player" }
 
--- The colour a frame's bar of this kind ("health" or "power") shows: "game" or a theme key, "same" followed through.
+-- The colour a frame's bar of this kind ("health", "power" or "breath") shows: "game" or a theme key, "same" followed
+-- through. The breath bar's "same" follows the player's power colour.
 function Core.ColorChoice(frame, kind)
     local choice = Core.Get(COLOR_KEYS[frame][kind])
-    if choice == "same" and FOLLOWS[frame] then return Core.ColorChoice(FOLLOWS[frame], kind) end
+    if choice == "same" and FOLLOWS[frame] then
+        return Core.ColorChoice(FOLLOWS[frame], kind == "breath" and "power" or kind)
+    end
     return choice
 end
 
@@ -138,7 +148,7 @@ function Core.PlatesUseClass()
 end
 
 local BAR_KEYS = { "playerHealth", "playerPower", "targetHealth", "targetPower", "petHealth", "petPower", "focusHealth",
-                   "focusPower", "totHealth", "totPower", "partyHealth", "partyPower", "prdHealth", "prdPower" }
+                   "focusPower", "totHealth", "totPower", "partyHealth", "partyPower", "prdHealth", "prdPower", "breath" }
 
 local function ApplyBars(verbose)
     local live, missing = ns.Bars.Apply()

@@ -11,7 +11,8 @@ for players; `docs/DEVELOPMENT.md` covers the layout and tools; this file holds 
   (`StatusBar:SetValue`) and anchor to what the client lays out; `Bars.lua` explains the design.
 - **Game frames:** only read and draw on them. No hooks, no fields written onto them, no changes besides the
   fill texture's alpha. Our frames sit at the bar's own frame level so the game's text stays on top, except on
-  nameplates (see Enemy nameplates below) and a health liquid with the DoT marker on it (see DoT tracking).
+  nameplates (see Enemy nameplates below), a health liquid with the DoT marker on it (see DoT tracking) and the
+  breath bar (see Breath bar).
 - **Forever assets:** game files by path often fail to load there. Use `SetColorTexture` for solid fills and
   the addon's own TGAs in `SmoothAnimatedBars/Media/` (made by `tools/make_media.py`), never `Interface\...`
   game paths. Icons by file ID.
@@ -332,6 +333,22 @@ Facts found while building this, which the code relies on and which are not obvi
   (`Liquid:Settle`): a burst in flight when it hid would otherwise finish when it shows. Settled, it counts as quiet,
   so it is drawn at once (`drawNow`): waiting for its next idle update left an empty bar for a few frames. Every class has the
   `AlternatePowerBar`, but on Forever only a druid's is used, so only druids build one.
+- **Breath bar** (`Bars.lua`, `Mirror`, the `breath` spots): Forever's mirror timers are
+  `Blizzard_MirrorTimer/Mainline` (forever branch): `MirrorTimerContainer.mirrorTimers`, three pooled
+  `MirrorTimerTemplate` frames that each show whichever timer the game hands them, named in the frame's `.timer`
+  (`BREATH`, `EXHAUSTION`, `FEIGNDEATH`; nil once cleared). Each frame gets a spot; its liquid shows while it shows
+  `BREATH`, and the others get the game's fill back (`Mirror.Away`, through `SetAway` as an offline party member's).
+  The `StatusBar` (195x13) is lowered to the frame's own level (`LowerFrameLevel`), and the dark
+  `ui-castingbar-background`, the text box and the border are textures on the frame itself, so at the bar's level the
+  background drew over the liquid and the bar looked empty (seen in game). The liquid is one level above the bar and
+  copies of the frame's texts (the label, under the bar) one more up (`Mirror.Raise`, `Mirror.Setup`). The border
+  (`OVERLAY`, 2 px around the bar) is under the liquid there; the clip frame has no spill (`spot.bare`), so the waves
+  stay inside the bar. The fill is an atlas (`MirrorTimerAtlas`), so the bar's colour is white: Game Colour is
+  `MirrorTimerColors` where a client has it, else blue. The game sets the value every frame from
+  `GetMirrorTimerProgress`; whether Forever keeps it secret is not known, so bubbles (`Mirror.UpdateBubbles`, rising
+  off the fill's edge on an unclipped frame two levels above the liquid) go by the value falling where it is readable,
+  else by `GetMirrorTimerInfo`'s scale below 0 and `paused` (a number) 0. Seen in game: the liquid. Not yet seen in
+  game: the bubbles.
 - **Unit frame menus** (`Options.lua`, `AddToUnitMenus`): `Menu.ModifyMenu("MENU_UNIT_" .. which, ...)` adds Open
   Settings; the frames pass themselves as `contextData.ownerFrame` (Mainline `PlayerFrame.lua`, `TargetFrame.lua`,
   `PetFrame.lua`), which tells them from chat names. The party's member frames are pooled and nameless, so they are
