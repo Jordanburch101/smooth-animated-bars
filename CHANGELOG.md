@@ -4,6 +4,14 @@ Player-facing notes for each release. Write for players: what they can now
 do or see, and what was broken and now works. Leave out internal changes.
 Sections are `### New` and `### Fixed`; skip one that would be empty.
 
+## 1.10.0
+
+### New
+- **Kill icon on nameplates**: with Your DoTs on Nameplates on, the game's
+  skull now shows beside a mob's nameplate when your DoTs will finish it off,
+  as it does on your target's portrait. Turn it off with Kill Icon on
+  Nameplates under Nameplates in the settings.
+
 ## 1.9.0
 
 ### New

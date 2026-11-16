@@ -672,14 +672,15 @@ PLATE_LOOP = 9.0
 # cast on it, events, and a script of (seconds, health fraction). DoTs go up through the addon's own tracking, so the
 # DoT liquids show what it reckons; at the loop's end a fresh mob of the same kind comes, as in the frames' scenarios.
 PLATES = [
-    # The target: Rend bleeds out of it while blows land, one a crit that makes the bleed gush.
+    # The target: Rend bleeds out of it while blows land, one a crit that makes the bleed gush. A last heavy blow
+    # leaves it less health than the Rend still has to deal, and the kill icon comes up beside the plate.
     dict(name="Defias Pillager", level="12", level_color=LEVEL_YELLOW, unit="reaction = 2, color = " + PLATE_RED,
          max=210, target=True,
          spells={6546: ("Rend", "Wounds the target causing them to bleed for 28 damage over 12 sec.")},
          events=[(0.4, "__cast(6546, 'Cast-1')"), (1.0, "__hit(30, 1)"), (2.2, "__hit(45, 1)"),
-                 (3.4, "__hit(7, 1)"), (3.6, "__crit(30, 1)"), (5.0, "__hit(40, 1)"), (6.4, "__hit(7, 1)"),
+                 (3.4, "__hit(7, 1)"), (3.6, "__crit(30, 1)"), (5.0, "__hit(85, 1)"), (6.4, "__hit(7, 1)"),
                  (8.4, "__newMob('Creature-0-1-2-3-40-0002')")],
-         script=[(0.0, 1.000), (1.0, 0.857), (2.2, 0.643), (3.4, 0.610), (3.6, 0.467), (5.0, 0.276), (6.4, 0.243),
+         script=[(0.0, 1.000), (1.0, 0.857), (2.2, 0.643), (3.4, 0.610), (3.6, 0.467), (5.0, 0.062), (6.4, 0.029),
                  (8.4, 1.000)]),
     # Tabbed away from with Corruption and Immolate on it: both DoTs' liquids, Shadow and Fire, burn down with it.
     dict(name="Kobold Geomancer", level="11", level_color=LEVEL_GREEN, unit="reaction = 2, color = " + PLATE_RED,
@@ -748,14 +749,38 @@ def plate_session(p):
     """ % (p["unit"], p["name"], "true" if spells else "false", PLATE_W, PLATE_H))
 
 
-def draw_plate(session, pieces, plate_mask, cell, p, health):
+PLATE_X = 30               # the bar's left edge in its cell: room for the kill icon left of it
+PLATE_ICON_HEIGHT, PLATE_ICON_GAP = 20, 7  # Marker.lua: the kill icon on a plate, against ICON_HEIGHT's 30
+_plate_skull = []
+
+
+def plate_skull():
+    """The game's skull from the target frame's capture (target-killicon), cut to what shows and scaled from the
+    target frame's 30 units to a plate's 20. None if not captured."""
+    if not _plate_skull:
+        path = os.path.join(ART, "target-killicon.png")
+        icon = None
+        if os.path.exists(path):
+            raw = Image.open(path).convert("RGBA")
+            box = raw.getchannel("A").getbbox()
+            if box:
+                per_unit = raw.width / FRAME_W * 30 / PLATE_ICON_HEIGHT  # raw px per plate unit
+                icon = raw.crop(box)
+                icon = resize_rgba(icon, (max(1, round(icon.width / per_unit * K)),
+                                          max(1, round(icon.height / per_unit * K))))
+        _plate_skull.append(icon)
+    return _plate_skull[0]
+
+
+def draw_plate(session, pieces, plate_mask, cell, p, health, actual):
     """One plate onto a copy of cell (RGBA): background, the liquid and DoT liquids at health (a fraction), then
-    the darkening or the target's glow, the level box and the name."""
+    the darkening or the target's glow, the level box, the name, and the kill icon once the DoTs will take more than
+    the mob's actual health (a fraction: the client's kill bar does not ease)."""
     def place(img, piece, left, top, w, h):
         im = resize_rgba(pieces[piece], (max(1, round(w * K)), max(1, round(h * K))))
         img.alpha_composite(im, (round(left * K), round(top * K)))
 
-    bx, by = 10, 24
+    bx, by = PLATE_X, 24
     img = cell.copy()
     gx, gy = bx - PLATE_BG[0], by - PLATE_BG[2]
     gw, gh = PLATE_W + PLATE_BG[0] + PLATE_BG[1], PLATE_H + PLATE_BG[2] + PLATE_BG[3]
@@ -813,6 +838,14 @@ def draw_plate(session, pieces, plate_mask, cell, p, health):
                                        (p["name"], (bx + PLATE_W / 2, by - 2), 12, (255, 255, 255), "md")):
         draw.text((xy[0] * K, xy[1] * K), s, font=render.font(size * K), fill=color + (255,), anchor=anchor,
                   stroke_width=max(1, round(K)), stroke_fill=(0, 0, 0, 255))
+    skull = plate_skull()
+    if m is not None and m.clip.shown and m.window.shown and skull and m.value >= actual * p["max"]:
+        # Its window's right edge PLATE_ICON_GAP left of the bar, centred on the bar's height, pulsing.
+        alpha = np.asarray(skull.getchannel("A")).astype(np.float32) * m.icon.alpha
+        icon = skull.copy()
+        icon.putalpha(Image.fromarray(alpha.astype(np.uint8)))
+        img.alpha_composite(icon, (round((bx - PLATE_ICON_GAP) * K) - icon.width,
+                                   round((by + PLATE_H / 2) * K - icon.height / 2)))
     return img
 
 
@@ -820,7 +853,7 @@ def plates():
     """Four nameplates through a loop, in a 2 x 2 grid: plates.webp."""
     pieces = plate_pieces()
     plate_mask = Image.open(os.path.join(ADDON, "Media", "PlateMask.tga")).getchannel("A")
-    cell_w, cell_h = round((PLATE_W + 48) * K), round(46 * K)
+    cell_w, cell_h = round((PLATE_W + PLATE_X + 38) * K), round(46 * K)
     pad = round(10 * K)
     cols = 2
     rows = math.ceil(len(PLATES) / cols)
@@ -842,7 +875,7 @@ def plates():
             shown = goal
             session.run_until(t)
             fill += (goal - fill) * (1 - math.exp(-8 * dt))
-            cells.append(draw_plate(session, pieces, plate_mask, cell, p, fill))
+            cells.append(draw_plate(session, pieces, plate_mask, cell, p, fill, goal))
             t += dt
         tracks.append(cells)
         print(f"  rendered {p['name']}")

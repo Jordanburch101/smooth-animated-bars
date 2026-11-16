@@ -413,12 +413,13 @@ end
 -- real plates.
 
 local PLATE_W, PLATE_H = 150, 13
--- name, level, unit colour, colour setting it follows ("plate" or "friend"), on/off setting, targeted, place
+-- name, level, unit colour, colour setting it follows ("plate" or "friend"), on/off setting, targeted, place. The
+-- left column leaves room for the kill icon left of the target's bar (Marker.lua), and the whole stays centred.
 local PLATES = {
-    { "Defias Pillager", 18, { 1, 0, 0 }, "plate", "plateHealth", true, 14, -24 },
-    { "Defias Smuggler", 17, { 1, 0, 0 }, "plate", "plateHealth", false, 14, -70 },
-    { "Mottled Boar", 16, { 1, 1, 0 }, "plate", "plateHealth", false, 254, -24 },
-    { "Stormwind Guard", 25, { 0, 1, 0 }, "friend", "plateFriendly", false, 254, -70 },
+    { "Defias Pillager", 18, { 1, 0, 0 }, "plate", "plateHealth", true, 40, -24 },
+    { "Defias Smuggler", 17, { 1, 0, 0 }, "plate", "plateHealth", false, 40, -70 },
+    { "Mottled Boar", 16, { 1, 1, 0 }, "plate", "plateHealth", false, 280, -24 },
+    { "Stormwind Guard", 25, { 0, 1, 0 }, "friend", "plateFriendly", false, 280, -70 },
 }
 -- Health as fractions, looped: { seconds, the target's, the second enemy's, the boar's, the guard's }.
 local PLATE_SCRIPT = {
@@ -426,12 +427,13 @@ local PLATE_SCRIPT = {
     { 1.2, 0.80, 0.90, 0.60, 1.00 },
     { 2.2, 0.62, 0.70, 0.60, 0.92 },
     { 3.0, 0.62, 0.70, 0.48, 1.00 },
-    { 4.0, 0.40, 0.55, 0.48, 1.00 },
-    { 5.0, 0.40, 0.55, 0.48, 0.85 },
-    { 6.0, 0.18, 0.40, 0.48, 1.00 },
+    { 4.0, 0.25, 0.55, 0.48, 1.00 },
+    { 5.0, 0.25, 0.55, 0.48, 0.85 },
+    { 6.0, 0.00, 0.40, 0.48, 1.00 },
     { 7.2, 1.00, 0.90, 0.60, 1.00 },
 }
--- The target's DoTs at each row, in points of its 210 health, as on the frames' target (DOTS).
+-- The target's DoTs at each row, in points of its 210 health, as on the frames' target (DOTS): by the fifth row
+-- they will finish it, and the kill icon shows beside its plate.
 local PLATE_DOTS = {
     {},
     { { "Corruption", 54, 32 } },
@@ -439,7 +441,7 @@ local PLATE_DOTS = {
     { { "Corruption", 42, 32 }, { "Immolate", 34, 4 } },
     { { "Corruption", 30, 32 }, { "Immolate", 28, 4 } },
     { { "Corruption", 30, 32 }, { "Immolate", 28, 4 } },
-    { { "Corruption", 20, 32 } },
+    {},
     {},
 }
 

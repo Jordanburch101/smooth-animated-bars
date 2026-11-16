@@ -33,6 +33,8 @@ local DEFAULTS = {
     externalBars = true,
     -- The DoT marker on enemy nameplates (Marker.lua), with plateHealth
     plateDots    = false,
+    -- The kill icon beside a nameplate whose mob the player's DoTs will finish, with plateDots
+    plateKillIcon = true,
     -- Colours: "game" for the bar's own colour, or a theme key (Themes.lua)
     healthColor  = "game",
     powerColor   = "game",
@@ -156,6 +158,7 @@ local SETTING_APPLY = {
     manaBuild   = function() ns.ManaRule.Apply() end,
     plateHealth = function() ApplyBars(false); ns.Marker.Apply() end,
     plateDots   = function() ns.Marker.Apply() end,
+    plateKillIcon = function() ns.Marker.Apply() end,
     plateFriendly = function() ApplyBars(false) end,
     externalBars = function()
         ApplyBars(false)

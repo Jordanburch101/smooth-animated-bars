@@ -19,7 +19,8 @@
 --     the health, in the last icon-width of a bar LONG wide.
 -- Nothing of the game's is changed: our frames are children of the bar and the target frame, at the bar's level
 -- so the game's text stays on top, and the kill icon just above the target frame. The icon is the game's own:
--- the skull the target frame shows for a target far above your level.
+-- the skull the target frame shows for a target far above your level. On a nameplate it is smaller and sits left
+-- of the bar (the level box is on its right), just above the plate's own liquids and text copies.
 --
 -- The idea comes from DoesItDie (see Dots.lua).
 
@@ -44,6 +45,13 @@ local IDLE_FPS = 30
 local ICON_ATLAS = "UI-HUD-UnitFrame-Target-HighLevelTarget_Icon"
 local ICON_HEIGHT = 30
 local LONG = 10000        -- the kill icon's bar: it starts sliding in ICON_HEIGHT / LONG short of lethal
+-- On a nameplate: about the height of the plate's bronze background, its right edge clear of the target's glow (5 px
+-- left of the bar), and a few levels over the bar, over the plate's liquids (up to +4, Bars.lua) but not so far up
+-- that it draws over the plates beside it, as +20 might.
+local PLATE_ICON_HEIGHT = 20
+local PLATE_ICON_GAP = 7
+local PLATE_ICON_UP = 5
+local ICON_UP = 20
 local SPLASH_APPLIED, SPLASH_TICK = 0.6, 0.2
 
 -- A DoT liquid's theme by its school (Dots.lua's masks).
@@ -374,15 +382,16 @@ end
 
 local INTERPOLATION = Enum and Enum.StatusBarInterpolation and Enum.StatusBarInterpolation.ExponentialEaseOut
 
--- The game's skull on a texture of ours, at ICON_HEIGHT with the atlas's proportions. False if the client
--- has no such atlas. Also used by Capture.lua for the gallery.
-function Marker.KillIcon(texture)
+-- The game's skull on a texture of ours, at height (ICON_HEIGHT if nil) with the atlas's proportions. False if
+-- the client has no such atlas. Also used by Capture.lua for the gallery.
+function Marker.KillIcon(texture, height)
+    height = height or ICON_HEIGHT
     if not (texture.SetAtlas and texture:SetAtlas(ICON_ATLAS, true)) then return false end
     local w, h = texture:GetSize()
     if type(w) ~= "number" or type(h) ~= "number" or Secret(w) or Secret(h) or w <= 0 or h <= 0 then
         w, h = 1, 1
     end
-    texture:SetSize(ICON_HEIGHT * w / h, ICON_HEIGHT)
+    texture:SetSize(height * w / h, height)
     return true
 end
 
@@ -395,7 +404,7 @@ local RaiseExternal -- another addon's bar's marker to its liquid's level (below
 -- spec: { bar = the health bar, mask = its mask or nil, iconHost = the frame the kill icon belongs to,
 -- portrait = the region it sits on, source = function() returning max, health, total, list (max and health
 -- may be secret; list as Dots.Target's), visible = function() whether the target is there, plate = true on an
--- enemy nameplate: no kill icon, no skulls, clipped to the bar }.
+-- enemy nameplate: the kill icon left of the bar (plateKillIcon), no skulls, clipped to the bar }.
 local function New(spec)
     local bar = spec.bar
     local w, h = ns.Bars.Size(bar, 1, 1)
@@ -463,13 +472,18 @@ local function New(spec)
     -- The kill icon.
     local host = spec.iconHost
     m.window = CreateFrame("Frame", nil, host)
-    m.window:SetPoint("CENTER", spec.portrait or host, "CENTER")
+    if spec.plate then
+        m.window:SetPoint("RIGHT", bar, "LEFT", -PLATE_ICON_GAP, 0)
+    else
+        m.window:SetPoint("CENTER", spec.portrait or host, "CENTER")
+    end
     m.window:SetClipsChildren(true)
     m.window:Hide()
     m.killBar = HiddenBar(m.window)
     m.killBar:SetPoint("RIGHT", m.window, "RIGHT")
     m.icon = m.killBar:CreateTexture(nil, "OVERLAY")
-    m.hasIcon = not spec.plate and Marker.KillIcon(m.icon)
+    m.hasIcon = Marker.KillIcon(m.icon, spec.plate and PLATE_ICON_HEIGHT or nil)
+    m.iconKey = spec.plate and "plateKillIcon" or "dotKillIcon"
     m.icon:SetPoint("RIGHT", m.killBar:GetStatusBarTexture(), "RIGHT")
     local iw, ih = m.icon:GetSize()
     m.window:SetSize(iw, ih)
@@ -502,8 +516,9 @@ local function RaiseIcon(m)
     local ok, level = pcall(m.spec.iconHost.GetFrameLevel, m.spec.iconHost)
     if ok and type(level) == "number" and not Secret(level) and level ~= m.iconLevel then
         m.iconLevel = level
-        m.window:SetFrameLevel(level + 20)
-        m.killBar:SetFrameLevel(level + 21)
+        local up = m.spec.plate and PLATE_ICON_UP or ICON_UP
+        m.window:SetFrameLevel(level + up)
+        m.killBar:SetFrameLevel(level + up + 1)
     end
 end
 
@@ -623,7 +638,7 @@ local function Refresh(m)
         ns.Bars.StirBar(m.bar)
     end
     m.value = total
-    m.window:SetShown(m.hasIcon and ns.Core.Get("dotKillIcon") and true or false)
+    m.window:SetShown(m.hasIcon and ns.Core.Get(m.iconKey) and true or false)
     RaiseIcon(m)
     return true
 end
@@ -884,7 +899,7 @@ local function MaskOf(bar)
     if type(mask) == "table" and mask.GetObjectType and mask:GetObjectType() == "MaskTexture" then return mask end
 end
 
--- After the dots or dotKillIcon setting changes, and at login.
+-- After the dots, dotKillIcon or plateKillIcon setting changes, and at login.
 function Marker.Apply()
     local want = ns.Core.Get("dots") and true or false
     local wantPlates = PlatesWanted()

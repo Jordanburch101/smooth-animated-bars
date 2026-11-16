@@ -310,8 +310,11 @@ function Options.Register(savedDB, defaultValues)
         SameAsOptions("Same as Target"), { indent = true, shown = On("plateHealth") })
     Row(Settings.CreateCheckboxInitializer(Register("plateDots", "Your DoTs on Nameplates"), nil,
         "The DoT marker on enemy nameplates: on every mob carrying your damage-over-time spells, not just your "
-        .. "target, the health they will still burn away turns into a liquid of their own colour. No kill icon or "
-        .. "poison skulls on nameplates."), nil, { indent = true, shown = On("plateHealth") })
+        .. "target, the health they will still burn away turns into a liquid of their own colour. No poison skulls "
+        .. "on nameplates."), nil, { indent = true, shown = On("plateHealth") })
+    Row(Settings.CreateCheckboxInitializer(Register("plateKillIcon", "Kill Icon on Nameplates"), nil,
+        "The game's skull beside a nameplate when your DoTs will finish that mob off."), nil,
+        { indent = true, shown = function() return db.plateHealth and db.plateDots end })
     Checkbox("plateFriendly", "Friendly Nameplates",
         "Liquid in the health bars of friendly nameplates: other players and friendly NPCs, never your own. The game "
         .. "shows them only with friendly nameplates switched on in its options, and keeps them to itself in dungeons. "

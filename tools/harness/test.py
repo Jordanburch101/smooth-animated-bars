@@ -229,7 +229,7 @@ check(keys == ["playerHealth", "healthColor", "playerPower", "powerColor", "targ
                "petPowerColor", "focusHealth", "focusHealthColor", "focusPower", "focusPowerColor", "totHealth",
                "totHealthColor", "totPower", "totPowerColor", "partyHealth", "partyHealthColor", "partyPower",
                "partyPowerColor", "prdHealth", "prdHealthColor", "prdPower", "prdPowerColor", "plateHealth",
-               "plateHealthColor", "plateDots", "plateFriendly", "plateFriendlyColor", "mobClassColor",
+               "plateHealthColor", "plateDots", "plateKillIcon", "plateFriendly", "plateFriendlyColor", "mobClassColor",
                "externalBars", "waves", "swirl", "bubbles", "sparkles", "ambient", "lightning", "dots", "dotKillIcon", "heals", "manaBuild", "rageFury"],
       f"settings page rows: {keys}")
 check(not lua.eval("__sharedListTainted"), "nothing added to the game's shared settings list (Forever: Social blocked)")
@@ -2548,8 +2548,26 @@ check(pd.eval("""(function()
         if t.masks and t.masks[1] == mask then return true end
     end
 end)()"""), "the plate's DoT liquids take its mask too, so they keep to the bar's cut corners")
-check(not pd.eval("__pm('nameplate1').window.shown") and not pd.eval("__pm('nameplate1').hasIcon"),
-      "no kill icon on a plate")
+check(pd.eval("__pm('nameplate1').hasIcon") and pd.eval("__pm('nameplate1').window.shown")
+      and pd.eval("issecretvalue(__pm('nameplate1').killBar.max)") and pd.eval("__pm('nameplate1').killBar.value") == 90
+      and pd.eval("__pm('nameplate1').window.clipsChildren"),
+      "the kill icon on a plate: its bar runs over the mob's (secret) health to the DoTs' damage, in its window")
+check(pd.eval("__pm('nameplate1').window.parent == __pbar('nameplate1')")
+      and pd.eval("__pm('nameplate1').window.points.RIGHT.rel == __pbar('nameplate1')")
+      and pd.eval("__pm('nameplate1').window.points.RIGHT.relPoint") == "LEFT"
+      and pd.eval("__pm('nameplate1').window.points.RIGHT.x") == -7
+      and pd.eval("__pm('nameplate1').window.h") == 20,
+      "left of the plate's bar, clear of the target's glow, the height of the plate's background")
+check(pd.eval("__pm('nameplate1').window.level") == pd.eval("__pbar('nameplate1'):GetFrameLevel()") + 5,
+      "over the plate's liquids and text copies (up to +4), not +20 as on the target frame")
+pd.execute("__settings.plateKillIcon:SetValue(false)")
+run(pd, 0.3)
+check(not pd.eval("__pm('nameplate1').window.shown") and pd.eval("__pm('nameplate1').clip.shown"),
+      "Kill Icon on Nameplates off: the plate's marker without the skull")
+pd.execute("__settings.dotKillIcon:SetValue(false); __settings.plateKillIcon:SetValue(true)")
+run(pd, 0.3)
+check(pd.eval("__pm('nameplate1').window.shown"), "the target frame's Kill Icon setting leaves the plates' alone")
+pd.execute("__settings.dotKillIcon:SetValue(true)")
 check(pd.eval("__pm('nameplate1').liquids[1].liquid.body.sub") == -7, "under the plate's health liquid")
 check(pd.eval("__pm('nameplate1').clip.useParentLevel") is False
       and pd.eval("__pm('nameplate1').clip.level") == pd.eval("__pbar('nameplate1'):GetFrameLevel()") + 1,

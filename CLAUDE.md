@@ -278,7 +278,9 @@ Facts found while building this, which the code relies on and which are not obvi
   `/reload`; `tools/perf_report.py` turns the newest saved file under Forever's WTF folder into
   `perf/perf_report.txt` (git-ignored). The DoT marker on plates (`plateDots`, needs `plateHealth`): `Dots.lua`
   keeps DoTs per mob, so `Dots.Unit(token)` reads a plate's; `Marker.lua` builds a marker per plate bar the first
-  time its mob carries the player's DoTs (from `Bars.Plates()`), with no kill icon and no model skulls, and a DoT
+  time its mob carries the player's DoTs (from `Bars.Plates()`), with no model skulls, and its kill icon
+  (`plateKillIcon`, asked for on CurseForge, issue #5) 20 tall and 7 left of the bar, clear of the target's glow,
+  only 5 levels up so it does not draw over the plates beside it (seen in game and right), and a DoT
   landing there shows as more damage to come (Dots says "applied" only for the target). Seen in game: the marker
   works on plates, but a bleed (Blood theme) did not show against a hostile plate's red, and a lighter or darker bleed was
   tried. The real cause was the health: the game tints its grey fill with the plate's colour, so an enemy plate

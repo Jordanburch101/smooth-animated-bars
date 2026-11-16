@@ -109,15 +109,15 @@ Turn it on in the setup or under Damage Over Time in the settings. The health yo
 
 ## Nameplates
 
-![Four nameplates in the game's own bronze style: the targeted Defias Pillager bleeding a beating red Rend ahead of its health, a Kobold Geomancer with Corruption and Immolate burning down as Shadow and Fire liquids, a neutral boar in yellow and a friendly guard in green](https://raw.githubusercontent.com/Jordanburch101/smooth-animated-bars/refs/heads/main/branding/gallery/plates.webp)
+![Four nameplates in the game's own bronze style: the targeted Defias Pillager bleeding a beating red Rend ahead of its health until a heavy blow leaves the Rend enough to finish it and a skull shows beside its plate, a Kobold Geomancer with Corruption and Immolate burning down as Shadow and Fire liquids, a neutral boar in yellow and a friendly guard in green](https://raw.githubusercontent.com/Jordanburch101/smooth-animated-bars/refs/heads/main/branding/gallery/plates.webp)
 
-_Nameplates: Rend beats ahead of the pillager's health, the geomancer burns down under Corruption and Immolate after you tab away, and the boar and the guard keep their own colours._
+_Nameplates: Rend beats ahead of the pillager's health until it will finish it and the skull comes up, the geomancer burns down under Corruption and Immolate after you tab away, and the boar and the guard keep their own colours._
 
 Turn them on in the setup or under Nameplates in the settings, enemy and friendly plates each on their own:
 
 *   **Enemy nameplates** take the liquid in the nameplate's own colour (red, yellow for neutral) or your target's colour. In a big crowd the first 15 get it.
 *   **Friendly nameplates** have a colour of their own: the nameplate's, any theme, or Class Color for other players. Up to 10 get it, apart from the enemies, so a busy city cannot crowd out a fight. Friendly nameplates in dungeons keep the game's bar, as the game keeps them from addons.
-*   **Your DoTs on nameplates:** every mob carrying your damage over time shows it on its nameplate, as your target's frame does, and keeps it when you change target.
+*   **Your DoTs on nameplates:** every mob carrying your damage over time shows it on its nameplate, as your target's frame does, and keeps it when you change target. When they will finish a mob off, the game's skull shows beside its nameplate (Kill Icon on Nameplates).
 *   **The game's nameplates stay its own:** health numbers turned on in the game's nameplate settings show over the liquid.
 
 ## Mana regen build-up
@@ -173,7 +173,7 @@ Open the settings with `/sab`, from **Open Settings** when you right-click your 
 *   **Healing:** Heal Marker, for your heals, bandages, food and drink.
 *   **Mana:** Mana Regen Build-Up.
 *   **Rage:** Rage Fury.
-*   **Nameplates:** Enemy Nameplates and their Colour, Your DoTs on Nameplates, and Friendly Nameplates with a Colour of their own.
+*   **Nameplates:** Enemy Nameplates and their Colour, Your DoTs on Nameplates with their Kill Icon, and Friendly Nameplates with a Colour of their own.
 *   **Other Addons:** Other Addons' Bars, for unit frame addons that hand their bars over.
 *   **Setup Wizard:** run the seven-step setup again. **What's New:** what changed in the latest versions.
 
