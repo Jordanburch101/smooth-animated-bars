@@ -571,13 +571,13 @@ end
 -- Reads the DoTs and sets the bars' ranges and goals. False when there is nothing to show.
 local function Refresh(m)
     local spec = m.spec
-    local landed = m.landed
-    m.landed = false
+    local landed, calm = m.landed, m.calm
+    m.landed, m.calm = false, nil
     if not spec.visible() then return false end
     local max, health, total, list = spec.source()
     if not list or #list == 0 or total <= 0 then return false end
     -- Dots.lua says "applied" only for the target; on a nameplate a DoT landing shows as more damage to come.
-    if spec.plate and not m.fresh and total > m.value + 0.5 then landed = true end
+    if spec.plate and not m.fresh and not calm and total > m.value + 0.5 then landed = true end
 
     local groups = Groups(list)
     local running = 0
@@ -589,8 +589,8 @@ local function Refresh(m)
                 d.themeKey = key
                 d.liquid:SetTheme(DotTheme(key, spec.plate))
             end
-            -- A tick (less to come) ripples its liquid.
-            if not landed and running + g.damage < d.value - 0.5 and d.pool:IsShown() then
+            -- A tick (less to come) ripples its liquid; not the ticks of a fade, all at once when it shows.
+            if not landed and not calm and running + g.damage < d.value - 0.5 and d.pool:IsShown() then
                 d.liquid:Splash(SPLASH_TICK, m.width - 8, m.width)
                 if key == "plague" then EmitSkulls(m, d, SKULL_TICK) end
             end
@@ -646,8 +646,16 @@ local function Refresh(m)
 end
 
 local function Update(m, dt)
-    local visible = m.bar:IsVisible() -- a secret answer is taken as visible
-    if not Secret(visible) and not visible then return Hide(m) end
+    local sight = ns.Bars.Sight(m.bar) -- a secret answer is taken as shown
+    if sight == "hidden" then return Hide(m) end
+    -- Faded out by another addon (an idle fade, or a unit frame addon's hidden game frame), and perhaps soon back: paused
+    -- as it is, not hidden, which would grow the DoTs in again from nothing on every fade-in. Nothing is saved up for
+    -- its return: no landing, and no ticks, all at once when it shows.
+    if sight == "faded" then
+        m.landed, m.calm = false, true
+        m.since = REFRESH_EVERY -- read again the moment it shows
+        return
+    end
     m.feed = m.feed + dt
     if m.feed >= FEED_EVERY then
         m.feed = 0

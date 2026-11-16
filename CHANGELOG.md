@@ -4,6 +4,15 @@ Player-facing notes for each release. Write for players: what they can now
 do or see, and what was broken and now works. Leave out internal changes.
 Sections are `### New` and `### Fixed`; skip one that would be empty.
 
+## 1.10.1
+
+### Fixed
+- **Faded-out frames**: bars on a frame that another addon has faded out
+  completely (a unit frame addon hiding the game's player frame, or an
+  addon that fades your UI while you are idle) no longer keep animating
+  unseen. The liquid pauses and picks up again as soon as the frame fades
+  back in.
+
 ## 1.10.0
 
 ### New

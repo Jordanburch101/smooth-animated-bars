@@ -373,6 +373,16 @@ Facts found while building this, which the code relies on and which are not obvi
   A target's health bar gets the DoT marker (`Marker.lua`, `BuildExternal`, `RaiseExternal`): seen missing in game (a
   Rend on Frames Forever's target), and working after. Measured against `UnitHealthMax("target")`, at the liquid's level, no kill icon,
   hidden on a bar filling from the right; `Bars.Front` puts a mirrored bar's front back on its fill's left edge.
+  Frames Forever hides the game's player and pet frames with `SetAlpha(0)` (target, focus and party it reparents to a
+  hidden frame), and "immersion" addons fade idle frames out the same way. `IsVisible` does not see alpha, so in
+  Halfdays' `/sab perf` the hidden player frame's liquids still ran (0.12 ms a frame each). So a bar is `shown`,
+  `hidden` (`IsVisible` false) or `faded` (effective alpha under 0.01; `Bars.lua`, `Sight`: `GetEffectiveAlpha`, frames
+  only, `SecretReturnsForAspect` Alpha and `RequiresScriptObjectAlphaAccess`, so under `pcall`, a secret taken as
+  shown). It is found once a frame in `UpdateBar` (`b.sight`) and reused by events, `/sab perf` and the markers
+  (`Bars.Sight`): each check is three widget calls. A faded liquid pauses like a hidden one. A faded marker pauses
+  rather than hides: hidden, it forgot what it had shown, so each fade-in replayed a meal's release and grew the DoTs
+  in from nothing (a review caught it). While faded it drops landings and ticks (`calm`), and a buff reached meanwhile
+  sates the bar quietly (`Bars.Sate`). Not yet seen in game.
 - **Toc changes** (a new file) need a full game restart; `/reload` does not pick them up.
 - **Capture:** `/sab capture` uses `Screenshot()` and the `screenshotFormat` CVar (TGA, put back after).
   The screenshot is the full render resolution (an ultrawide 3440x1440 here), and the red "?" target

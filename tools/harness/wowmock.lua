@@ -125,6 +125,24 @@ end
 function Region:IsVisible()
     return self.shown and (not self.parent or self.parent:IsVisible())
 end
+-- A frame that ignores its parents' alpha (SimpleScriptRegionAPI) shows at its own whatever they fade to.
+function Region:SetIgnoreParentAlpha(v) self.ignoreParentAlpha = v and true or false end
+function Region:IsIgnoringParentAlpha() return self.ignoreParentAlpha or false end
+-- A frame's alpha times its parents', up to one that ignores its parents' (SimpleFrameAPI, frames only;
+-- SecretReturnsForAspect Alpha: a secret on the way makes the answer one).
+function Region:GetEffectiveAlpha()
+    assert(self.kind == "Frame", "GetEffectiveAlpha on a " .. tostring(self.kind))
+    local a, secret, f = 1, false, self
+    while f do
+        local own = f.alpha
+        if issecretvalue(own) then secret, own = true, __reveal(own) end
+        a = a * own
+        if f.ignoreParentAlpha then break end
+        f = f.parent
+    end
+    if secret then return __secret(a) end
+    return a
+end
 function Region:SetClampedToScreen() end
 function Region:SetMovable() end
 function Region:RegisterForDrag() end

@@ -2269,6 +2269,115 @@ check(ph.eval(f"__ns.Bars.Liquid({PH}).energy") < 0.05,
 ph.execute(f"{PRD}:Show()")
 check(not any("Error in" in m for m in chat(ph)), "no errors")
 
+print("== faded out")
+# Frames Forever hides the player frame with SetAlpha(0), and "immersion" addons fade idle frames out the same way:
+# IsVisible still says yes, but a liquid there would run for nothing.
+fo = session()
+run(fo, 1)
+fo.execute("""
+    __updates = 0
+    local liq = __ns.Bars.Liquid(PlayerFrame.healthbar)
+    local update = liq.Update
+    liq.Update = function(self, ...) __updates = __updates + 1; return update(self, ...) end
+""")
+run(fo, 1)
+check(fo.eval("__updates") > 0, f"a shown bar's liquid updates ({fo.eval('__updates')} updates)")
+fo.execute("PlayerFrame.PlayerFrameContent:SetAlpha(0); __updates = 0")
+run(fo, 2)
+fo.execute("for _ = 1, 20 do __fire('UNIT_HEALTH', 'player') end")
+check(fo.eval("__updates") == 0 and fo.eval("__ns.Bars.Liquid(PlayerFrame.healthbar).energy") < 0.05,
+      f"the player frame faded out (alpha 0): its liquid is neither updated nor stirred ({fo.eval('__updates')} updates)")
+fo.execute("PlayerFrame.PlayerFrameContent:SetAlpha(0.3); __step(1 / 144)")
+check(fo.eval("__updates") > 0 and fo.eval("(select(2, __liquid(PlayerFrame.healthbar)))") > 0,
+      "faded half in again, it is drawn on the first frame")
+fo.execute("PlayerFrame.PlayerFrameContent:SetAlpha(__secret(0)); __updates = 0")
+run(fo, 0.5)
+check(fo.eval("__updates") > 0, "an alpha the client keeps secret is taken as visible")
+fo.execute("""
+    PlayerFrame.PlayerFrameContent:SetAlpha(0)
+    PlayerFrame.PlayerFrameContent.PlayerFrameContentMain.HealthBarsContainer:SetIgnoreParentAlpha(true)
+    __updates = 0
+""")
+run(fo, 0.5)
+check(fo.eval("__updates") > 0, "a bar in a frame that ignores its parent's alpha still shows, and still updates")
+fo.execute("PlayerFrame.PlayerFrameContent.PlayerFrameContentMain.HealthBarsContainer:SetIgnoreParentAlpha(false)")
+run(fo, 0.1)
+fo.execute("SlashCmdList.SMOOTHANIMATEDBARS('debug')")
+check(any("visible no (faded out)" in m for m in chat(fo)), "/sab debug tells a faded-out bar from a hidden one")
+fo.execute("PlayerFrame.PlayerFrameContent:SetAlpha(1)")
+check(not any("Error in" in m for m in chat(fo)), "no errors")
+
+# The markers pause while faded out, not hide: hidden, they forgot what they had shown and played it again on every
+# fade-in (a meal's release, the DoTs growing in from nothing).
+fm = session("{ setupDone = true }", "__player.class = 'DRUID'; __player.power = 0")
+fm.execute(f"""
+    __spells[433] = {{ 'Food', '{FED_FOOD}' }}
+    function __eat(id, guid)
+        __fire('UNIT_SPELLCAST_SENT', 'player', '', guid, id)
+        __fire('UNIT_SPELLCAST_SUCCEEDED', 'player', guid, id)
+    end
+    function __stars()
+        local n = 0
+        for _, m in ipairs(__ns.Bars.Liquid(PlayerFrame.healthbar).motes) do
+            if m.active and m.style and m.style.texture == 'Star' then n = n + 1 end
+        end
+        return n
+    end
+    function __fade(a) PlayerFrame.PlayerFrameContent:SetAlpha(a) end
+""")
+fm.execute("__eat(433, 'Cast-1')")
+run(fm, 13)
+fm.execute("__fade(0)")
+run(fm, 1)
+fm.execute("__fade(1)")
+run(fm, 0.3)
+most = fm.eval("__stars()")
+run(fm, 2)
+check(most < 25 and 0 < fm.eval("__stars()") < 25,
+      f"faded out and back after a meal's buff: its release is not played again ({most} stars), slow stars go on")
+fm.execute("__fire('PLAYER_STARTED_MOVING')")
+run(fm, 3)
+fm.execute("__eat(433, 'Cast-2')")
+run(fm, 5)
+fm.execute("__fade(0)")
+run(fm, 6.5)
+fm.execute("__fade(1)")
+run(fm, 0.3)
+most = fm.eval("__stars()")
+run(fm, 2)
+check(most < 25 and 0 < fm.eval("__stars()") < 25,
+      f"the buff reached while faded out: no release saved up for the fade-in ({most} stars), the slow stars after it")
+check(not any("Error in" in m for m in chat(fm)), "no errors")
+
+fd = session("{ setupDone = true, dots = true }")
+fd.execute("""
+    __spells[172] = { 'Corruption', 'Corrupts the target, causing 90 Shadow damage over 18 sec.' }
+    __spells[348] = { 'Immolate', 'Burns the enemy for 11 Fire damage and then an additional 20 Fire damage over 15 sec.' }
+    function __cast(id, guid)
+        __fire('UNIT_SPELLCAST_SENT', 'player', __target and __target.name or '', guid, id)
+        __fire('UNIT_SPELLCAST_SUCCEEDED', 'player', guid, id)
+    end
+    function __d(i) return (__ns.Marker.State()).liquids[i] end
+    __target = { guid = 'Creature-0-1-2-3-299-0001', name = 'Mottled Boar' }
+    __fire('PLAYER_TARGET_CHANGED')
+""")
+run(fd, 0.3)
+fd.execute("__cast(172, 'Cast-1')")
+run(fd, 3)
+before = fd.eval("__d(1).shown")
+fd.execute("TargetFrame:SetAlpha(0)")
+run(fd, 0.5)
+fd.execute("__cast(348, 'Cast-2')")
+run(fd, 0.5)
+fd.execute("TargetFrame:SetAlpha(1)")
+run(fd, 0.15)
+after = fd.eval("__d(1).shown")
+check(after > 0.8 * before and fd.eval("(__ns.Marker.State()).clip.shown"),
+      f"the target frame faded out and back: its DoT liquids stay as they were, not grown in again ({before:.1f}, {after:.1f})")
+check(fd.eval("__d(1).liquid.energy") < 0.3 and fd.eval("__d(2).liquid.energy") < 0.3,
+      "and a DoT that landed while it was faded out does not splash late")
+check(not any("Error in" in m for m in chat(fd)), "no errors")
+
 print("== enemy nameplates")
 
 

@@ -522,11 +522,24 @@ local function AlphaTo(region, alpha)
     if Secret(now) or now ~= alpha then region:SetAlpha(alpha) end
 end
 
--- Whether a region is visible; IsVisible can answer with a secret (SecretReturnsForAspect Shown), taken as visible.
-local function Visible(region)
+-- How a bar can be seen: "shown", "hidden" (IsVisible says no) or "faded" (shown, but its effective alpha under 0.01;
+-- not a local of its own, as the file is at Lua's 200). Addons hide frames with SetAlpha(0) too (Frames Forever hides the player frame so, and "immersion"
+-- addons fade idle frames out), which IsVisible does not see, and a liquid there would run for nothing. IsVisible and
+-- GetEffectiveAlpha can answer with secrets (SecretReturnsForAspect Shown, Alpha), taken as shown. GetEffectiveAlpha
+-- is under pcall: Forever's docs mark it RequiresScriptObjectAlphaAccess, which may refuse some frames.
+local function Sight(region)
     local v = region:IsVisible()
-    if Secret(v) then return true end
-    return v and true or false
+    if Secret(v) then return "shown" end
+    if not v then return "hidden" end
+    local ok, a = pcall(region.GetEffectiveAlpha, region)
+    if not ok or Secret(a) or type(a) ~= "number" then return "shown" end
+    return a < 0.01 and "faded" or "shown"
+end
+
+-- Whether one of our bars can be seen, as UpdateBar found it this frame (b.sight): asked again on every event and by
+-- the markers, it would cost the same widget calls again.
+local function Seen(b)
+    return (b.sight or Sight(b.bar)) == "shown"
 end
 
 -- What the game draws in the bar that the liquid replaces: the fill, and on the player's health bar
@@ -547,6 +560,7 @@ local FuryOff -- the rage bar's fury going (below)
 local function SetLive(b, live)
     if live == b.live then return end
     b.live = live
+    b.sight = nil -- found again on its next update, not kept from before
     b.clip:SetShown(live and not b.away)
     if b.texts then b.texts.frame:SetShown(live) end
     if b.shadeFrame then b.shadeFrame:SetShown(live) end
@@ -1321,7 +1335,8 @@ end
 
 local function UpdateBar(b, dt)
     local bar = b.bar
-    if not Visible(bar) then
+    b.sight = Sight(bar)
+    if b.sight ~= "shown" then
         b.unseen = true
         return
     end
@@ -1727,7 +1742,7 @@ local function RunBar(b, dt)
         if b.token then plateOf[b.token] = nil end
     end
     -- Counted for /sab perf only while it shows: a hidden frame's bar (no focus, no pet) costs next to nothing.
-    return ok and Visible(b.bar)
+    return ok and Seen(b)
 end
 
 -- An error in one bar is kept for /sab debug and reported once, and that bar goes back to the
@@ -1824,7 +1839,7 @@ local function OnEvent(_, event, unit, ...)
         local spent
         for _, b in pairs(bars) do
             -- Not on a hidden bar (the display out of combat): its burst would wait there until the bar shows.
-            if b.live and b.unit == "player" and b.fury and b.fury.on and Visible(b.bar) then
+            if b.live and b.unit == "player" and b.fury and b.fury.on and Seen(b) then
                 if spent == nil then spent = CostsRage(spellID) end
                 if spent then Release(b) end
             end
@@ -1870,7 +1885,7 @@ local function OnEvent(_, event, unit, ...)
                     if b.kind == "power" then
                         if b.spot.flat then b.colorIn = 0 else ApplyColor(b) end
                     end
-                elseif STIR_EVENTS[event] == b.kind and Visible(b.bar) then
+                elseif STIR_EVENTS[event] == b.kind and Seen(b) then
                     -- A bar of one power (the Personal Resource Display's mana under a form) stirs only with it. A
                     -- hidden bar is not stirred: a hidden party bar can still have the player on it from Edit Mode.
                     local token = ...
@@ -2129,7 +2144,7 @@ end
 -- colour, and slow stars keep rising until the meal ends.
 function Bars.Release(bar)
     local b = StateFor(bar)
-    if not b or not b.live or not b.inflow or not Visible(b.bar) then return end
+    if not b or not b.live or not b.inflow or not Seen(b) then return end
     b.charge, b.sated, b.flash = nil, true, 1
     local theme, w, h = b.inflow.theme, b.width, b.height
     for _ = 1, RELEASE_STARS do
@@ -2137,6 +2152,12 @@ function Bars.Release(bar)
             theme.tip, theme.splashTo, STAR)
     end
     b.liquid:Splash(0.8, 0, w)
+end
+
+-- The buff was reached while the bar was faded out: no release to see, only the slow stars when it shows again.
+function Bars.Sate(bar)
+    local b = StateFor(bar)
+    if b then b.charge, b.sated = nil, true end
 end
 
 -- The wait before mana regenerates: progress 0..1, or nil when it is called off.
@@ -2154,7 +2175,7 @@ function Bars.WaitOver(bar)
     b.waitProgress = nil
     -- Not into a hidden bar (the mana under a druid's form in caster form, the display out of combat): the stars would
     -- wait there and burst out when it shows.
-    if not b.live or b.inflow or not OnMana(b) or not Visible(b.bar) then return end
+    if not b.live or b.inflow or not OnMana(b) or not Seen(b) then return end
     local w, h, liquid = b.width, b.height, b.liquid
     local theme = liquid.theme
     b.buildFlash, b.buildPhase, b.buildAcc = 1, 0, 0
@@ -2395,6 +2416,14 @@ end
 -- A region's width and height, or the fallbacks while the client keeps them secret (for the markers).
 Bars.Size = Size
 
+-- How a bar can be seen ("shown", "hidden" or "faded"; see Sight), for the markers: as UpdateBar found it this frame
+-- when the bar has a live liquid, else asked now.
+function Bars.Sight(bar)
+    local b = StateFor(bar)
+    if b and b.live and b.sight then return b.sight end
+    return Sight(bar)
+end
+
 -- The Liquid on a bar, if it has one (the heal marker's seam follows its front; also for the tests).
 function Bars.Liquid(bar)
     local b = StateFor(bar)
@@ -2452,7 +2481,9 @@ function Bars.Debug()
             local name = bar.GetDebugName and bar:GetDebugName() or "?"
             out[#out + 1] = string.format("%s (%s, %dx%d): visible %s, value secret %s, mask %s, live %s, "
                 .. "game fill alpha %s, liquid textures shown %d/%d%s",
-                label, name, math.floor(b.width + 0.5), math.floor(b.height + 0.5), YesNo(Visible(bar)),
+                label, name, math.floor(b.width + 0.5), math.floor(b.height + 0.5),
+                -- Hidden and faded out told apart: a frame hidden by the game or reparented, or one another addon faded.
+                ({ shown = "yes", hidden = "no", faded = "no (faded out)" })[Sight(bar)],
                 YesNo(Secret(bar:GetValue())), YesNo(b.mask), YesNo(b.live),
                 fill and (Secret(fill:GetAlpha()) and "secret" or tostring(fill:GetAlpha())) or "none", shown, #b.liquid.textures,
                 b.err and (", error: " .. b.err) or "")

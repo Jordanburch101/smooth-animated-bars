@@ -363,8 +363,8 @@ end
 -- Reads the heals and sets the bars' ranges and goals. False when there is nothing to show.
 local function Refresh(m)
     local spec = m.spec
-    local landed, burst = m.landed, m.burst
-    m.landed, m.burst = false, nil
+    local landed, burst, calm = m.landed, m.burst, m.calm
+    m.landed, m.burst, m.calm = false, nil, nil
     if not spec.visible() then return false end
     local max, total, list = spec.source()
     local groups = (list and #list > 0 and total > 0) and Groups(list) or {}
@@ -387,8 +387,8 @@ local function Refresh(m)
                 d.themeKey = key
                 d.liquid:SetTheme(HealTheme(key))
             end
-            -- A tick (less to come) ripples its liquid.
-            if not landed and running + g.heal < d.value - 0.5 and d.pool:IsShown() then
+            -- A tick (less to come) ripples its liquid; not the ticks of a fade, all at once when it shows.
+            if not landed and not calm and running + g.heal < d.value - 0.5 and d.pool:IsShown() then
                 d.liquid:Splash(SPLASH_TICK, m.width - 8, m.width)
             end
             running = running + g.heal
@@ -464,8 +464,21 @@ local function Refresh(m)
 end
 
 local function Update(m, dt)
-    local visible = m.bar:IsVisible() -- a secret answer is taken as visible
-    if not Secret(visible) and not visible then return Hide(m) end
+    local sight = ns.Bars.Sight(m.bar) -- a secret answer is taken as shown
+    if sight == "hidden" then return Hide(m) end
+    -- Faded out by another addon (an idle fade, or a unit frame addon's hidden game frame), and perhaps soon back: paused
+    -- as it is, not hidden, which would forget a meal's release and play it again on every fade-in. Nothing is saved up
+    -- for its return: no landing or burst, no ticks, and a buff reached meanwhile counts as let go.
+    if sight == "faded" then
+        m.landed, m.burst, m.calm = false, nil, true
+        m.since = REFRESH_EVERY -- read again the moment it shows
+        local progress, startedAt = ns.Heals.Charge(m.name)
+        if progress and progress >= 1 and not (m.released and m.chargeFor == startedAt) then
+            m.chargeFor, m.released = startedAt, true
+            ns.Bars.Sate(m.bar)
+        end
+        return
+    end
     m.feed = m.feed + dt
     if m.feed >= FEED_EVERY then
         m.feed = 0
