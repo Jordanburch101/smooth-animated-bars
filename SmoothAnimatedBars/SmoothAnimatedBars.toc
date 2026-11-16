@@ -26,6 +26,7 @@ SelfProbe.lua
 SmoothAnimatedBars.lua
 Options.lua
 Preview.lua
+Editor.lua
 Capture.lua
 Wizard.lua
 WhatsNewData.lua

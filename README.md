@@ -38,7 +38,7 @@ short setup on the first login lets you choose the look, or skip it.
 - **Rage Fury:** your rage bar grows more furious as it fills, throbs at full rage, ready to burst, and bursts in
   sparks when you spend it.
 - **A quick setup** the first time you log in, with preview frames that show each choice as you pick it, and
-  the settings a right-click away on your frames.
+  an editor a right-click away on your frames, with every setting beside a live preview.
 
 <p align="center"><img src="https://raw.githubusercontent.com/Jordanburch101/smooth-animated-bars/refs/heads/main/branding/gallery/mage.webp" alt="A mage's mana dropping in big bites with each Fireball, and the kobold's health with it"></p>
 <p align="center"><em>Mage: every Fireball takes a bite out of your mana, and out of the kobold.</em></p>
@@ -54,7 +54,7 @@ short setup on the first login lets you choose the look, or skip it.
 <p align="center"><img src="https://raw.githubusercontent.com/Jordanburch101/smooth-animated-bars/refs/heads/main/branding/gallery/rend.webp" alt="A warrior's Rend eating into the target's green health as a red Blood liquid while swings and Heroic Strikes land, until a skull shows on the target's portrait"></p>
 <p align="center"><em>Warrior: Rend bleeds as Blood. When no green is left, it will finish the pillager.</em></p>
 
-Turn it on in the setup or under Damage Over Time in the settings. The health your damage-over-time spells
+Turn it on in the setup or under DoT Marker in the editor. The health your damage-over-time spells
 will still burn away turns into liquid, eating into your target's health liquid:
 
 - **Each school is a liquid of its own:** Shadow, Fire, Frost, Arcane, Holy, Plague for Nature and
@@ -84,7 +84,7 @@ which draws its own marker, this one stays off while DoesItDie is loaded.
 <p align="center"><img src="https://raw.githubusercontent.com/Jordanburch101/smooth-animated-bars/refs/heads/main/branding/gallery/plates.webp" alt="Four nameplates in the game's own bronze style: the targeted Defias Pillager bleeding a beating red Rend ahead of its health until a heavy blow leaves the Rend enough to finish it and a skull shows beside its plate, a Kobold Geomancer with Corruption and Immolate burning down as Shadow and Fire liquids, a neutral boar in yellow and a friendly guard in green"></p>
 <p align="center"><em>Nameplates: Rend beats ahead of the pillager's health until it will finish it and the skull comes up, the geomancer burns down under Corruption and Immolate after you tab away, and the boar and the guard keep their own colours.</em></p>
 
-Turn them on in the setup or under Nameplates in the settings, enemy and friendly plates each on their own:
+Turn them on in the setup or under Nameplates in the editor, enemy and friendly plates each on their own:
 
 - **Enemy nameplates** take the liquid in the nameplate's own colour (red, yellow for neutral) or your target's
   colour. In a big crowd the first 15 get it.
@@ -102,7 +102,7 @@ Turn them on in the setup or under Nameplates in the settings, enemy and friendl
 <p align="center"><img src="https://raw.githubusercontent.com/Jordanburch101/smooth-animated-bars/refs/heads/main/branding/gallery/party.webp" alt="Four party members' frames stacked as in game, a warrior, a priest, a mage and a rogue, their health liquid green and their power in its own colour, red rage, blue mana and yellow energy, rising and falling through a fight"></p>
 <p align="center"><em>Party: each member's health and power in their own colours, rising and falling with the fight.</em></p>
 
-On by default, under Party in the settings, or right-click a party member's frame and choose Open Settings:
+On by default, under Party in the editor, or right-click a party member's frame and choose Open Editor:
 
 - **Each bar follows its own member,** wherever the game puts them, and stirs with every change to their health
   and power.
@@ -118,7 +118,7 @@ On by default, under Party in the settings, or right-click a party member's fram
 <p align="center"><em>Personal Resource Display: the rage grows furious and bursts with every spend, then a bandage pours into the health.</em></p>
 
 The extra health and power bars the game shows with its Personal Resource Display option on, wherever you place
-them with Edit Mode. On by default, under Personal Resource Display in the settings:
+them with Edit Mode. On by default, under Personal Resource in the editor:
 
 - **Shaped to the game's bronze bars,** with the liquid inside their rim and the bar text over it.
 - **Everything your own frame has:** your heals, bandages, food and drink pour in, the mana bar builds up through
@@ -137,7 +137,7 @@ them with Edit Mode. On by default, under Personal Resource Display in the setti
 <p align="center"><img src="https://raw.githubusercontent.com/Jordanburch101/smooth-animated-bars/refs/heads/main/branding/gallery/druid.webp" alt="A druid at half health with Moonfire on the target as a pale blue Arcane liquid, putting Rejuvenation up as a spring green liquid ahead of the health, then casting Healing Touch, which bursts into the health in leaves as it lands"></p>
 <p align="center"><em>Druid: Moonfire stays up on the mystic while Rejuvenation ticks and Healing Touch bursts in.</em></p>
 
-On by default, under Healing in the settings. The health your own heals will still bring back shows ahead of
+On by default, under Heal Marker in the editor. The health your own heals will still bring back shows ahead of
 your health as a liquid of its own:
 
 - **Holy gold** for priest and paladin heals, **spring green** for druid and shaman heals and for bandages,
@@ -173,7 +173,7 @@ It reads English spell text, so on other client languages it may not pick up you
 <p align="center"><img src="https://raw.githubusercontent.com/Jordanburch101/smooth-animated-bars/refs/heads/main/branding/gallery/mana.webp" alt="A mage's mana bar after a Fireball: motes gather into the front of the blue liquid, which turns pale while lightning starts up, then a burst of stars as the mana starts to flow back"></p>
 <p align="center"><em>Mana: the bar builds up through the five seconds after a spell, and lets go as your mana starts to come back.</em></p>
 
-On by default, under Mana in the settings. After a spell that costs mana, your mana stops regenerating from Spirit
+On by default, under Mana Build-Up in the editor. After a spell that costs mana, your mana stops regenerating from Spirit
 for five seconds, and your mana bar shows that wait:
 
 - **It builds up:** motes gather into the front of the liquid, which turns pale and pulses faster while lightning
@@ -191,7 +191,7 @@ for five seconds, and your mana bar shows that wait:
 <p align="center"><img src="https://raw.githubusercontent.com/Jordanburch101/smooth-animated-bars/refs/heads/main/branding/gallery/fury.webp" alt="A warrior trading blows, the red rage bar climbing and heating to a fiery orange crackling with lightning and spitting sparks, throbbing at full rage, then bursting in sparks with each Heroic Strike and Hamstring as it drops back to 40"></p>
 <p align="center"><em>Rage: the bar grows more furious as it fills, throbs at full, and bursts each time you spend it.</em></p>
 
-On by default, under Rage in the settings.
+On by default, under Rage Fury in the editor.
 
 - **It heats up** from about half rage: the red turns to a fiery orange, flames lick up inside, lightning crackles
   and sparks fly off the top, and its front trembles.
@@ -206,26 +206,34 @@ On by default, under Rage in the settings.
 
 <p align="center"><img src="https://raw.githubusercontent.com/Jordanburch101/smooth-animated-bars/refs/heads/main/branding/gallery/themes.png" alt="The player frame's health in eight colours: Game Colour, Class Color, Fire, Frost, Arcane, Fel, Cosmic and Void" width="760"></p>
 
-Open the settings with `/sab`, from Open Settings at the bottom of the menu when you right-click your frame (or
-your target's, pet's, focus's or a party member's), or from Options > AddOns > Smooth Animated Bars:
+Open the editor with `/sab`, from Open Editor at the bottom of the menu when you right-click your frame (or
+your target's, pet's, focus's or a party member's; it opens at that frame), or from Open Editor under Options >
+AddOns > Smooth Animated Bars. It shows live examples of all your frames laid out as on your screen (your own and
+your target's, your pet, focus and target of target, the party, nameplates, the Personal Resource Display and raid
+frames), playing a fight, a beating, a heal or spending power on every one at once. Click a frame to change it; frames
+with the liquid off are dimmed. Each of the frame's bars opens to two tabs: **Colour**,
+following another frame's or a theme picked from its tiles (rest the mouse on one to try it on your bars first), and
+**Effects**, the global ones or the bar's own.
 
-- **Player, Target, Pet, Focus and Target of Target:** each frame's Health and Power, on or off, and while one is
-  on, its colour. Game Colour keeps green health and the game's power colours (blue mana, red rage, yellow
-  energy); any theme brings its own colours and particles. Same as Yours (target, pet) and Same as Target
-  (focus, target of target) follow those, and are where they start.
-- **Party and Personal Resource Display:** the same, each Same as Yours to start with.
+- **Player, Target, Focus, Pet and Target of Target:** each frame's Health and Power, on or off, and its colour.
+  Game Colour keeps green health and the game's power colours (blue mana, red rage, yellow energy); any theme brings
+  its own colours and particles. Following yours (target, pet) or your target's (focus, target of target) is where
+  they start.
+- **Party, Raid and Personal Resource:** the same; party and the Personal Resource Display are Same as Yours to
+  start with, and raid frames their own colours.
 - **Class Color** shows each unit's own: yours on your bars and your pet's, another player's on theirs. While
   your target's, focus's or target of target's bars show it, Class Color on Mobs says what it shows on a mob:
   Reaction (red if hostile, yellow if neutral, green if friendly), Game Colour (so only players show a class),
   Mob's Class or Your Class.
-- **Effects:** Liquid Waves, Magic Swirl, Bubbles, Sparkles, Theme Particles and Lightning.
-- **Damage Over Time:** DoT Marker and Kill Icon.
-- **Healing:** Heal Marker, for your heals, bandages, food and drink.
-- **Mana:** Mana Regen Build-Up.
-- **Rage:** Rage Fury.
-- **Nameplates:** Enemy Nameplates and their Colour (the nameplate's own, any theme, or Same as Target), Your DoTs
-  on Nameplates with their Kill Icon, and Friendly Nameplates with a Colour of their own.
-- **Setup Wizard:** run the seven-step setup again. **What's New:** what changed in the latest versions.
+- **Nameplates:** Enemy Nameplates and their colour (the nameplate's own, any theme, or Same as Target), Your DoTs
+  on Nameplates with their Kill Icon, and Friendly Nameplates with a colour of their own.
+- **The Effects tab:** Liquid Waves, Magic Swirl, Bubbles, Sparkles, Theme Particles and Lightning, for every bar.
+  A bar can have its own instead (its Effects tab), so one bar can go without bubbles, say.
+- **The Combat tab:** DoT Marker and its Kill Icon, Heal Marker (your heals, bandages, food and drink; play Healing
+  to see it), Mana Regen Build-Up and Rage Fury.
+- **The Other Addons tab:** the liquid in other unit frame addons' bars.
+- **Defaults** puts the frame or tab shown back as it started. **Run Setup** runs the seven-step setup again, and
+  **What's New** shows what changed in the latest versions.
 
 The setup asks which bars you want (every frame, just yours and your pet's, or just health), picks your colours
 from a few favourites, then your target's, your party's (health and power, just health, or off, and their colour,
@@ -238,7 +246,7 @@ as it was.
 
 | Command | |
 |---|---|
-| `/sab` | Open the settings |
+| `/sab` | Open the editor: every setting beside a live preview |
 | `/sab on` / `/sab off` | Liquid in all the bars, or back to the game's own bars |
 | `/sab setup` | Open the setup again |
 | `/sab changes` | What changed in the latest versions, as shown once after each update |
@@ -324,7 +332,7 @@ of its own; a raid frame would cost more than the game's frames together). Remov
   as liquids past the health, measured against the target's real health. No kill icon, as your portrait is your own.
   The marker then sits at `level` and the health liquid one level higher, so its front lies over the marker.
 
-Players can switch other addons' bars off under Other Addons in the settings or with `/sab off`.
+Players can switch other addons' bars off under Other Addons in the editor or with `/sab off`.
 
 ## Install
 

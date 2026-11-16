@@ -186,7 +186,7 @@ end
 
 local Refresh
 
--- Every pick goes straight into the settings, through their controls so the settings page follows.
+-- Every pick goes straight into the settings, through their controls so the editor follows.
 local function Set(values)
     for key, value in pairs(values) do ns.Core.SetSetting(key, value) end
     Refresh()
@@ -210,7 +210,7 @@ function BUILD.bars(p)
 end
 
 function BUILD.colors(p)
-    Heading(p, "Pick the colours", "A few favourites. Every theme is in the settings.")
+    Heading(p, "Pick the colours", "A few favourites. Every theme is in the editor (/sab).")
     ui.cards.healthColor, ui.cards.powerColor = {}, {}
     for row, key in ipairs({ "healthColor", "powerColor" }) do
         local y = -56 - (row - 1) * 82
@@ -264,7 +264,7 @@ function BUILD.party(p)
     Row("Bars", "party", -56, PARTY)
     Row("Colour", "partyHealthColor", -102, PARTY_COLORS)
     local note = Font(p, "GameFontHighlightSmall", "Class Color shows each member's class. Power follows your own power "
-        .. "colour; every theme is in the settings. Raid-style party frames are under Raid Frames in the settings.",
+        .. "colour; every theme is in the editor. Raid-style party frames are under Raid in the editor.",
         "LEFT")
     note:SetPoint("TOPLEFT", 0, -178)
     note:SetWidth(W - 72)
@@ -273,7 +273,7 @@ function BUILD.party(p)
 end
 
 function BUILD.effects(p)
-    Heading(p, "How lively?", "Each effect can be turned on or off in the settings later.")
+    Heading(p, "How lively?", "Each effect can be turned on or off in the editor later.")
     ui.cards.effects = Cards(p, EFFECTS, -46)
 end
 

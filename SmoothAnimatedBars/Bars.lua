@@ -332,6 +332,24 @@ local External = { LOOK_EVERY = 0.1, KINDS = { health = true, power = true }, un
                    -- whole frame. The highest level above the bar an addon can ask for.
                    MAX_GROUP = 10, MAX_LEVEL = 20 }
 
+-- The effect settings a bar's liquids read, live: the bar's own where it has any (Core.Effect), else the global ones.
+-- A bar takes the overrides of its on/off setting's key, the friendly nameplates' for a plate showing a friend (one bar
+-- shows mob after mob), none for another addon's bar. A field, not a local: this file's main chunk is at Lua's limit of
+-- 200 locals (seen in game: "main function has more than 200 local variables").
+function Bars.NewEffectOptions(b)
+    return setmetatable({}, { __index = function(_, effect)
+        local key
+        if b.spot.external then
+            key = nil
+        elseif b.spot.plate and not b.spot.preview then
+            key = b.side == "friend" and "plateFriendly" or "plateHealth"
+        else
+            key = b.spot.key
+        end
+        return ns.Core.Effect(key, effect)
+    end })
+end
+
 -- Every bar state, the game's, the previews' and the nameplates'.
 local function Each(fn)
     for _, b in pairs(bars) do fn(b) end
@@ -407,7 +425,7 @@ end
 -- type (a preview bar, and the Personal Resource Display's mana under a druid's form, name their power type).
 GameColor = function(b, unflat)
     -- A raid frame's power takes its power type's colour, as the game's does (CompactUnitFrame_UpdatePowerColor).
-    if b.spot.raid and b.kind == "health" and not unflat then return Bars.raid.Color(b), "HEALTH" end
+    if (b.spot.raid or b.spot.raidLook) and b.kind == "health" and not unflat then return Bars.raid.Color(b), "HEALTH" end
     if (b.spot.flat or b.spot.external) and not unflat then return PlateColor(b), "HEALTH" end
     if b.kind == "health" then return HEALTH_COLOR, "HEALTH" end
     local index, token
@@ -442,8 +460,13 @@ function Bars.raid.Color(b)
     local getCVar = (C_CVar and C_CVar.GetCVar) or rawget(_G, "GetCVar")
     local okClass, byClass = pcall(getCVar, "raidFramesDisplayClassColor")
     if okClass and byClass == "1" then
+        -- The editor's example raid (Preview.CreateRaid, spot.raidLook): each member's class is its own.
+        if b.spot.preview then
+            local c = b.spot.class and ns.Themes.UnitColor(nil, true, b.spot.class)
+            if c then return c end
+        end
         local ok, isPlayer = pcall(UnitIsPlayer, b.unit)
-        if ok and not Secret(isPlayer) and isPlayer then
+        if not b.spot.preview and ok and not Secret(isPlayer) and isPlayer then
             local c = ns.Themes.UnitColor(b.unit)
             if c then return c end
         end
@@ -558,7 +581,7 @@ local function ApplyColor(b, force)
     -- Power colours change with the power type only when the bar takes the game's colour, and Class Color with the
     -- unit's colour, falling back on the game's. A nameplate's own colour changes with the unit (tapped, hostile).
     local key = choice
-    if b.spot.flat or b.spot.external or b.spot.raid then
+    if b.spot.flat or b.spot.external or b.spot.raid or b.spot.raidLook then
         token = b.plateSecret and "secret" or string.format("%.3f,%.3f,%.3f", own[1], own[2], own[3])
     end
     if choice == "game" then
@@ -940,7 +963,7 @@ local function NewBar(spot, bar)
     -- motes too, which would only clutter a crowd of plates. The Personal Resource Display is one frame, the player's
     -- own, so its motes fly free as on the unit frames; its plate mask cuts the waves.
     -- A raid frame's neighbours touch it, so its motes stay inside its bar too.
-    local spill = (spot.plate or spot.raid or (spot.external and not spot.external.spill)) and 0 or SPILL
+    local spill = (spot.plate or spot.raid or spot.raidLook or (spot.external and not spot.external.spill)) and 0 or SPILL
     clip:SetPoint("TOPLEFT", bar, "TOPLEFT", 0, spill)
     clip:SetPoint("BOTTOMRIGHT", bar, "BOTTOMRIGHT", spill, -spill)
     clip:SetClipsChildren(not spot.raid) -- a raid bar's liquid is cut by a mask (Bars.raid.MASK)
@@ -957,7 +980,8 @@ local function NewBar(spot, bar)
     b.mover = mover
 
     b.spill = spill
-    b.liquid = ns.Liquid.New(mover, math.max(w, 1) + ROOM, math.max(h, 1), ns.Themes.Get(ns.Themes.default), ns.Core.db)
+    b.opts = Bars.NewEffectOptions(b)
+    b.liquid = ns.Liquid.New(mover, math.max(w, 1) + ROOM, math.max(h, 1), ns.Themes.Get(ns.Themes.default), b.opts)
     -- The bar's mask cuts the liquid to the bar. Motes are left free to fly off the front. A nameplate's bar has no
     -- mask, and its bronze rim has cut corners that a square liquid would cover, so the liquid there takes a mask of
     -- the addon's own in the shape of the game's fill (PlateMask.tga, make_media.py). So do the Personal Resource
@@ -1035,7 +1059,7 @@ end
 local function Stir(b)
     local now = GetTime()
     if now < b.stirAt then return end
-    local every = (b.spot.party or b.spot.slow) and PARTY_STIR_EVERY or STIR_EVERY
+    local every = (b.spot.party or b.spot.slow or b.spot.calm) and PARTY_STIR_EVERY or STIR_EVERY
     if b.spot.raid then every = select(2, Bars.raid.Rate()) end
     b.stirAt = now + every
     b.liquid:Splash(STIR, b.width - 8, b.width)
@@ -1209,7 +1233,7 @@ local function NewFury(b)
     f.ready:SetAlpha(0)
     -- As many slices as the bar's liquid, whose front it follows slice by slice.
     f.liquid = ns.Liquid.New(f.inner, math.max(b.width, 1) + ROOM, math.max(b.height, 1), FuryTheme(b.liquid.theme),
-        ns.Core.db, b.liquid.n)
+        b.opts, b.liquid.n)
     f.liquid:Follow(b.liquid, FURY_TREMBLE)
     -- The full bar's throb: a glow on the front at the bar's end and the whole liquid lighting up with it.
     f.wash = f.ready:CreateTexture(nil, "ARTWORK", nil, 6)
@@ -1537,9 +1561,11 @@ local function UpdateBar(b, dt)
         end
     end
     if b.spot.party or b.spot.slow then idleFps = PARTY_FPS end
+    -- An example in the editor that is not being edited (Preview.SetActive) idles slower still.
+    if b.spot.calm then idleFps = 10 end
     if b.spot.raid then idleFps = Bars.raid.Rate() end
     if b.spot.plate then
-        idleFps = PLATE_IDLE_FPS
+        idleFps = b.spot.calm and 10 or PLATE_IDLE_FPS
     else
         Inflow(b, dt, w, h)
         BuildUp(b, dt, w, h)
@@ -1753,6 +1779,7 @@ local function AttachPlate(token)
     end
     b.token, b.unit, b.spot.unit, b.side = token, token, token, side
     b.spot.frame = side == "friend" and "friend" or "plate" -- whose colour setting it takes
+    if b.liquid then b.liquid:ApplyOptions() end -- the other side's effects, should they differ
     b.err, b.colorIn = nil, PLATE_COLOR_EVERY
     RaisePlate(b)
     b.unitFrame = unitFrame
@@ -2224,7 +2251,8 @@ function Bars.Preview(bar, spec)
     spec.preview = true
     if spec.plate then spec.flat = true end
     local b = NewBar(spec, bar)
-    if spec.plate then RaisePlate(b) end
+    -- A flat preview (a nameplate's, the Personal Resource Display's) is raised over its bar, as the real ones are.
+    if spec.flat then RaisePlate(b) end
     previews[#previews + 1] = b
     Bars.Apply()
     return b
@@ -2643,6 +2671,12 @@ function Bars.ApplyColors()
 end
 
 -- After an effect toggle: clear what was just switched off.
+-- The effect settings a bar's liquid reads (its markers' liquids read them too), or the global ones for a bar without.
+function Bars.EffectOptions(bar)
+    local b = StateFor(bar)
+    return b and b.opts or ns.Core.db
+end
+
 function Bars.ApplyOptions()
     Each(function(b)
         b.liquid:ApplyOptions()

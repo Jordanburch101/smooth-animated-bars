@@ -7,13 +7,29 @@ Sections are `### New` and `### Fixed`; skip one that would be empty.
 ## 1.11.0
 
 ### New
+- **The editor**: every setting in one window, beside live examples of all
+  your frames: your own and your target's, your pet, focus and target of
+  target, the party, nameplates, the Personal Resource Display and raid
+  frames, laid out as on your screen.
+  Click one to change it; frames with the liquid off are dimmed. Each bar
+  opens to its colour, every theme a tile in its own colours, and resting
+  the mouse on a tile tries it on your bars before you pick it. The examples
+  can play a fight, a beating, a heal or spending power. Open it with
+  `/sab`, by right-clicking your player, target, pet, focus or party frame
+  (it opens at that frame), or from Open Editor on the addon's page in the
+  game's AddOns settings.
+- **Effects for one bar**: waves, swirl, bubbles, sparkles, theme particles
+  and lightning are still set for every bar under Effects, and now each
+  bar can have its own too: open a bar in the editor, untick Use the global
+  effects under its Effects tab, and turn off Bubbles for just your power
+  bar, say.
 - **Raid frames**: the liquid in the raid frames' health and power bars, and
   in the party's when you use raid-style party frames. The game's names, role
   icons, heal prediction and shields stay on top of it, and an offline member
   keeps the game's grey bar. Health takes the raid frames' own colours, class
   colours or the colour set in the game's Raid Frames options, power its power
   type's, or any theme. Off to start with: turn them on with Health and Power
-  under Raid Frames in the settings.
+  under Raid in the editor.
 
 ### Fixed
 - **Faded-out frames**: bars on a frame that another addon has faded out

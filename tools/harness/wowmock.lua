@@ -268,7 +268,9 @@ local FONT_OBJECTS = {
 }
 function Region:CreateFontString(_, layer, template)
     assert(template == nil or FONT_OBJECTS[template], "unknown font object " .. tostring(template))
-    return NewRegion("FontString", self, layer, 0)
+    local fs = NewRegion("FontString", self, layer, 0)
+    fs.template = template -- for drawing it (editor_shot.py)
+    return fs
 end
 
 -- Rect relative to the region's parent, top-left origin, y down.
@@ -307,6 +309,7 @@ local ROW_TEMPLATES = {
     SettingsListSectionHeaderTemplate = true,
 }
 local TEMPLATES = { MinimalScrollBar = true, UIPanelButtonTemplate = true, UIRadioButtonTemplate = true,
+                    UICheckButtonTemplate = true,
                     ButtonFrameTemplate = true }
 local RowTemplate = {}
 function RowTemplate.Init(self, initializer)

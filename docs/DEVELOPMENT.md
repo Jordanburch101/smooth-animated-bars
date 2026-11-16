@@ -14,7 +14,7 @@ explains the details.
 
 | Folder | What it is |
 |---|---|
-| `SmoothAnimatedBars/` | The addon. `Bars.lua` puts the liquid on the unit frames, `Liquid.lua` draws it, `Themes.lua` holds the themes, `Dots.lua` tracks the player's DoTs (ported from DoesItDie) and `Marker.lua` marks them on the target, `Heals.lua` tracks the player's heals on themselves and `HealMarker.lua` marks them on the player's health, `ManaRule.lua` times the wait before mana regenerates, which `Bars.lua` draws, `Options.lua` the settings page, `Wizard.lua` the setup and `Preview.lua` its preview frames, `Capture.lua` the gallery's art capture |
+| `SmoothAnimatedBars/` | The addon. `Bars.lua` puts the liquid on the unit frames, `Liquid.lua` draws it, `Themes.lua` holds the themes, `Dots.lua` tracks the player's DoTs (ported from DoesItDie) and `Marker.lua` marks them on the target, `Heals.lua` tracks the player's heals on themselves and `HealMarker.lua` marks them on the player's health, `ManaRule.lua` times the wait before mana regenerates, which `Bars.lua` draws, `Editor.lua` the editor (every setting beside a live preview), `Options.lua` the settings page that opens it, `Wizard.lua` the setup and `Preview.lua` the preview frames both use, `Capture.lua` the gallery's art capture |
 | `tools/make_media.py` | Generates the textures in `SmoothAnimatedBars/Media/` |
 | `tools/harness/` | A mock of the Forever client's API that runs the addon outside the game: tests, previews and the gallery |
 | `tools/capture_art.py` | Cuts Forever's frame art out of the screenshots `/sab capture` takes |
@@ -35,6 +35,17 @@ tools/venv/Scripts/python tools/harness/preview.py SmoothAnimatedBars preview he
 ```
 
 `preview.py` takes any setting as `key=value`, and `power=` for the power type (0 mana, 1 rage, 3 energy).
+
+`editor_shot.py` draws the editor window at each frame and tab (or the ones named; `closed` closes the bar drawers)
+to check its layout:
+
+```powershell
+cd tools/harness; ../venv/Scripts/python editor_shot.py ../../SmoothAnimatedBars shots player plates effects
+```
+
+The mock has no art for the game's templates and atlases, so the window, buttons and check buttons are plain
+stand-ins and the examples' art is outlined. It does not apply `SetScale` either, so the raid example (at 85%) draws
+too big. It shows where things sit; how the game's art looks is for the game.
 
 ## The in-game changelog
 

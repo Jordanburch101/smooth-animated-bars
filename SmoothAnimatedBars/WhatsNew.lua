@@ -191,9 +191,9 @@ local function Create()
 
     local close = Button(frame, "Close", 100, function() frame:Hide() end)
     close:SetPoint("BOTTOMRIGHT", -16, 14)
-    local settings = Button(frame, "Open Settings", 130, function()
+    local settings = Button(frame, "Open Editor", 130, function()
         frame:Hide()
-        ns.Core.OpenSettings()
+        ns.Core.OpenEditor()
     end)
     settings:SetPoint("RIGHT", close, "LEFT", -8, 0)
 end

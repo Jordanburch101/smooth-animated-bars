@@ -70,6 +70,61 @@ local DOTS = {
     {},
 }
 
+-- Scenes the frames can play instead (the editor's buttons): the fight above, the player taking a beating, being healed
+-- back up, and spending power and getting it back. Each is rows as SCRIPT's, looped, with the DoTs only in the fight.
+local SCENES = {
+    fight = { rows = SCRIPT, dots = DOTS, loop = LOOP },
+    damage = { loop = 6.0, rows = {
+        { 0.0, 1.00, 0.60, 1.00, 0.90 },
+        { 0.8, 0.82, 0.60, 1.00, 0.90 },
+        { 1.6, 0.64, 0.60, 1.00, 0.90 },
+        { 2.4, 0.47, 0.60, 1.00, 0.90 },
+        { 3.2, 0.30, 0.60, 1.00, 0.90 },
+        { 4.0, 0.15, 0.60, 1.00, 0.90 },
+    } },
+    -- A Renew (Holy, school 2) ticking the health back up, then a bandage (Nature-green) joining it, each shown ahead
+    -- of the health by the heal marker while the heals setting is on: { school, health still to come of the 271 }.
+    heal = { loop = 7.6, rows = {
+        { 0.0, 0.30, 0.60, 1.00, 0.90 },
+        { 0.6, 0.30, 0.60, 1.00, 0.90 },
+        { 1.6, 0.42, 0.60, 1.00, 0.90 },
+        { 2.6, 0.54, 0.60, 1.00, 0.90 },
+        { 3.6, 0.66, 0.60, 1.00, 0.90 },
+        { 4.6, 0.78, 0.60, 1.00, 0.90 },
+        { 5.6, 0.90, 0.60, 1.00, 0.90 },
+        { 6.6, 1.00, 0.60, 1.00, 0.90 },
+    }, heals = {
+        {},
+        { { 2, 150 } },
+        { { 2, 118 } },
+        { { 2, 86 } },
+        { { 2, 54 }, { "bandage", 60 } },
+        { { 2, 22 }, { "bandage", 40 } },
+        { { "bandage", 20 } },
+        {},
+    } },
+    power = { loop = 6.4, rows = {
+        { 0.0, 1.00, 1.00, 1.00, 1.00 },
+        { 0.8, 1.00, 0.72, 1.00, 0.80 },
+        { 1.6, 1.00, 0.45, 1.00, 0.60 },
+        { 2.4, 1.00, 0.18, 1.00, 0.40 },
+        { 3.4, 1.00, 0.40, 1.00, 0.55 },
+        { 4.2, 1.00, 0.70, 1.00, 0.75 },
+        { 5.0, 1.00, 1.00, 1.00, 1.00 },
+    } },
+}
+Preview.SCENES = { "fight", "damage", "heal", "power" }
+
+-- What each side of the frames can stand for: the frame whose settings its bars follow, its unit, and its name.
+local SIDES = {
+    player = { unit = "player" },
+    prd    = { unit = "player", frame = "prd", name = "Personal Resource" },
+    target = { unit = "target", name = "Your Target" },
+    focus  = { unit = "focus", frame = "focus", name = "Your Focus" },
+    pet    = { unit = "pet", frame = "pet", name = "Your Pet" },
+    tot    = { unit = "targettarget", frame = "tot", name = "Target of Target" },
+}
+
 local function Atlas(tex, name, useSize)
     return tex.SetAtlas and tex:SetAtlas(name, useSize) and true or false
 end
@@ -187,10 +242,35 @@ local function SetFraction(bar, frac)
     ns.Bars.Stir(bar.state)
 end
 
+-- The row of a scene t seconds into it, looped.
+local function RowAt(scene, t)
+    local at, found = t % scene.loop, scene.rows[1]
+    for _, row in ipairs(scene.rows) do
+        if row[1] <= at then found = row end
+    end
+    return found
+end
+
+-- A group's member i (party, raid, nameplates) in one of the frames' scenes, each a little behind the one before.
+local function GroupRow(name, t, i)
+    return RowAt(SCENES[name], t - i * 0.35)
+end
+
+-- The editor shows every example at once, and only the one being edited plays at full speed: the others' clocks run
+-- at SLOW and their liquids idle at a lower rate (Bars.lua, spot.calm). holder.bars: the example's bars.
+local SLOW = 0.35
+function Preview.SetActive(holder, on)
+    holder.speed = on and 1 or SLOW
+    for _, bar in ipairs(holder.bars or {}) do
+        if bar.state then bar.state.spot.calm = (not on) or nil end
+    end
+end
+
 -- The frame: art at the bottom, then the bars and their liquid, then the text, the level circle and
--- the name above them, as the game layers them.
-local function Frame(parent, which)
+-- the name above them, as the game layers them. as: which frame's settings its bars follow (SIDES), which by default.
+local function Frame(parent, which, as)
     local L = LAYOUT[which]
+    local side = SIDES[as or which]
     local f = CreateFrame("Frame", nil, parent)
     f:SetSize(232, 100)
     local top = CreateFrame("Frame", nil, f)
@@ -206,9 +286,12 @@ local function Frame(parent, which)
     name:SetSize(L.name.w, 12)
     if which == "target" then
         name:SetPoint(L.name.point, L.name.x, L.name.y)
-        name:SetText("Your Target")
     else
         name:SetPoint(L.name.point, f, "TOPLEFT", L.name.x, L.name.y)
+    end
+    if side.name then
+        name:SetText(side.name)
+    else
         -- The game's own name text, surname included on Forever.
         local shown = PlayerName and PlayerName.GetText and PlayerName:GetText()
         name:SetText(shown or (UnitName("player")))
@@ -225,20 +308,22 @@ local function Frame(parent, which)
     else
         token, powerMax, info = PowerInfo("player")
     end
-    local key = which == "target" and "target" or "player"
-    f.health = Bar(f, top, L.health, { key = key .. "Health", unit = which, kind = "health",
+    local key = as or which
+    f.health = Bar(f, top, L.health, { key = key .. "Health", unit = side.unit, kind = "health", frame = side.frame,
         max = which == "target" and 210 or 271 })
-    f.power = Bar(f, top, L.power, { key = key .. "Power", unit = which, kind = "power", token = token,
-        max = powerMax, color = info and { info.r, info.g, info.b } or { 0, 0, 1 },
+    f.power = Bar(f, top, L.power, { key = key .. "Power", unit = side.unit, kind = "power", token = token,
+        frame = side.frame, max = powerMax, color = info and { info.r, info.g, info.b } or { 0, 0, 1 },
         fillAtlas = which == "player" and info and info.atlas or nil })
     return f
 end
 
--- Both frames side by side, playing the loop while shown.
-function Preview.Create(parent)
+-- Both frames side by side, playing a scene (the fight by default) while shown. sides: what each stands for, { left =
+-- "player" or "prd", right = "target", "focus", "pet" or "tot" }, the player and the target by default.
+function Preview.Create(parent, sides)
+    sides = sides or {}
     local holder = CreateFrame("Frame", nil, parent)
     holder:SetSize(480, 100)
-    local player, target = Frame(holder, "player"), Frame(holder, "target")
+    local player, target = Frame(holder, "player", sides.left), Frame(holder, "target", sides.right)
     player:SetPoint("LEFT")
     target:SetPoint("RIGHT")
 
@@ -257,27 +342,75 @@ function Preview.Create(parent)
         end,
     })
 
-    local t, step = 0, 0
+    -- The heal marker on the player's health, shown in the heal scene while the heals setting is on.
+    local heals = {}
+    local healer = ns.HealMarker.Preview(player.health, function()
+        local list, total = {}, 0
+        for i, heal in ipairs(heals) do
+            list[i] = { school = heal[1], heal = heal[2] }
+            total = total + heal[2]
+        end
+        return total, list
+    end)
+
+    local t, step, scene = 0, 0, SCENES.fight
     local function Play(i)
-        local row = SCRIPT[i]
+        local row = scene.rows[i]
         SetFraction(player.health, row[2])
         SetFraction(player.power, row[3])
         SetFraction(target.health, row[4])
         SetFraction(target.power, row[5])
-        local landed = #DOTS[i] > #dots
-        dots = DOTS[i]
+        local now = scene.dots and scene.dots[i] or {}
+        local landed = #now > #dots
+        dots = now
         if landed then ns.Marker.Landed(marker) end
+        local coming = scene.heals and scene.heals[i] or {}
+        local applied = #coming > #heals
+        heals = coming
+        if applied and healer then ns.HealMarker.Landed(healer) end
     end
     Play(1)
     holder:SetScript("OnUpdate", function(_, elapsed)
-        t = t + elapsed
-        if t >= LOOP then t, step = t - LOOP, 0 end
-        while SCRIPT[step + 1] and SCRIPT[step + 1][1] <= t do
+        t = t + elapsed * (holder.speed or 1)
+        if t >= scene.loop then t, step = t - scene.loop, 0 end
+        while scene.rows[step + 1] and scene.rows[step + 1][1] <= t do
             step = step + 1
             Play(step)
         end
     end)
-    holder.player, holder.target, holder.marker = player, target, marker
+    -- Play another scene (Preview.SCENES) from its start.
+    function holder.SetScene(_, name)
+        if not SCENES[name] then return end
+        scene, t, step = SCENES[name], 0, 1
+        holder.scene = name
+        Play(1)
+    end
+    holder.scene = "fight"
+    holder.player, holder.target, holder.marker, holder.healer = player, target, marker, healer
+    holder.bars = { player.health, player.power, target.health, target.power }
+    return holder
+end
+
+-- One frame alone, in the target frame's art, standing for the focus, pet or target of target (SIDES), playing the
+-- target's side of the frames' scenes while shown (the editor's screen, where each has a place of its own).
+function Preview.CreateSingle(parent, as)
+    local holder = CreateFrame("Frame", nil, parent)
+    holder:SetSize(232, 100)
+    local f = Frame(holder, "target", as)
+    f:SetPoint("TOPLEFT")
+    local t = 0
+    holder.scene = "fight"
+    holder:SetScript("OnUpdate", function(_, elapsed)
+        t = t + elapsed * (holder.speed or 1)
+        local row = RowAt(SCENES[holder.scene], t)
+        SetFraction(f.health, row[4])
+        SetFraction(f.power, row[5])
+    end)
+    function holder.SetScene(_, name)
+        if not SCENES[name] then return end
+        holder.scene, t = name, 0
+    end
+    holder.target, holder.bars = f, { f.health, f.power }
     return holder
 end
 
@@ -297,6 +430,12 @@ local PARTY = {
               maskAtlas = "UI-HUD-UnitFrame-Party-PortraitOn-Bar-Mana-Mask", maskX = 16 - 44, maskY = -26 + 31 },
 }
 Preview.PARTY = PARTY -- for /sab capture party (Capture.lua)
+-- At Forever's own offsets the example's power bar and mask sat over the gold divider above the mana slot and its left
+-- border (seen in game in the editor, and on the captured art: tools/harness/gallery.py, PARTY_POWER_SHIFT), though the
+-- game's own fill does not. So the example's sit this much further right and down; the capture keeps the game's.
+local PARTY_POWER_SHIFT = { 1.5, -1.9 }
+local SHIFTED_POWER = setmetatable({ x = PARTY.power.x + PARTY_POWER_SHIFT[1], y = PARTY.power.y + PARTY_POWER_SHIFT[2] },
+    { __index = PARTY.power })
 -- The class icons, by file ID, where the client has no class icon atlas.
 local CLASS_ICONS = { WARRIOR = 626008, PRIEST = 626004, MAGE = 626001, ROGUE = 626005 }
 
@@ -343,7 +482,7 @@ local PARTY_SCRIPT = {
     { 7.2, 1.00, 0.10, 1.00, 0.90, 1.00, 1.00, 1.00, 1.00 },
 }
 
-local function Member(holder, spec)
+local function Member(holder, spec, as)
     local name, class, token, powerMax = unpack(spec)
     local f = CreateFrame("Frame", nil, holder)
     f:SetSize(120, 53)
@@ -361,9 +500,9 @@ local function Member(holder, spec)
     label:SetText(name)
 
     local info = PowerBarColor and PowerBarColor[token]
-    f.health = Bar(f, top, PARTY.health, { key = "partyHealth", frame = "party", class = class, unit = "party1",
+    f.health = Bar(f, top, PARTY.health, { key = as .. "Health", frame = as, class = class, unit = "party1",
         kind = "health", max = 400 })
-    f.power = Bar(f, top, PARTY.power, { key = "partyPower", frame = "party", class = class, unit = "party1",
+    f.power = Bar(f, top, SHIFTED_POWER, { key = as .. "Power", frame = as, class = class, unit = "party1",
         kind = "power", token = token, max = powerMax, color = info and { info.r, info.g, info.b } or { 0, 0, 1 },
         fillAtlas = info and info.atlas or nil })
     -- The game shows party bar text only with its status text setting; the examples are cleaner without.
@@ -372,14 +511,22 @@ local function Member(holder, spec)
     return f
 end
 
--- The four members in a row, playing the loop while shown.
-function Preview.CreateParty(parent)
+-- The four members, in a row or (stacked) one under the other as the game shows them, playing their fight, or one of
+-- the frames' scenes (SetScene), while shown. as: whose settings their bars follow, "party" by default.
+function Preview.CreateParty(parent, as, stacked)
     local holder = CreateFrame("Frame", nil, parent)
-    holder:SetSize(4 * 120 + 3 * 10, 53)
+    if stacked then holder:SetSize(120, 4 * 53 + 3 * 4) else holder:SetSize(4 * 120 + 3 * 10, 53) end
     local members = {}
+    holder.bars = {}
     for i, spec in ipairs(MEMBERS) do
-        members[i] = Member(holder, spec)
-        members[i]:SetPoint("LEFT", (i - 1) * 130, 0)
+        members[i] = Member(holder, spec, as or "party")
+        if stacked then
+            members[i]:SetPoint("TOPLEFT", 0, -(i - 1) * 57)
+        else
+            members[i]:SetPoint("LEFT", (i - 1) * 130, 0)
+        end
+        holder.bars[#holder.bars + 1] = members[i].health
+        holder.bars[#holder.bars + 1] = members[i].power
     end
     local t, step = 0, 0
     local function Play(i)
@@ -390,14 +537,147 @@ function Preview.CreateParty(parent)
         end
     end
     Play(1)
+    holder.scene = "fight"
     holder:SetScript("OnUpdate", function(_, elapsed)
-        t = t + elapsed
+        t = t + elapsed * (holder.speed or 1)
+        if holder.scene ~= "fight" then
+            for n, m in ipairs(members) do
+                local row = GroupRow(holder.scene, t, n)
+                SetFraction(m.health, row[2])
+                SetFraction(m.power, row[3])
+            end
+            return
+        end
         if t >= LOOP then t, step = t - LOOP, 0 end
         while PARTY_SCRIPT[step + 1] and PARTY_SCRIPT[step + 1][1] <= t do
             step = step + 1
             Play(step)
         end
     end)
+    function holder.SetScene(_, name)
+        if not SCENES[name] then return end
+        holder.scene, t, step = name, 0, 0
+    end
+    holder.members = members
+    return holder
+end
+
+--------------------------------------------------------------------------------
+-- The preview raid (the editor's raid section)
+--------------------------------------------------------------------------------
+-- The game's raid-style frames (CompactUnitFrameTemplate) as Edit Mode first lays them out: a button 98 x 44 with the
+-- health bar 1 in from its edges and the power bar the bottom 8 of it, a dark background, the member's name top left.
+-- Their art is the game's by path, so it is drawn here in solid colours. Ten members in two rows of five, each with
+-- its class and power type, following the raid settings (raidHealth, raidPower and their colours).
+
+local RAID_W, RAID_H, RAID_POWER_H, RAID_GAP = 98, 44, 8, 3
+local RAIDERS = {
+    { "Brannoc", "WARRIOR", "RAGE", 100 }, { "Elisande", "PRIEST", "MANA", 300 }, { "Corvin", "MAGE", "MANA", 320 },
+    { "Tessaly", "ROGUE", "ENERGY", 100 }, { "Garrik", "PALADIN", "MANA", 280 }, { "Mirelle", "DRUID", "MANA", 300 },
+    { "Vexa", "WARLOCK", "MANA", 310 }, { "Aldric", "PRIEST", "MANA", 290 }, { "Sorin", "MAGE", "MANA", 330 },
+    { "Hadrek", "WARRIOR", "RAGE", 100 },
+}
+-- Each member's health and power walk these, each from its own place, a step every 0.9 seconds.
+local RAID_HEALTH = { 1.00, 0.86, 0.70, 0.92, 0.55, 0.78, 1.00, 0.95 }
+local RAID_POWER = { 0.80, 0.55, 0.35, 0.60, 0.90, 0.45, 0.70, 1.00 }
+local RAID_STEP = 0.9
+
+local function RaidBar(f, top, setup, y, h)
+    local bar = CreateFrame("StatusBar", nil, f)
+    bar:SetPoint("TOPLEFT", 1, y)
+    bar:SetSize(RAID_W - 2, h)
+    local fill = bar:CreateTexture(nil, "ARTWORK")
+    fill:SetColorTexture(1, 1, 1, 1)
+    bar:SetStatusBarTexture(fill)
+    local c = setup.color
+    bar:SetStatusBarColor(c[1], c[2], c[3])
+    bar:SetMinMaxValues(0, setup.max)
+    bar:SetValue(setup.max)
+    bar.max = setup.max
+    -- The game shows a raid frame's health text only with its setting; the example goes without.
+    bar.text = top:CreateFontString(nil, "OVERLAY", "TextStatusBarText")
+    bar.text:Hide()
+    bar.state = ns.Bars.Preview(bar, { key = setup.key, frame = "raid", class = setup.class, unit = "raid1",
+                                       kind = setup.kind, token = setup.token, slow = true, raidLook = true })
+    return bar
+end
+
+local function Raider(holder, spec)
+    local name, class, token, powerMax = unpack(spec)
+    local f = CreateFrame("Frame", nil, holder)
+    f:SetSize(RAID_W, RAID_H)
+    local bg = f:CreateTexture(nil, "BACKGROUND")
+    bg:SetAllPoints()
+    bg:SetColorTexture(0.08, 0.08, 0.08, 0.9)
+    local top = CreateFrame("Frame", nil, f)
+    top:SetAllPoints()
+    top:SetFrameLevel(f:GetFrameLevel() + 10)
+    -- The game's thin dark border round each frame.
+    for _, side in ipairs({ { "TOPLEFT", "TOPRIGHT" }, { "BOTTOMLEFT", "BOTTOMRIGHT" },
+                            { "TOPLEFT", "BOTTOMLEFT" }, { "TOPRIGHT", "BOTTOMRIGHT" } }) do
+        local t = top:CreateTexture(nil, "BORDER")
+        t:SetColorTexture(0, 0, 0, 1)
+        t:SetPoint(side[1])
+        t:SetPoint(side[2])
+        if side[1]:sub(1, 3) == side[2]:sub(1, 3) then t:SetHeight(1) else t:SetWidth(1) end
+    end
+    local colors = (CUSTOM_CLASS_COLORS or RAID_CLASS_COLORS or {})[class]
+    local info = PowerBarColor and PowerBarColor[token]
+    f.health = RaidBar(f, top, { key = "raidHealth", class = class, kind = "health", max = 400,
+        color = colors and { colors.r, colors.g, colors.b } or { 0, 0.8, 0 } }, -1, RAID_H - 2 - RAID_POWER_H)
+    f.power = RaidBar(f, top, { key = "raidPower", class = class, kind = "power", token = token, max = powerMax,
+        color = info and { info.r, info.g, info.b } or { 0, 0, 1 } }, -(RAID_H - 1 - RAID_POWER_H), RAID_POWER_H)
+    local label = top:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+    label:SetPoint("TOPLEFT", 4, -4)
+    label:SetJustifyH("LEFT")
+    label:SetText(name)
+    return f
+end
+
+-- The ten members in two rows, their health and power moving while shown.
+function Preview.CreateRaid(parent)
+    local holder = CreateFrame("Frame", nil, parent)
+    holder:SetSize(5 * RAID_W + 4 * RAID_GAP, 2 * RAID_H + RAID_GAP)
+    local members = {}
+    holder.bars = {}
+    for i, spec in ipairs(RAIDERS) do
+        local m = Raider(holder, spec)
+        local col, row = (i - 1) % 5, math.floor((i - 1) / 5)
+        m:SetPoint("TOPLEFT", col * (RAID_W + RAID_GAP), -row * (RAID_H + RAID_GAP))
+        members[i] = m
+        holder.bars[#holder.bars + 1] = m.health
+        holder.bars[#holder.bars + 1] = m.power
+    end
+    local t, step = 0, -1
+    local function Play(n)
+        for i, m in ipairs(members) do
+            SetFraction(m.health, RAID_HEALTH[(n + i * 3) % #RAID_HEALTH + 1])
+            SetFraction(m.power, RAID_POWER[(n + i * 5) % #RAID_POWER + 1])
+        end
+    end
+    holder.scene = "fight"
+    holder:SetScript("OnUpdate", function(_, elapsed)
+        t = t + elapsed * (holder.speed or 1)
+        if holder.scene ~= "fight" then
+            for i, m in ipairs(members) do
+                local row = GroupRow(holder.scene, t, i)
+                SetFraction(m.health, row[2])
+                SetFraction(m.power, row[3])
+            end
+            return
+        end
+        local n = math.floor(t / RAID_STEP)
+        if n ~= step then
+            step = n
+            Play(n)
+        end
+    end)
+    function holder.SetScene(_, name)
+        if not SCENES[name] then return end
+        holder.scene, t, step = name, 0, -1
+    end
+    Play(0)
+    step = 0
     holder.members = members
     return holder
 end
@@ -548,14 +828,85 @@ function Preview.CreatePlates(parent)
         if landed then ns.Marker.Landed(marker) end
     end
     Play(1)
+    holder.scene = "fight"
     holder:SetScript("OnUpdate", function(_, elapsed)
-        t = t + elapsed
+        t = t + elapsed * (holder.speed or 1)
+        if holder.scene ~= "fight" then
+            if #dots > 0 then dots = {} end
+            for n, bar in ipairs(bars) do SetPlate(bar, GroupRow(holder.scene, t, n)[2]) end
+            return
+        end
         if t >= LOOP then t, step = t - LOOP, 0 end
         while PLATE_SCRIPT[step + 1] and PLATE_SCRIPT[step + 1][1] <= t do
             step = step + 1
             Play(step)
         end
     end)
-    holder.plates, holder.marker = bars, marker
+    function holder.SetScene(_, name)
+        if not SCENES[name] then return end
+        holder.scene, t, step = name, 0, 0
+    end
+    holder.plates, holder.marker, holder.bars = bars, marker, bars
+    return holder
+end
+
+--------------------------------------------------------------------------------
+-- The preview Personal Resource Display (the editor's)
+--------------------------------------------------------------------------------
+-- The game's display (Blizzard_PersonalResourceDisplay): health over power, the plates' bronze bars, here at the sizes
+-- the gallery takes for Edit Mode's defaults (gallery.py, PRD_W...), with the liquid flat and raised as on the real one.
+
+local PRD_W, PRD_HEALTH_H, PRD_POWER_H, PRD_GAP = 200, 12, 10, 4
+
+local function PrdBar(holder, y, h, setup)
+    -- The bronze background on the holder, under the bar and its liquid.
+    local bg = holder:CreateTexture(nil, "BACKGROUND")
+    if Atlas(bg, "UI-HUD-CoolDownManager-Bar-BG") then
+        bg:SetPoint("TOPLEFT", holder, "TOPLEFT", -2, y + 3)
+        bg:SetSize(PRD_W + 8, h + 10)
+    else
+        bg:SetPoint("TOPLEFT", holder, "TOPLEFT", -1, y + 1)
+        bg:SetSize(PRD_W + 2, h + 2)
+        bg:SetColorTexture(0, 0, 0, 0.7)
+    end
+    local bar = CreateFrame("StatusBar", nil, holder)
+    bar:SetSize(PRD_W, h)
+    bar:SetPoint("TOPLEFT", 0, y)
+    local fill = bar:CreateTexture(nil, "ARTWORK")
+    if not Atlas(fill, "UI-HUD-CoolDownManager-Bar") then fill:SetColorTexture(1, 1, 1, 1) end
+    bar:SetStatusBarTexture(fill)
+    local c = setup.color
+    bar:SetStatusBarColor(c[1], c[2], c[3])
+    bar:SetMinMaxValues(0, setup.max)
+    bar:SetValue(setup.max)
+    bar.max = setup.max
+    bar.text = holder:CreateFontString(nil, "OVERLAY", "TextStatusBarText")
+    bar.text:Hide()
+    bar.state = ns.Bars.Preview(bar, { key = setup.key, frame = "prd", unit = "player", kind = setup.kind,
+                                       token = setup.token, flat = true })
+    return bar
+end
+
+-- The display's health and power, playing the frames' scenes (the fight by default) while shown.
+function Preview.CreatePRD(parent)
+    local holder = CreateFrame("Frame", nil, parent)
+    holder:SetSize(PRD_W, PRD_HEALTH_H + PRD_GAP + PRD_POWER_H)
+    local token, powerMax, info = PowerInfo("player")
+    local health = PrdBar(holder, 0, PRD_HEALTH_H, { key = "prdHealth", kind = "health", max = 271, color = { 0, 0.8, 0 } })
+    local power = PrdBar(holder, -(PRD_HEALTH_H + PRD_GAP), PRD_POWER_H, { key = "prdPower", kind = "power",
+        token = token, max = powerMax, color = info and { info.r, info.g, info.b } or { 0, 0, 1 } })
+    local t = 0
+    holder.scene = "fight"
+    holder:SetScript("OnUpdate", function(_, elapsed)
+        t = t + elapsed * (holder.speed or 1)
+        local row = RowAt(SCENES[holder.scene], t)
+        SetFraction(health, row[2])
+        SetFraction(power, row[3])
+    end)
+    function holder.SetScene(_, name)
+        if not SCENES[name] then return end
+        holder.scene, t = name, 0
+    end
+    holder.health, holder.power, holder.bars = health, power, { health, power }
     return holder
 end

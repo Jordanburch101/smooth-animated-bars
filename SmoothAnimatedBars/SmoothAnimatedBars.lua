@@ -112,11 +112,27 @@ local COLOR_KEYS = {
 local FOLLOWS = { target = "player", pet = "player", focus = "target", tot = "target", party = "player", prd = "player",
                   raid = "party", plate = "target", friend = "plate" }
 
+-- A colour being tried in the editor (a tile under the mouse): { key = a colour setting, choice }, shown by every bar
+-- that setting reaches, real and example, without being saved. nil when nothing is being tried.
+local trial
+
+function Core.Try(colorKey, choice)
+    if colorKey then trial = { key = colorKey, choice = choice } else trial = nil end
+    ns.Bars.ApplyColors()
+end
+
 -- The colour a frame's bar of this kind ("health" or "power") shows: "game" or a theme key, "same" followed through.
 function Core.ColorChoice(frame, kind)
-    local choice = Core.Get(COLOR_KEYS[frame][kind])
+    local key = COLOR_KEYS[frame][kind]
+    local choice = (trial and trial.key == key) and trial.choice or Core.Get(key)
     if choice == "same" and FOLLOWS[frame] then return Core.ColorChoice(FOLLOWS[frame], kind) end
     return choice
+end
+
+-- What a frame's bar would show on "same": the colour of the bar it follows (the editor's swatch for it).
+function Core.SameChoice(frame, kind)
+    local follows = FOLLOWS[frame]
+    return follows and Core.ColorChoice(follows, kind) or nil
 end
 
 -- Whether a bar of the target, the focus or a target of target shows Class Color: only then does what Class Color
@@ -186,12 +202,52 @@ for frame, keys in pairs(COLOR_KEYS) do
         for _, key in pairs(keys) do SETTING_APPLY[key] = function() ns.Bars.ApplyColors() end end
     end
 end
-for _, key in ipairs({ "waves", "swirl", "bubbles", "sparkles", "ambient", "lightning" }) do
-    SETTING_APPLY[key] = function()
-        ns.Bars.ApplyOptions()
-        ns.Marker.ApplyOptions()
-        ns.HealMarker.ApplyOptions()
-    end
+local EFFECTS = { "waves", "swirl", "bubbles", "sparkles", "ambient", "lightning" }
+Core.EFFECTS = EFFECTS
+local IS_EFFECT = {}
+local function ApplyEffects()
+    ns.Bars.ApplyOptions()
+    ns.Marker.ApplyOptions()
+    ns.HealMarker.ApplyOptions()
+end
+for _, key in ipairs(EFFECTS) do
+    IS_EFFECT[key] = true
+    SETTING_APPLY[key] = ApplyEffects
+end
+
+-- Effects for one bar: each of a bar's (by its on/off setting's key, "playerHealth"...) can be set apart from the global
+-- one, kept in SmoothAnimatedBarsDB.effects[barKey][effect] = true or false. A nested table cannot be a registered
+-- setting, so these are kept in the saved table directly and applied here. Its liquids (Bars.lua, EffectOptions) and its
+-- markers' read them live.
+function Core.Effect(barKey, effect)
+    local own = barKey and db and db.effects and db.effects[barKey]
+    if own and own[effect] ~= nil then return own[effect] end
+    return db and db[effect]
+end
+
+-- The bar's own value for an effect, nil while it follows the global one.
+function Core.EffectOverride(barKey, effect)
+    local own = barKey and db.effects and db.effects[barKey]
+    return own and own[effect]
+end
+
+-- Sets a bar's own value for an effect; nil follows the global one again.
+function Core.SetEffect(barKey, effect, value)
+    if not IS_EFFECT[effect] then return end
+    db.effects = db.effects or {}
+    local own = db.effects[barKey] or {}
+    own[effect] = value
+    db.effects[barKey] = next(own) and own or nil
+    ApplyEffects()
+    if ns.Editor and ns.Editor.Refresh then ns.Editor.Refresh() end
+end
+
+-- Every effect of a bar back to the global ones.
+function Core.ClearEffects(barKey)
+    if not (db.effects and db.effects[barKey]) then return end
+    db.effects[barKey] = nil
+    ApplyEffects()
+    if ns.Editor and ns.Editor.Refresh then ns.Editor.Refresh() end
 end
 
 function Core.OnSettingChanged(key)
@@ -326,21 +382,11 @@ local function AddEarlyBars()
 end
 
 local events = CreateFrame("Frame")
-local openAfterCombat = false
-local openSection
 
--- The settings panel cannot be opened safely in combat, so wait for it to end. section: where to open it ("Pet"...).
-function Core.OpenSettings(section)
-    if InCombatLockdown() then
-        openSection = section
-        if not openAfterCombat then
-            openAfterCombat = true
-            events:RegisterEvent("PLAYER_REGEN_ENABLED")
-            Core.Print("Settings will open after combat.")
-        end
-        return true
-    end
-    return ns.Options.Open(section)
+-- The editor (Editor.lua), at a section ("pet", "party"...) if one is given. It is a window of ours, so unlike the
+-- game's settings panel it opens in combat too.
+function Core.OpenEditor(section)
+    return ns.Editor.Open(section)
 end
 
 events:SetScript("OnEvent", function(self, event, arg1, arg2)
@@ -363,6 +409,18 @@ events:SetScript("OnEvent", function(self, event, arg1, arg2)
         if db.mobClassColor ~= "game" and db.mobClassColor ~= "class" and db.mobClassColor ~= "own" then
             db.mobClassColor = "reaction"
         end
+        -- Bars' own effects: only known effects, true or false, and only bars with any.
+        if type(db.effects) ~= "table" then db.effects = {} end
+        for bar, own in pairs(db.effects) do
+            if type(bar) ~= "string" or type(own) ~= "table" then
+                db.effects[bar] = nil
+            else
+                for k, v in pairs(own) do
+                    if not IS_EFFECT[k] or type(v) ~= "boolean" then own[k] = nil end
+                end
+                if not next(own) then db.effects[bar] = nil end
+            end
+        end
         Core.db = db
         ns.Dots.Load(db)
         ns.SelfProbe.Load(db)
@@ -378,16 +436,10 @@ events:SetScript("OnEvent", function(self, event, arg1, arg2)
         ns.Marker.Apply()
         ns.HealMarker.Apply()
         ns.ManaRule.Apply()
+        -- The settings page's preview, once the bars are set up and before the settings panel can be open.
+        ns.Options.BuildPreview()
         -- The setup wizard, once per account, a moment after the first login with the addon.
         if (isLogin or isReload) and not db.setupDone then C_Timer.After(2, ns.Wizard.OpenWhenReady) end
-
-    elseif event == "PLAYER_REGEN_ENABLED" then
-        self:UnregisterEvent("PLAYER_REGEN_ENABLED")
-        if openAfterCombat then
-            openAfterCombat = false
-            ns.Options.Open(openSection)
-            openSection = nil
-        end
     end
 end)
 events:RegisterEvent("ADDON_LOADED")
@@ -398,7 +450,7 @@ events:RegisterEvent("PLAYER_ENTERING_WORLD")
 --------------------------------------------------------------------------------
 
 local HELP = {
-    "/sab - open settings",
+    "/sab - open the editor: every setting beside a live preview",
     "/sab on | off - liquid in all the bars, or none",
     "/sab setup - open the setup wizard",
     "/sab changes - what's new in the latest versions",
@@ -468,10 +520,8 @@ local RAID_TEST_SAYS = {
 SLASH_SMOOTHANIMATEDBARS1 = "/sab"
 SlashCmdList.SMOOTHANIMATEDBARS = function(input)
     local cmd = strlower(strtrim(input or ""))
-    if cmd == "" or cmd == "config" or cmd == "options" then
-        if not Core.OpenSettings() then
-            for _, line in ipairs(HELP) do Core.Print(line) end
-        end
+    if cmd == "" or cmd == "config" or cmd == "options" or cmd == "editor" then
+        Core.OpenEditor()
     elseif cmd == "on" or cmd == "off" then
         for _, key in ipairs(BAR_KEYS) do Core.SetSetting(key, cmd == "on") end
         Core.SetSetting("externalBars", cmd == "on") -- other addons' bars too

@@ -15,8 +15,16 @@ for players; `docs/DEVELOPMENT.md` covers the layout and tools; this file holds 
 - **Forever assets:** game files by path often fail to load there. Use `SetColorTexture` for solid fills and
   the addon's own TGAs in `SmoothAnimatedBars/Media/` (made by `tools/make_media.py`), never `Interface\...`
   game paths. Icons by file ID.
-- **Settings page:** a canvas category built at login (`Options.lua`). Never register initializers into the
-  game's vertical layout lists: on Forever that taints the Social page.
+- **Settings:** every setting is in the editor (`Editor.lua`, `FRAMES` and `TABS`), a window of ours with live examples,
+  opened by `/sab`, the unit frame menus and Open Editor on the settings page. A new setting needs a control there;
+  the tests check every setting has one. The settings page is a landing page, a canvas category built at login
+  (`Options.lua`); every setting is still registered with the game (`Settings.RegisterAddOnSetting`, no rows) and
+  changed through it (`Core.SetSetting`). Never register initializers into the game's vertical layout lists: on
+  Forever that taints the Social page. `tools/harness/editor_shot.py` draws the editor's layout. One exception to
+  registering: a bar's own effects (`SmoothAnimatedBarsDB.effects[barKey][effect]`, `Core.SetEffect`), a nested table
+  the Settings API cannot hold, read live by each bar's liquids and markers (`Bars.NewEffectOptions`).
+- **Lua's 200 locals:** `Bars.lua`'s main chunk is at the limit; one more file-level `local` fails to load in game
+  ("main function has more than 200 local variables", seen). Put new functions on a table (`Bars.X`) instead.
 - **Tests:** run `tools/venv/Scripts/python tools/harness/test.py SmoothAnimatedBars` before every commit; it
   exits 1 on any failed check. The mock (`tools/harness/wowmock.lua`) should be as strict as the client:
   when the client rejects something the mock accepted, make the mock reject it too.
@@ -25,7 +33,7 @@ for players; `docs/DEVELOPMENT.md` covers the layout and tools; this file holds 
 - **Gallery:** `branding/gallery/` holds the README's images: animated WebP for each scenario (`hero`,
   `mage`, `rogue`, `warlock` and `rend` with the DoT marker, `priest` with the heal marker, `druid` with both, `eating`, a meal up to its buff, `mana`, the build-up to mana regenerating, `fury`, a warrior's rage building to full and spent back to 40%, `plates`, four Normal-style nameplates drawn from the captured plate art (`gallery.py`, `PLATES`), two with DoTs, and `prd`, a warrior's Personal Resource Display through a fight to furious rage and a bandage, on the same plate art, its bar sizes Edit Mode's defaults as guessed, and `party`, four party members stacked as in game, on the party art with the setup's example party and its class icons for portraits; the power mask and bar are shifted
   1.5 right and 1.9 down there (`gallery.py`, `PARTY_POWER_SHIFT`): at Forever's own offsets they sat over the gold divider in the captured art, though in
-  game the game's fill does not, so the gallery was tuned by eye to sit in the slot) and PNG stills (`frames.png`, `themes.png`), at full quality (`K = 3.0`, 20 fps). No GIFs.
+  game the game's fill does not, so the gallery was tuned by eye to sit in the slot; the example party in the setup and the editor (`Preview.lua`, `PARTY_POWER_SHIFT`) showed the same in game and takes the same shift, the capture keeping the game's offsets) and PNG stills (`frames.png`, `themes.png`), at full quality (`K = 3.0`, 20 fps). No GIFs.
   A full run takes about a quarter of an hour, so run it in the background.
 - **Frame art:** `branding/art/` is Forever's own unit frame art, captured in game with `/sab capture` and
   cut out by `tools/capture_art.py` (`/sab capture plates` and `--plates` for the nameplates' pieces, `/sab capture
@@ -360,7 +368,7 @@ Facts found while building this, which the code relies on and which are not obvi
   so it is drawn at once (`drawNow`): waiting for its next idle update left an empty bar for a few frames. Every class has the
   `AlternatePowerBar`, but on Forever only a druid's is used, so only druids build one.
 - **Unit frame menus** (`Options.lua`, `AddToUnitMenus`): `Menu.ModifyMenu("MENU_UNIT_" .. which, ...)` adds Open
-  Settings; the frames pass themselves as `contextData.ownerFrame` (Mainline `PlayerFrame.lua`, `TargetFrame.lua`,
+  Editor (Open Settings before the editor), opening it at that frame's section; the frames pass themselves as `contextData.ownerFrame` (Mainline `PlayerFrame.lua`, `TargetFrame.lua`,
   `PetFrame.lua`), which tells them from chat names. The party's member frames are pooled and nameless, so they are
   told by their parent, `PartyFrame` (not yet seen in game). Seen in game, and the menus' protected actions
   (Set Focus, Target Marker Icon) still work with it, in and out of combat. But not in an instance: there a mob's
@@ -410,6 +418,28 @@ Facts found while building this, which the code relies on and which are not obvi
   rather than hides: hidden, it forgot what it had shown, so each fade-in replayed a meal's release and grew the DoTs
   in from nothing (a review caught it). While faded it drops landings and ticks (`calm`), and a buff reached meanwhile
   sates the bar quietly (`Bars.Sate`). Not yet seen in game.
+- **The editor** (`Editor.lua`): the game's `ButtonFrameTemplate` window (as the setup's), `UICheckButtonTemplate`
+  boxes, `UIPanelButtonTemplate` buttons, and chips and tiles of our own (solid textures, gradients by `SetGradient` from
+  each theme's `fillA`/`fillB`). Nothing in it is protected, so it opens in combat, unlike the game's settings panel.
+  Its first build (a sidebar of sections over one preview) was replaced, on the user's choice of mockups (canvas
+  "SAB Options Redesign", board E), by a screen of every example at once where the game puts them, clicked to edit,
+  and an inspector of bar cards with Colour and Effects drawers. The examples are `Preview.lua`'s: `Create` (the
+  player and target), `CreateSingle` (the target's art standing for the focus, pet or target of target, smaller, each in
+  a place of its own: the first layout swapped them into the target's place, and a bigger window was asked
+  for to show them all; the screen's layout was then measured on a screenshot from the game and agreed on a mockup,
+  canvas board F, which made the window 1180 x 630), `CreateParty` stacked, `CreatePlates`, `CreatePRD` (flat bars raised as the real ones, `Bars.Preview` with `flat`) and `CreateRaid`
+  (ten raid-style frames in solid colours, as the game's raid art is by path; `spot.raidLook` gives them the raid
+  frames' colours from the CVars and each member's class, and no spill: the frames touch, and in game the first build's
+  motes flew over them). All play the scenes (`SetScene`: fight, damage, heal, power; groups take the frames' rows a
+  little apart); the one being edited at full speed and the rest at a third, idling at 10 fps (`Preview.SetActive`,
+  `spot.calm`), as about 40 liquids show at once. The heal scene feeds a heal marker on the example's health
+  (`HealMarker.Preview`, named "preview" so real heals and meals never reach it): a Renew, then a bandage; in game the
+  first build's Healing only moved the bar (seen). A colour tile under the mouse is tried on every bar its setting
+  reaches, real and example, without being saved (`Core.Try`, read by `Core.ColorChoice`), until the mouse leaves or
+  the window closes. In game the first drawers were empty: a pane anchored TOPLEFT and RIGHT has its vertical middle
+  pinned to its parent's too, which gave it a negative height (the mock does not model that); panes take both top
+  corners now. The stage's backdrop is a vertical gradient (`SetGradient`), dusky blue as in the mockup. The settings page's preview is built at `PLAYER_ENTERING_WORLD` (`Options.BuildPreview`), never
+  while the settings panel is open. Not yet seen in game: this layout.
 - **Toc changes** (a new file) need a full game restart; `/reload` does not pick them up.
 - **Capture:** `/sab capture` uses `Screenshot()` and the `screenshotFormat` CVar (TGA, put back after).
   The screenshot is the full render resolution (an ultrawide 3440x1440 here), and the red "?" target

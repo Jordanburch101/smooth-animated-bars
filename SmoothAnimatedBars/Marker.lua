@@ -458,7 +458,7 @@ local function New(spec)
         d.mover:SetPoint("BOTTOMRIGHT", d.front, i == 1 and "BOTTOMRIGHT" or "BOTTOMLEFT")
         d.mover:SetWidth(w)
         d.liquid = ns.Liquid.New(d.mover, math.max(w, 1) + ROOM, math.max(h, 1), ns.Themes.Get(DEFAULT_THEME),
-            ns.Core.db)
+            ns.Bars.EffectOptions(spec.bar)) -- the bar's own effects, where it has its own
         if spec.mask then
             local free = {}
             for _, mote in ipairs(d.liquid.motes) do free[mote.tex] = true end
@@ -1039,7 +1039,7 @@ end
 
 function Marker.Debug()
     if stepAside then return { "DoT marker: off while DoesItDie is loaded" } end
-    if not ns.Core.Get("dots") then return { "DoT marker: off (DoT Marker in the settings)", PlateDebug() } end
+    if not ns.Core.Get("dots") then return { "DoT marker: off (DoT Marker in the editor)", PlateDebug() } end
     if not target then return { "DoT marker: the target frame's health bar was not found", PlateDebug() } end
     local shown = {}
     for _, d in ipairs(target.liquids) do

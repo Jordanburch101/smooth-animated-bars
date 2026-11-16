@@ -1,112 +1,55 @@
--- Settings page in the game's AddOns options, built on the native Settings API.
--- Values live directly in SmoothAnimatedBarsDB; changes are forwarded to ns.Core.OnSettingChanged.
+-- The addon's page in the game's AddOns settings: a landing page that opens the editor (Editor.lua), where every setting
+-- is, beside a live preview. The page has the addon's name, a preview of the player and target frames, what the addon
+-- does, and Open Editor and Run Setup.
 --
--- The page is a canvas: one frame of ours, with every row drawn by the game's own row template on a
--- frame of ours, so it looks like the game's pages. It is not a vertical layout list. The game
--- reuses that list's row frames for every category, and on Forever rows set up by an addon's code
--- carry its taint into the Social page, which then has its protected IsUserOAuthed blocked in the
--- addon's name. So nothing is added to the game's lists, and every row is built once at login while
--- the page is hidden, never while the settings panel is open.
+-- Every setting is still registered with the game's Settings API (Settings.RegisterAddOnSetting), with nothing laid out
+-- for it: the editor and the setup change settings through those (Options.Set), so each change reaches
+-- Core.OnSettingChanged and the editor alike, as any control of the game's would.
+--
+-- The page is a canvas: one frame of ours, not the game's vertical layout list. The game reuses that list's row frames
+-- for every category, and on Forever rows set up by an addon's code carry its taint into the Social page, which then has
+-- its protected IsUserOAuthed blocked in the addon's name. So nothing is added to the game's lists, and the page is
+-- built while the settings panel is closed: its frames at login, its preview once the player is in the world.
 
 local ADDON_NAME, ns = ...
 
 local Options = {}
 ns.Options = Options
 
--- The settings list's own measurements (Blizzard_SettingsList.xml), so the page lines up with the
--- game's: the header strip, where the list sits under it, the row padding, and the row heights.
+-- The settings list's own header (Blizzard_SettingsList.xml), so the page lines up with the game's.
 local HEADER_H, TITLE_X, TITLE_Y = 50, 7, -22
-local LIST_X, LIST_Y, LIST_RIGHT, LIST_BOTTOM = -15, -2, -20, -2
-local PAD, PAD_LEFT, SPACING = 10, 25, 9
-local ROW_H, SECTION_H = 26, 45
+local PAGE_RIGHT = -20
 
-local category, canvas, content, scroll, db, defaults
-local rows = {} -- { frame, initializer, height, shown, title (a header's), y (from the top, as laid out) }, in page order
+local category, canvas, db, defaults
 local registered = {}
-local LayoutRows
 
-local function Register(key, name)
+local function Register(key)
     local default = defaults[key]
-    local setting = Settings.RegisterAddOnSetting(category, ADDON_NAME .. "_" .. key, key, db, type(default), name, default)
+    local setting = Settings.RegisterAddOnSetting(category, ADDON_NAME .. "_" .. key, key, db, type(default), key, default)
     setting:SetValueChangedCallback(function(_, value)
         ns.Core.OnSettingChanged(key, value)
-        -- A row that shows only with some settings comes and goes with them.
-        if content then LayoutRows() end
+        -- The editor follows a change made anywhere (the setup, /sab on, its own controls).
+        if ns.Editor and ns.Editor.Refresh then ns.Editor.Refresh() end
     end)
     registered[key] = setting
-    return setting
 end
 
--- A row: a frame of ours made from the initializer's template. The template's code finds its
--- initializer through GetElementData, as it does in the game's list. opts.indent indents its label as the game's
--- list does a setting that belongs to the one above; opts.shown, a function, shows it only while it is true.
-local function Row(initializer, height, opts)
-    opts = opts or {}
-    if opts.indent and initializer.Indent then initializer:Indent() end
-    local frame = CreateFrame("Frame", nil, content, initializer:GetTemplate())
-    frame.GetElementData = function() return initializer end
-    initializer:InitFrame(frame)
-    rows[#rows + 1] = { frame = frame, initializer = initializer, height = height or ROW_H, shown = opts.shown }
+local function Button(parent, text, width, height, onClick)
+    local b = CreateFrame("Button", nil, parent, "UIPanelButtonTemplate")
+    b:SetSize(width, height)
+    b:SetText(text)
+    b:SetScript("OnClick", onClick)
+    return b
 end
 
-local function Header(text)
-    Row(CreateSettingsListSectionHeaderInitializer(text), SECTION_H)
-    rows[#rows].title = text
+-- The version from the toc, only when it is a release's (a working copy has the packager's placeholder).
+local function Version()
+    local get = C_AddOns and C_AddOns.GetAddOnMetadata
+    local v = get and get(ADDON_NAME, "Version")
+    return type(v) == "string" and v:match("^%d+%.%d+%.%d+") and v or nil
 end
 
-local function Checkbox(key, name, tooltip)
-    Row(Settings.CreateCheckboxInitializer(Register(key, name), nil, tooltip))
-end
-
-local function Dropdown(key, name, tooltip, getOptions, opts)
-    Row(Settings.CreateDropdownInitializer(Register(key, name), getOptions, tooltip), nil, opts)
-end
-
--- The fifth argument is whether the row adds search tags; the game asserts it is given, and a
--- canvas has nothing for the search to find.
-local function Button(name, text, onClick, tooltip)
-    Row(CreateSettingsButtonInitializer(name, text, onClick, tooltip, false))
-end
-
--- The bar's own colour first, then every theme.
-local function ColorOptions()
-    local container = Settings.CreateControlTextContainer()
-    container:Add("game", "Game Colour")
-    for _, key in ipairs(ns.Themes.order) do
-        container:Add(key, ns.Themes.list[key].name)
-    end
-    return container:GetData()
-end
-
--- The same for another frame's bar, which can also follow the player's or the target's: label names whose.
-local function SameAsOptions(label)
-    return function()
-        local container = Settings.CreateControlTextContainer()
-        container:Add("same", label)
-        container:Add("game", "Game Colour")
-        for _, key in ipairs(ns.Themes.order) do
-            container:Add(key, ns.Themes.list[key].name)
-        end
-        return container:GetData()
-    end
-end
-
--- Class Color on Mobs shows under Target and again under Nameplates: one setting, one tooltip.
-local MOB_CLASS_TIP = "What Class Color shows on a mob: your target, focus or target of target, or a nameplate. "
-    .. "Reaction: red if hostile, yellow if neutral, green if friendly. Game Colour: the bar's own colour, so only "
-    .. "players show a class. Mob's Class: the class the game gives it, which most mobs do not show. Your Class: your own."
-
-local function MobOptions()
-    local container = Settings.CreateControlTextContainer()
-    container:Add("reaction", "Reaction")
-    container:Add("game", "Game Colour")
-    container:Add("class", "Mob's Class")
-    container:Add("own", "Your Class")
-    return container:GetData()
-end
-
--- The page frame: the title and divider the game's list draws above its rows, and a scroll frame
--- for the rows where the list would be. The game parents and shows it when the category opens.
+-- The page frame. The game parents and shows it when the category opens.
 local function BuildPage(title)
     canvas = CreateFrame("Frame")
     canvas:Hide()
@@ -114,74 +57,69 @@ local function BuildPage(title)
     local text = canvas:CreateFontString(nil, "ARTWORK", "GameFontHighlightHuge")
     text:SetPoint("TOPLEFT", TITLE_X, TITLE_Y)
     text:SetText(title)
+    local version = canvas:CreateFontString(nil, "ARTWORK", "GameFontDisableSmall")
+    version:SetPoint("BOTTOMLEFT", text, "BOTTOMRIGHT", 10, 2)
+    version:SetText(Version() or "")
 
     local divider = canvas:CreateTexture(nil, "ARTWORK")
     divider:SetColorTexture(1, 1, 1, 0.15)
     divider:SetPoint("TOPLEFT", 0, -HEADER_H)
-    divider:SetPoint("TOPRIGHT", LIST_RIGHT, -HEADER_H)
+    divider:SetPoint("TOPRIGHT", PAGE_RIGHT, -HEADER_H)
     divider:SetHeight(1)
 
-    scroll = CreateFrame("ScrollFrame", nil, canvas)
-    scroll:SetPoint("TOPLEFT", LIST_X, -HEADER_H + LIST_Y)
-    scroll:SetPoint("BOTTOMRIGHT", LIST_RIGHT, LIST_BOTTOM)
-    content = CreateFrame("Frame", nil, scroll)
-    content:SetSize(1, 1)
-    scroll:SetScrollChild(content)
-    scroll:SetScript("OnSizeChanged", function(_, width)
-        if width and width > 0 then content:SetWidth(width) end
-    end)
+    -- The preview's dark strip (Options.BuildPreview puts the frames on it).
+    local strip = CreateFrame("Frame", nil, canvas)
+    strip:SetPoint("TOPLEFT", 10, -HEADER_H - 16)
+    strip:SetPoint("TOPRIGHT", PAGE_RIGHT - 10, -HEADER_H - 16)
+    strip:SetHeight(124)
+    local bg = strip:CreateTexture(nil, "BACKGROUND")
+    bg:SetAllPoints()
+    bg:SetColorTexture(0, 0, 0, 0.45)
+    canvas.strip = strip
 
-    if ScrollUtil and ScrollUtil.InitScrollFrameWithScrollBar then
-        local bar = CreateFrame("EventFrame", nil, canvas, "MinimalScrollBar")
-        ScrollUtil.InitScrollFrameWithScrollBar(scroll, bar)
-        bar:SetPoint("TOPLEFT", scroll, "TOPRIGHT", 0, -4)
-        bar:SetPoint("BOTTOMLEFT", scroll, "BOTTOMRIGHT", -1, 7)
-    else
-        scroll:EnableMouseWheel(true)
-        scroll:SetScript("OnMouseWheel", function(self, delta)
-            local offset = self:GetVerticalScroll() - delta * 30
-            self:SetVerticalScroll(math.max(0, math.min(self:GetVerticalScrollRange(), offset)))
-        end)
-    end
+    local about = canvas:CreateFontString(nil, "ARTWORK", "GameFontHighlight")
+    about:SetPoint("TOPLEFT", strip, "BOTTOMLEFT", 6, -18)
+    about:SetPoint("RIGHT", strip, "RIGHT", -6, 0)
+    about:SetJustifyH("LEFT")
+    about:SetWordWrap(true)
+    about:SetText("Animated liquid in your health and power bars: your own frame, your target, focus, pet and party, "
+        .. "raid frames, nameplates and the Personal Resource Display, with markers for your DoTs, heals, mana and rage.")
 
-    -- Each time the page opens every row reads its setting again, as the game's list does, so
-    -- changes made elsewhere (/sab on, /sab off) show.
-    canvas:SetScript("OnShow", function()
-        for _, row in ipairs(rows) do
-            row.initializer:Resetter(row.frame)
-            row.initializer:InitFrame(row.frame)
-        end
-        LayoutRows()
-    end)
+    canvas.open = Button(canvas, "Open Editor", 170, 32, function() ns.Core.OpenEditor() end)
+    canvas.open:SetPoint("TOPLEFT", about, "BOTTOMLEFT", 0, -22)
+    canvas.setup = Button(canvas, "Run Setup", 130, 32, function() ns.Wizard.Open() end)
+    canvas.setup:SetPoint("LEFT", canvas.open, "RIGHT", 10, 0)
+    canvas.whatsNew = Button(canvas, "What's New", 130, 32, function() ns.WhatsNew.Open() end)
+    canvas.whatsNew:SetPoint("LEFT", canvas.setup, "RIGHT", 10, 0)
+
+    local hint = canvas:CreateFontString(nil, "ARTWORK", "GameFontHighlightSmall")
+    hint:SetPoint("TOPLEFT", canvas.open, "BOTTOMLEFT", 0, -14)
+    hint:SetPoint("RIGHT", strip, "RIGHT", -6, 0)
+    hint:SetJustifyH("LEFT")
+    hint:SetWordWrap(true)
+    hint:SetTextColor(0.66, 0.64, 0.60)
+    hint:SetText("The editor shows every option beside a live preview. Type /sab to open it anywhere, or right-click "
+        .. "your player, target, pet, focus or party frame.")
 end
 
-function LayoutRows()
-    local y = PAD
-    for _, row in ipairs(rows) do
-        local shown = not row.shown or row.shown()
-        row.frame:SetShown(shown)
-        if shown then
-            row.y = y
-            row.frame:ClearAllPoints()
-            row.frame:SetPoint("TOPLEFT", content, "TOPLEFT", PAD_LEFT, -y)
-            row.frame:SetPoint("TOPRIGHT", content, "TOPRIGHT", 0, -y)
-            row.frame:SetHeight(row.height)
-            y = y + row.height + SPACING
-        end
-    end
-    content:SetHeight(y - SPACING + PAD)
+-- The preview on the page: the player and target frames playing their fight (Preview.lua), built once the player is
+-- in the world, with the settings panel closed, and running only while the page shows.
+function Options.BuildPreview()
+    if not canvas or canvas.preview then return end
+    canvas.preview = ns.Preview.Create(canvas.strip)
+    canvas.preview:SetPoint("CENTER")
 end
 
--- "Open Settings" at the bottom of the right-click menus of the frames the liquid is on, through Menu.ModifyMenu, the
+-- "Open Editor" at the bottom of the right-click menus of the frames the liquid is on, through Menu.ModifyMenu, the
 -- game's way for addons to add to a menu. The same menus open from chat names, the friends list and party frames,
 -- so only a menu whose owner is one of these frames gets it. The target of target has no menu.
 local UNIT_MENUS = { "SELF", "VEHICLE", "PET", "OTHERPET", "PLAYER", "ENEMY_PLAYER", "PARTY", "RAID_PLAYER", "TARGET",
                      "FOCUS" }
 local MENU_FRAMES = { "PlayerFrame", "TargetFrame", "PetFrame", "FocusFrame" }
--- The section of the settings each frame's menu opens at.
-local MENU_SECTIONS = { PlayerFrame = "Player", TargetFrame = "Target", PetFrame = "Pet", FocusFrame = "Focus" }
+-- The editor's section each frame's menu opens at.
+local MENU_SECTIONS = { PlayerFrame = "player", TargetFrame = "target", PetFrame = "pet", FocusFrame = "focus" }
 
--- The section a menu's owner opens the settings at, or nil if the liquid is not on it. The party's member frames are
+-- The section a menu's owner opens the editor at, or nil if the liquid is not on it. The party's member frames are
 -- pooled buttons without names (PartyFrame.lua), told by their parent.
 local function MenuSection(owner, frames)
     if type(owner) ~= "table" then return nil end
@@ -190,7 +128,7 @@ local function MenuSection(owner, frames)
     -- Every hooked menu's owner comes here (chat names, raid frames): one the client will not answer for is passed by.
     if not party then return nil end
     local ok, parent = pcall(function() return owner:GetParent() end)
-    if ok and parent == party then return "Party" end
+    if ok and parent == party then return "party" end
 end
 
 -- Whether the menu's unit has a secret identity (a mob or player in an instance or battleground). The menu's title is
@@ -232,165 +170,30 @@ local function AddToUnitMenus()
             if not section or GamepadUI() or SecretIdentity(contextData.unit) then return end
             rootDescription:CreateDivider()
             rootDescription:CreateTitle("Smooth Animated Bars")
-            rootDescription:CreateButton("Open Settings", function()
-                ns.Core.OpenSettings(section ~= "" and section or nil)
+            rootDescription:CreateButton("Open Editor", function()
+                ns.Core.OpenEditor(section ~= "" and section or nil)
             end)
         end)
     end
 end
 
 function Options.Register(savedDB, defaultValues)
-    if not (Settings and Settings.RegisterCanvasLayoutCategory and Settings.CreateCheckboxInitializer
-        and CreateSettingsButtonInitializer and CreateSettingsListSectionHeaderInitializer) then
-        return
-    end
+    if not (Settings and Settings.RegisterCanvasLayoutCategory and Settings.RegisterAddOnSetting) then return end
     db, defaults = savedDB, defaultValues
     local title = "Smooth Animated Bars"
 
     BuildPage(title)
     category = Settings.RegisterCanvasLayoutCategory(canvas, title)
+    local keys = {}
+    for key in pairs(defaults) do keys[#keys + 1] = key end
+    table.sort(keys)
+    for _, key in ipairs(keys) do Register(key) end
 
-    -- One section per frame: each bar on or off, and while it is on, its colour under it.
-    local function On(key) return function() return db[key] end end
-    local function Frame(title, prefix, healthColor, powerColor, sameAs, extra)
-        Header(title)
-        -- What a player needs to decide on turning a bar on goes on its checkbox too (aboutHealth, aboutPower): the
-        -- colour rows under it, with the rest of the explanation, show only once it is on.
-        Checkbox(prefix .. "Health", "Health", "Liquid in " .. extra.whose .. " health bar."
-            .. (extra.aboutHealth and (" " .. extra.aboutHealth) or ""))
-        Dropdown(healthColor, "Colour", extra.health, sameAs or ColorOptions,
-            { indent = true, shown = On(prefix .. "Health") })
-        Checkbox(prefix .. "Power", "Power", "Liquid in " .. extra.whose .. " power bar."
-            .. (extra.aboutPower and (" " .. extra.aboutPower) or ""))
-        Dropdown(powerColor, "Colour", extra.power, sameAs or ColorOptions,
-            { indent = true, shown = On(prefix .. "Power") })
-    end
-    local SAME_TARGET = "Same as Target follows your target's colour, which can itself follow yours."
-    Frame("Player", "player", "healthColor", "powerColor", nil, { whose = "your",
-        health = "Game Colour keeps health green. A theme brings its own colours and particles. Class Color shows yours.",
-        power = "Game Colour follows the power type: blue mana, red rage, yellow energy. A theme brings its own colours "
-            .. "and particles." })
-    Frame("Target", "target", "targetHealthColor", "targetPowerColor", SameAsOptions("Same as Yours"), {
-        whose = "your target's",
-        health = "Same as Yours follows your own health colour. Class Color shows a targeted player's class.",
-        power = "Same as Yours follows your own power colour. Class Color shows a targeted player's class." })
-    Dropdown("mobClassColor", "Class Color on Mobs", MOB_CLASS_TIP, MobOptions,
-        { indent = true, shown = ns.Core.TargetUsesClass })
-    Frame("Pet", "pet", "petHealthColor", "petPowerColor", SameAsOptions("Same as Yours"), { whose = "your pet's",
-        health = "Same as Yours follows your own health colour; with Class Color your pet takes your class.",
-        power = "Same as Yours follows your own power colour." })
-    Frame("Focus", "focus", "focusHealthColor", "focusPowerColor", SameAsOptions("Same as Target"), {
-        whose = "your focus's", health = SAME_TARGET, power = SAME_TARGET })
-    Frame("Target of Target", "tot", "totHealthColor", "totPowerColor", SameAsOptions("Same as Target"), {
-        whose = "your target's target's and your focus's target's", health = SAME_TARGET, power = SAME_TARGET })
-    Frame("Party", "party", "partyHealthColor", "partyPowerColor", SameAsOptions("Same as Yours"), {
-        whose = "your party members'",
-        aboutHealth = "Raid-style party frames are under Raid Frames. While a member is offline the game's grey bar "
-            .. "comes back.",
-        aboutPower = "Raid-style party frames are under Raid Frames.",
-        health = "Same as Yours follows your own health colour. Class Color shows each member's class. While a member "
-            .. "is offline the game's grey bar comes back. Raid-style party frames are under Raid Frames.",
-        power = "Same as Yours follows your own power colour, so Game Colour shows each member's power type." })
-
-    Header("Raid Frames")
-    Checkbox("raidHealth", "Health",
-        "Liquid in the raid frames' health bars, and the party's when the game shows raid-style party frames. The "
-        .. "game's names, icons, heal prediction and shields stay on top. While a member is offline the game's grey bar "
-        .. "comes back. /sab perf shows what it costs in a big raid.")
-    Dropdown("raidHealthColor", "Colour",
-        "Game Colour takes the raid frames' own: class colours, or the colour set in the game's Raid Frames options. "
-        .. "Same as Party follows your party frames' colour.",
-        SameAsOptions("Same as Party"), { indent = true, shown = On("raidHealth") })
-    Checkbox("raidPower", "Power",
-        "Liquid in the raid frames' power bars, where the game shows them: its Raid Frames options can show them for "
-        .. "everyone or for healers only.")
-    Dropdown("raidPowerColor", "Colour",
-        "Same as Party follows your party frames' power colour, so Game Colour shows each member's power type.",
-        SameAsOptions("Same as Party"), { indent = true, shown = On("raidPower") })
-    Frame("Personal Resource Display", "prd", "prdHealthColor", "prdPowerColor", SameAsOptions("Same as Yours"), {
-        whose = "the Personal Resource Display's",
-        aboutHealth = "The extra bars the game shows with its Personal Resource Display option on, placed with Edit Mode.",
-        aboutPower = "With a druid's mana under it in Cat or Bear Form.",
-        health = "The extra bars the game shows with its Personal Resource Display option on, placed with Edit Mode. "
-            .. "Same as Yours follows your own health colour; Game Colour takes the display's own, as it draws it.",
-        power = "Same as Yours follows your own power colour. A druid's mana under the power bar in Cat or Bear Form "
-            .. "gets the liquid too." })
-
-    Header("Nameplates")
-    Checkbox("plateHealth", "Enemy Nameplates",
-        "Liquid in the health bars of enemy nameplates. Friendly nameplates in dungeons are locked to addons. In a "
-        .. "big crowd only the first 15 nameplates get it; /sab perf shows what it costs.")
-    Dropdown("plateHealthColor", "Colour",
-        "Same as Target follows your target's colour, which can itself follow yours. Game Colour takes the nameplate's "
-        .. "own: red, yellow, or grey once another player has tagged the mob.",
-        SameAsOptions("Same as Target"), { indent = true, shown = On("plateHealth") })
-    Row(Settings.CreateCheckboxInitializer(Register("plateDots", "Your DoTs on Nameplates"), nil,
-        "The DoT marker on enemy nameplates: on every mob carrying your damage-over-time spells, not just your "
-        .. "target, the health they will still burn away turns into a liquid of their own colour. No poison skulls "
-        .. "on nameplates."), nil, { indent = true, shown = On("plateHealth") })
-    Row(Settings.CreateCheckboxInitializer(Register("plateKillIcon", "Kill Icon on Nameplates"), nil,
-        "The game's skull beside a nameplate when your DoTs will finish that mob off."), nil,
-        { indent = true, shown = function() return db.plateHealth and db.plateDots end })
-    Checkbox("plateFriendly", "Friendly Nameplates",
-        "Liquid in the health bars of friendly nameplates: other players and friendly NPCs, never your own. The game "
-        .. "shows them only with friendly nameplates switched on in its options, and keeps them to itself in dungeons. "
-        .. "At most 10 get it, apart from the enemies'.")
-    Dropdown("plateFriendlyColor", "Colour",
-        "Game Colour takes the nameplate's own, as the game draws it (green for friendly NPCs). Class Color shows "
-        .. "other players' classes where the game tells it. Same as Enemy Nameplates follows that colour.",
-        SameAsOptions("Same as Enemy Nameplates"), { indent = true, shown = On("plateFriendly") })
-    -- Class Color on Mobs again, the same setting as under Target, shown while a nameplate colour is Class Color.
-    Row(Settings.CreateDropdownInitializer(registered.mobClassColor, MobOptions, MOB_CLASS_TIP), nil,
-        { indent = true, shown = ns.Core.PlatesUseClass })
-
-    Header("Other Addons")
-    Checkbox("externalBars", "Other Addons' Bars",
-        "Liquid in the health and power bars of unit frame addons that hand them to Smooth Animated Bars. They keep "
-        .. "the colours you set in that addon, unless it offers a theme from here.")
-
-    Header("Effects")
-    Checkbox("waves", "Liquid Waves", "Wobbling liquid front that ripples when the bar changes.")
-    Checkbox("swirl", "Magic Swirl", "Glowing veins, clouds and light drifting inside the liquid.")
-    Checkbox("bubbles", "Bubbles", "Bubbles rising through the liquid.")
-    Checkbox("sparkles", "Sparkles", "Motes thrown off the front when the bar changes.")
-    Checkbox("ambient", "Theme Particles", "Embers, snow, spores, stars and the like from themes that have them.")
-    Checkbox("lightning", "Lightning", "Faint flashes in the liquid that build into a storm when the bar changes a lot.")
-
-    Header("Damage Over Time")
-    Checkbox("dots", "DoT Marker",
-        "The health your damage-over-time spells will still burn away turns into a liquid of their own colour, "
-        .. "eating into your target's health. If no health liquid is left, they will kill the target.")
-    Checkbox("dotKillIcon", "Kill Icon",
-        "The game's skull on your target's portrait when your DoTs will finish it off.")
-
-    Header("Healing")
-    Checkbox("heals", "Heal Marker",
-        "The health your own heals over time, bandages and heals you are casting on yourself will still bring back "
-        .. "shows ahead of your health as a liquid of its own: Holy gold for priest and paladin heals, spring green "
-        .. "for druid and shaman heals and for bandages. Food and drink show too, ahead of your health and your mana.")
-
-    Header("Mana")
-    Checkbox("manaBuild", "Mana Regen Build-Up",
-        "After a spell that costs mana, your mana stops regenerating from Spirit for five seconds. Your mana bar builds "
-        .. "up through that wait and lets go in a burst of stars as regeneration returns.")
-
-    Header("Rage")
-    Checkbox("rageFury", "Rage Fury",
-        "Your rage bar grows more furious as it fills: hotter, churning and crackling, and at full rage it throbs, "
-        .. "ready to burst. Spending rage lets it go in a burst of sparks.")
-
-    Header("Setup")
-    Button("What's New", "Open", function() ns.WhatsNew.Open() end,
-        "What changed in the latest versions, as shown once after each update.")
-    Button("Setup Wizard", "Open", function() ns.Wizard.Open() end,
-        "Pick the bars, their colours, how lively they are and the DoT marker again, seeing each choice on your frame.")
-
-    LayoutRows()
     Settings.RegisterAddOnCategory(category)
     AddToUnitMenus()
 end
 
--- Change one setting through its control, as the player would. False when there is no control.
+-- Change one setting through its registered setting, as a control of the game's would. False when there is none.
 function Options.Set(key, value)
     local setting = registered[key]
     if not setting then return false end
@@ -398,25 +201,15 @@ function Options.Set(key, value)
     return true
 end
 
--- Scroll the page so a section's header is at the top, as far as the page scrolls.
-local function ScrollTo(section)
-    for _, row in ipairs(rows) do
-        if row.title == section and row.y then
-            scroll:SetVerticalScroll(math.max(0, math.min(row.y - PAD, scroll:GetVerticalScrollRange())))
-            return
-        end
+-- Open the game's settings at this page.
+function Options.Open()
+    if category and Settings.OpenToCategory then
+        Settings.OpenToCategory(category:GetID())
+        return true
     end
 end
 
--- Open the settings, at a section ("Pet"...) if one is given, else where they were left.
-function Options.Open(section)
-    if category and Settings.OpenToCategory then
-        Settings.OpenToCategory(category:GetID())
-        if section then
-            ScrollTo(section)
-            -- The page lays out its rows as it shows, and the scroll range follows a frame later.
-            C_Timer.After(0, function() ScrollTo(section) end)
-        end
-        return true
-    end
+-- For the tests: the page frame.
+function Options.Page()
+    return canvas
 end
