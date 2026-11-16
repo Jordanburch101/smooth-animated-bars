@@ -581,6 +581,17 @@ local function UnitFrame(name, contentKey, mainKey)
     main.HealthBarsContainer.HealthBarMask = main.HealthBarsContainer:CreateMaskTexture()
     main.ManaBar.ManaBarMask = main.ManaBar:CreateMaskTexture()
     f.healthbar, f.manabar = main.HealthBarsContainer.HealthBar, main.ManaBar
+    -- The health texts: on the container, at the bar's level (OVERLAY), and on the bar as SetBarText puts them
+    -- (TextStatusBar: TextString, LeftText, RightText).
+    local container, bar = main.HealthBarsContainer, main.HealthBarsContainer.HealthBar
+    for key, barKey in pairs({ HealthBarText = "TextString", LeftText = "LeftText", RightText = "RightText" }) do
+        local fs = container:CreateFontString(nil, "OVERLAY", "TextStatusBarText")
+        container[key], bar[barKey] = fs, fs
+        fs:Hide()
+    end
+    bar.TextString:SetPoint("CENTER", container, "CENTER", 0, 0)
+    bar.LeftText:SetPoint("LEFT", container, "LEFT", 2, 0)
+    bar.RightText:SetPoint("RIGHT", container, "RIGHT", -5, 0)
     return f
 end
 PlayerFrame = UnitFrame("PlayerFrame", "PlayerFrameContent", "PlayerFrameContentMain")

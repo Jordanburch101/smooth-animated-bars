@@ -13,7 +13,9 @@
 --   * each DoT liquid hangs on the edge in front of it (the health's edge, or the first liquid's end) like the
 --     health liquid does, in a clip frame starting a little before its own end. The health liquid's front is
 --     moved onto the last end (Bars.Front). Each liquid is drawn under the one behind it (health over the
---     second, the second over the first), so they meet in wavy fronts, and nothing shows between them;
+--     second, the second over the first), so they meet in wavy fronts, and nothing shows between them. The DoT
+--     liquids order by sublevels, in one clip frame; the health liquid is in frames of its own, which at the same
+--     frame level drew under the marker now and then, so Bars.lua puts it a level above (Bars.SetOver);
 --   * the kill icon rides the fill edge of a very long StatusBar whose range is the target's (secret) health and
 --     whose value is the damage, inside a window the icon's size: it slides into view only as the damage reaches
 --     the health, in the last icon-width of a bar LONG wide.
@@ -809,8 +811,9 @@ end
 
 -- Other addons' target health bars (SmoothAnimatedBars.AddBar): a marker each, as the target frame's, with the DoTs on
 -- the target. The bar may show a percentage (Frames Forever's do), so the range is the target's real health. No kill
--- icon: where the addon puts its portrait is its own. At the level of the bar's liquid (Bars.lua, External.Raise),
--- under it by sublevels, as on the target frame. Hidden while the bar shows another unit or fills from the right.
+-- icon: where the addon puts its portrait is its own. At the level the addon asked for its liquid, which then goes a
+-- level above it (Bars.lua, External.Raise, Bars.SetOver), as on the target frame. Hidden while the bar shows another
+-- unit or fills from the right.
 local externalMarkers = {} -- other addon's bar -> marker
 
 RaiseExternal = function(m)
@@ -942,6 +945,11 @@ function Marker.Apply()
         if not on then Hide(m) end
         any = any or on
     end
+    -- The health liquid a level above each marker (Bars.SetOver), so its front always lies over the DoT liquids. A
+    -- nameplate's is raised over its marker already (RaisePlateMarker).
+    Each(function(m)
+        if not m.spec.plate then ns.Bars.SetOver(m.bar, m.live) end
+    end)
     if any and not driver then
         driver = CreateFrame("Frame")
         driver:SetScript("OnUpdate", OnUpdate)

@@ -158,7 +158,9 @@ local function Path(frame, ...)
 end
 
 -- The texts inside a flat bar, which its raised liquid would cover (PlateTexts): a nameplate's (TextStatusBar) and the
--- Personal Resource Display's (PersonalResourceStatusBar, whose main text is TextString).
+-- Personal Resource Display's (PersonalResourceStatusBar, whose main text is TextString). The target frame's health bar
+-- has the same keys (SetBarText puts its container's HealthBarText, LeftText and RightText on the bar), copied while its
+-- liquid is raised over a DoT marker (Bars.SetOver).
 local PLATE_TEXTS = { "Text", "LeftText", "RightText" }
 local PRD_TEXTS = { "TextString", "LeftText", "RightText" }
 
@@ -173,7 +175,7 @@ local SPOTS = {
         return Path(PlayerFrame, "manabar") or (PlayerFrame_GetManaBar and PlayerFrame_GetManaBar())
             or Path(PlayerFrame, "PlayerFrameContent", "PlayerFrameContentMain", "ManaBarArea", "ManaBar")
     end },
-    { key = "targetHealth", unit = "target", kind = "health", find = function()
+    { key = "targetHealth", unit = "target", kind = "health", texts = PRD_TEXTS, find = function()
         return Path(TargetFrame, "healthbar")
             or Path(TargetFrame, "TargetFrameContent", "TargetFrameContentMain", "HealthBarsContainer", "HealthBar")
     end },
@@ -752,8 +754,12 @@ local function SyncPlateTexts(b)
     end
 end
 
--- The copies' frame, built once per flat bar, a level above the liquid; not clipped, as the name is wider.
-local function PlateTexts(b)
+-- The copies' frame, built once per flat bar, a level above the liquid; not clipped, as the name is wider. up: its
+-- levels above the bar (a flat bar's, over its shading, if nil). A bar raised over a DoT marker (Over.Raise) keeps its
+-- copies while it is not, for the next time.
+local function PlateTexts(b, up)
+    if not b.texts and b.spareTexts then b.texts, b.spareTexts = b.spareTexts, nil end
+    b.textsUp = up or PLATE_RAISE + 2
     if not b.texts then
         local frame = CreateFrame("Frame", nil, b.bar)
         frame:SetAllPoints(b.bar)
@@ -768,9 +774,51 @@ local function PlateTexts(b)
     end
     local frame = b.texts.frame
     local ok, level = pcall(b.bar.GetFrameLevel, b.bar)
-    if ok and type(level) == "number" and not Secret(level) then frame:SetFrameLevel(level + PLATE_RAISE + 2) end
+    if ok and type(level) == "number" and not Secret(level) then frame:SetFrameLevel(level + b.textsUp) end
     frame:SetShown(b.live)
     b.textIn = 0
+end
+
+-- A health bar a DoT marker lies on (Marker.lua: the target frame's, a preview's, another addon's target bar; set with
+-- Bars.SetOver). The marker's liquids are drawn under the health liquid by sublevels, so that the health's wavy front
+-- lies over them, but sublevels order textures within one frame only, and each liquid has frames of its own: at the
+-- same frame level the game kept no fixed order between them. With a DoT liquid on top, its straight cut showed over
+-- the health's front, for one DoT and not the next (seen in game on the target frame, as on the plates before
+-- RaisePlate). So the health liquid goes a level above the bar, over the marker left at the bar's level, and copies of
+-- the bar's texts a level above that, as on the plates. Where the client keeps the bar's level secret it stays at the
+-- bar's level.
+local Over = { RAISE = 1, bars = {} } -- bars: bar -> true while a DoT marker lies on it
+
+function Over.Raise(b)
+    local ok, level = pcall(b.bar.GetFrameLevel, b.bar)
+    if not ok or type(level) ~= "number" or Secret(level) then
+        b.raisedOn = nil
+        AtParentLevel(b.clip, b.bar)
+        return
+    end
+    if level == b.raisedOn then return end
+    b.raisedOn = level
+    if b.clip.SetUsingParentLevel then b.clip:SetUsingParentLevel(false) end
+    b.clip:SetFrameLevel(level + Over.RAISE)
+    if b.texts then b.texts.frame:SetFrameLevel(level + Over.RAISE + 1) end
+end
+
+-- After the marker came or went (Bars.SetOver), or the bar's liquid was built under one.
+function Over.Apply(b)
+    if b.spot.flat then return end -- a nameplate's and the Personal Resource Display's are over their markers already
+    if b.spot.external then return External.Raise(b) end
+    b.raisedOn = nil
+    if Over.bars[b.bar] then
+        PlateTexts(b, Over.RAISE + 1)
+        Over.Raise(b)
+        SyncPlateTexts(b)
+    else
+        AtParentLevel(b.clip, b.bar)
+        if b.texts then
+            b.texts.frame:Hide()
+            b.spareTexts, b.texts = b.texts, nil
+        end
+    end
 end
 
 local function NewBar(spot, bar)
@@ -1329,6 +1377,14 @@ local function UpdateBar(b, dt)
             b.textIn = TEXT_EVERY
             SyncPlateTexts(b)
         end
+    elseif b.texts then
+        -- Raised over a DoT marker (Over.Raise): its texts are copies too, and the bar's level is looked at again.
+        b.textIn = (b.textIn or 0) - dt
+        if b.textIn <= 0 then
+            b.textIn = TEXT_EVERY
+            Over.Raise(b)
+            SyncPlateTexts(b)
+        end
     end
     if b.spot.external then
         b.colorIn = (b.colorIn or 0) - dt
@@ -1419,9 +1475,11 @@ end
 -- One level above the bar by default (AddBar's level), as many as the addon asks for, or 0 for the bar's own level. At
 -- the bar's own level the bar's background, a texture on the bar itself, drew over the liquid (seen in game on Frames
 -- Forever's bars, dark at 80%: the liquid showed dim), as the plates' did. The addon's text and heal prediction on
--- frames higher up stay over it.
+-- frames higher up stay over it. A target health bar with the DoT marker on it has the marker at that level and its
+-- liquid one more up, over the marker (Over.Raise says why).
 function External.Raise(b)
     local up = b.spot.external.level or 1
+    if Over.bars[b.bar] and b.spot.unit == "target" and b.spot.kind == "health" then up = up + Over.RAISE end
     if up <= 0 then
         b.raisedOn = nil
         AtParentLevel(b.clip, b.bar)
@@ -1902,6 +1960,8 @@ function Bars.Apply()
                 if spot.flat then
                     PlateTexts(b)
                     RaisePlate(b)
+                elseif Over.bars[bar] then
+                    Over.Apply(b) -- the DoT marker was there first
                 end
             elseif not spot.optional then
                 missing = missing + 1
@@ -1979,6 +2039,17 @@ local function StateFor(bar)
         if b.bar == bar then return b end
     end
     return plates[bar]
+end
+
+-- Whether a DoT marker lies on a health bar (Marker.lua): its liquid goes a level above the marker, with copies of the
+-- bar's texts above it (Over.Raise). A flat bar's is raised over its marker already; another addon's goes one level
+-- above the addon's level (External.Raise). The bar may not have its liquid yet: Bars.Apply looks when it builds it.
+function Bars.SetOver(bar, on)
+    on = on and true or nil
+    if Over.bars[bar] == on then return end
+    Over.bars[bar] = on
+    local b = StateFor(bar)
+    if b then Over.Apply(b) end
 end
 
 -- The mask the liquid on a flat bar takes (a nameplate's, the Personal Resource Display's), for the markers' liquids

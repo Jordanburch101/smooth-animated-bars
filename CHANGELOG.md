@@ -12,6 +12,11 @@ Sections are `### New` and `### Fixed`; skip one that would be empty.
   as it does on your target's portrait. Turn it off with Kill Icon on
   Nameplates under Nameplates in the settings.
 
+### Fixed
+- **DoT marker on the target**: your target's health no longer sometimes
+  ends in a straight cut against your DoTs. Its wavy front now always flows
+  over them, as it was meant to.
+
 ## 1.9.0
 
 ### New

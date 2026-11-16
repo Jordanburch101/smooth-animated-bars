@@ -985,6 +985,25 @@ end)"""
 check(dm.eval(LAYERS + "(1)") == -3 and dm.eval(LAYERS + "(2)") == 2,
       "cut by the bar's mask, motes free, at the bar's level; under the health liquid (sublevels 3 to 7), "
       "the second DoT liquid over the first")
+check(dm.eval("""(function()
+    local bar = TargetFrame.healthbar
+    local _, clip = __ours(bar)
+    return not clip.useParentLevel and clip.level == bar:GetFrameLevel() + 1
+        and (select(2, __ours(TargetFrame.manabar))).useParentLevel
+end)()"""), "the health liquid a level above the marker, so its front always lies over the DoT liquids; "
+      "the power bar's stays at its bar's level")
+dm.execute("TargetFrame.healthbar.TextString:SetText(__secret('90 / 100')); TargetFrame.healthbar.TextString:Show()")
+run(dm, 0.2)
+TARGET_COPY = """(function()
+    local bar = TargetFrame.healthbar
+    for _, r in ipairs(__regions) do
+        if r.kind == "FontString" and r.over == bar.TextString then
+            return r.shown and r.parent.shown and issecretvalue(r.text) and r.parent.level == bar:GetFrameLevel() + 2
+        end
+    end
+    return false
+end)()"""
+check(dm.eval(TARGET_COPY), "its health text copied a level above it (the game's is under the raised liquid)")
 check(dm.eval("issecretvalue(__m().killBar.max)") and dm.eval("__m().killBar.value") == 90 and dm.eval("__m().window.shown")
       and dm.eval("__m().window.points.CENTER.rel == TargetFrame.TargetFrameContainer.Portrait")
       and dm.eval("__m().window.clipsChildren"),
@@ -1201,6 +1220,8 @@ dm.execute("__settings.dots:SetValue(false)")
 run(dm, 0.2)
 check(not dm.eval("__ns.Dots.IsEnabled()") and not dm.eval(LISTENING) and not dm.eval("__m().clip.shown"),
       "off again: tracking stops and listens to nothing")
+check(dm.eval("(select(2, __ours(TargetFrame.healthbar))).useParentLevel") and not dm.eval(TARGET_COPY),
+      "and the health liquid is back at its bar's level, with no copies of its text")
 check(dm.eval("(__ns.Dots.parseDot('Transfers 15 health from the target to the caster every 3 sec. Lasts 30 sec.'))") == 150
       and dm.eval("(__ns.Dots.parseDot('Heals the target of 830 damage over 15 sec.'))") is None
       and dm.eval("(__ns.Dots.parseDot('Finishing move. 1 point : 24 damage over 12 sec. 5 points: 120 damage over 12 sec.', 5))") == 120,
@@ -3202,7 +3223,9 @@ check(ed.eval("__em().clip.shown") and ed.eval("__em().liquids[1].themeKey") == 
 check(ed.eval("issecretvalue(__em().liquids[1].run.max)") and ed.eval("issecretvalue(__em().liquids[1].clamp.max)"),
       "measured against the target's real health, not the bar's percentage")
 check(ed.eval("__em().clip.level") == 7 and not ed.eval("__em().window.shown"),
-      "at the level of the bar's liquid, with no kill icon (the addon's portrait is its own)")
+      "at the level the addon asked for, with no kill icon (the addon's portrait is its own)")
+check(ed.eval("(select(2, __ours(__ufT))).level") == 8,
+      "and the bar's liquid a level above it, so its front always lies over the DoT liquids")
 check(ed.eval("""(function()
     local _, _, mover = __ours(__ufT)
     local a = mover.points.TOPRIGHT

@@ -11,7 +11,7 @@ for players; `docs/DEVELOPMENT.md` covers the layout and tools; this file holds 
   (`StatusBar:SetValue`) and anchor to what the client lays out; `Bars.lua` explains the design.
 - **Game frames:** only read and draw on them. No hooks, no fields written onto them, no changes besides the
   fill texture's alpha. Our frames sit at the bar's own frame level so the game's text stays on top, except on
-  nameplates (see Enemy nameplates below).
+  nameplates (see Enemy nameplates below) and a health liquid with the DoT marker on it (see DoT tracking).
 - **Forever assets:** game files by path often fail to load there. Use `SetColorTexture` for solid fills and
   the addon's own TGAs in `SmoothAnimatedBars/Media/` (made by `tools/make_media.py`), never `Interface\...`
   game paths. Icons by file ID.
@@ -104,7 +104,15 @@ Facts found while building this, which the code relies on and which are not obvi
   marker and kill icon (`Marker.lua`) leave every comparison with health to StatusBars, as the liquid does.
   The marker is up to two DoT liquids, one per school (oldest at the front), drawn 10 and 5 sublevels under
   the health liquid (`Liquid:SetSublevelOffset`; Liquid.lua uses sublevels 3 to 7 of -8..7, so there is no
-  room for a third), and the health liquid's front is moved onto where the health will end (`Bars.Front`). The kill icon is the
+  room for a third), and the health liquid's front is moved onto where the health will end (`Bars.Front`). Those
+  sublevels order the DoT liquids, which share a clip frame, but not the health liquid, in frames of its own: at the
+  bar's level with the marker, the health's front sometimes lay under a DoT liquid's straight cut (seen in game on the
+  target frame, one DoT right and the next wrong, as on plates before). So while a marker is live on a bar
+  (`Bars.SetOver`, from `Marker.Apply`) its health liquid is one level up, with copies of the bar's texts
+  (`TextString`/`LeftText`/`RightText`, put on the bar by `SetBarText`) one more up (`Bars.lua`, `Over`); on another
+  addon's target bar the liquid goes one past its `level`. The target's heal prediction and absorb bars are child
+  frames one level up too, so they now tie with the liquid's front. Seen in game on the target frame: the front over
+  the DoTs every time. Not yet seen: other addons' target bars. The kill icon is the
   atlas `UI-HUD-UnitFrame-Target-HighLevelTarget_Icon` (Forever's `TargetFrame.xml`).
 - **Other client languages** (`Locale.lua`, `Locale_<tag>.lua`, ported from DoesItDie 0.9.3 without its options
   translations): English patterns run first, then every language in toc order, whatever `GetLocale()` says
