@@ -4,7 +4,16 @@ Player-facing notes for each release. Write for players: what they can now
 do or see, and what was broken and now works. Leave out internal changes.
 Sections are `### New` and `### Fixed`; skip one that would be empty.
 
-## 1.10.1
+## 1.11.0
+
+### New
+- **Raid frames**: the liquid in the raid frames' health and power bars, and
+  in the party's when you use raid-style party frames. The game's names, role
+  icons, heal prediction and shields stay on top of it, and an offline member
+  keeps the game's grey bar. Health takes the raid frames' own colours, class
+  colours or the colour set in the game's Raid Frames options, power its power
+  type's, or any theme. Off to start with: turn them on with Health and Power
+  under Raid Frames in the settings.
 
 ### Fixed
 - **Faded-out frames**: bars on a frame that another addon has faded out

@@ -35,6 +35,16 @@ HELPERS = """
                 if f.SetValue then proxy = proxy or f elseif f.clipsChildren then clip = clip or f end
             end
         end
+        -- A raid bar's does not clip (its liquid is cut by a mask): the first frame of ours on the bar with a frame in it.
+        if not clip and proxy then
+            for _, f in ipairs(__frames) do
+                if f.parent == bar and not f.SetValue and not clip then
+                    for _, c in ipairs(__frames) do
+                        if c.parent == f then clip = f; break end
+                    end
+                end
+            end
+        end
         for _, f in ipairs(__frames) do
             if clip and f.parent == clip then mover = f end
         end
@@ -218,6 +228,70 @@ check(lua.eval("#SmoothAnimatedBarsDB.partyProbe") == 1 and lua.eval("SmoothAnim
 check("liquid yes" in health[0], "and whether each has the liquid")
 lua.execute("SlashCmdList.SMOOTHANIMATEDBARS('party clear'); PartyFrame.MemberFrame1:Hide()")
 check(lua.eval("SmoothAnimatedBarsDB.partyProbe") is None, "/sab party clear forgets them")
+# /sab raid: the raid-style frames (CompactUnitFrameTemplate), two raid frames on one unit as a main tank's would be,
+# their colour and fill alpha secret as Forever's are even out of combat.
+lua.execute("""
+    for i = 1, 2 do
+        local f = CreateFrame("Button", "CompactRaidFrame" .. i, UIParent)
+        f.w, f.h, f.unit, f.displayedUnit = 96, 42, "raid1", "raid1"
+        f.healthBar = CreateFrame("StatusBar", "CompactRaidFrame" .. i .. "HealthBar", f)
+        f.healthBar.w, f.healthBar.h = 94, 32
+        f.healthBar:SetMinMaxValues(0, __secret()); f.healthBar:SetValue(__secret())
+        f.healthBar:GetStatusBarTexture():SetAlpha(__secret())
+        f.powerBar = CreateFrame("StatusBar", "CompactRaidFrame" .. i .. "PowerBar", f)
+        f.name = f:CreateFontString(nil, "ARTWORK")
+        f:Show()
+    end
+    __fire('UNIT_HEALTH', 'raid1')
+    SlashCmdList.SMOOTHANIMATEDBARS('raid')
+    __fire('UNIT_HEALTH', 'raid1'); __fire('UNIT_HEALTH', 'target')
+    SlashCmdList.SMOOTHANIMATEDBARS('raid edit mode')""")
+raid = chat(lua)
+check(any("raid combined 2 2" in m for m in raid) and any("raid1 (CompactRaidFrame1, CompactRaidFrame2)" in m for m in raid)
+      and any("CompactRaidFrame1: shown true" in m and "unit raid1" in m for m in raid)
+      and any("health (" in m and "value secret" in m and "fill alpha secret" in m for m in raid)
+      and any("region " in m and "layer ARTWORK 0" in m for m in raid)
+      and any("raidFramesDisplayClassColor" in m for m in raid)
+      and any("events for raid and party units since the first /sab raid: UNIT_HEALTH 1" in m for m in raid),
+      "/sab raid reports the raid-style frames, their parts' layers, units on two frames, settings and raid units' events")
+check(lua.eval("#SmoothAnimatedBarsDB.raidProbe") == 2 and lua.eval("SmoothAnimatedBarsDB.raidProbe[2].note") == "edit mode",
+      "and saves the full report for /reload, with its note")
+lua.execute("SlashCmdList.SMOOTHANIMATEDBARS('raid test')")
+check(lua.eval("""(function()
+    local bar = CompactRaidFrame2.healthBar
+    for _, f in ipairs(__frames) do
+        if f.parent == bar and f.shown and f.useParentLevel then
+            for _, r in ipairs(__regions) do
+                if r.parent == f and r.layer == "ARTWORK" and r.sub == 3 and r.file == "SOLID" then return true end
+            end
+        end
+    end
+end)()"""), "/sab raid test lays a solid block in the liquid's layer at each raid health bar's level")
+check(lua.eval("issecretvalue(CompactRaidFrame1.healthBar:GetStatusBarTexture():GetAlpha())"),
+      "without touching the game's bar (its fill keeps the game's secret alpha)")
+lua.execute("""local f = CreateFrame("Button", "CompactRaidFrame3", UIParent)
+    f.healthBar = CreateFrame("StatusBar", nil, f); f:Show()""")
+run(lua, 1.1)
+check(lua.eval("""(function()
+    for _, f in ipairs(__frames) do if f.parent == CompactRaidFrame3.healthBar and f.shown then return true end end
+end)()"""), "and on frames the game makes later")
+lua.execute("SlashCmdList.SMOOTHANIMATEDBARS('raid test up')")
+up = lua.eval("""(function()
+    for _, f in ipairs(__frames) do
+        if f.parent == CompactRaidFrame1.healthBar and f.shown then
+            return not f.useParentLevel and f:GetFrameLevel() == CompactRaidFrame1.healthBar:GetFrameLevel() + 1
+        end
+    end
+end)()""")
+lua.execute("SlashCmdList.SMOOTHANIMATEDBARS('raid test off')")
+gone = lua.eval("""(function()
+    for _, f in ipairs(__frames) do if f.parent == CompactRaidFrame1.healthBar and f.shown then return false end end
+    return true
+end)()""")
+check(up and gone, "raid test up raises the blocks a level, raid test off hides them")
+lua.execute("""SlashCmdList.SMOOTHANIMATEDBARS('raid clear')
+    for i = 1, 3 do _G["CompactRaidFrame" .. i]:Hide() end""")
+check(lua.eval("SmoothAnimatedBarsDB.raidProbe") is None, "/sab raid clear forgets them")
 check(not any("Error in" in m for m in chat(lua)), "no errors")
 
 print("== settings")
@@ -228,7 +302,8 @@ check(keys == ["playerHealth", "healthColor", "playerPower", "powerColor", "targ
                "targetPower", "targetPowerColor", "mobClassColor", "petHealth", "petHealthColor", "petPower",
                "petPowerColor", "focusHealth", "focusHealthColor", "focusPower", "focusPowerColor", "totHealth",
                "totHealthColor", "totPower", "totPowerColor", "partyHealth", "partyHealthColor", "partyPower",
-               "partyPowerColor", "prdHealth", "prdHealthColor", "prdPower", "prdPowerColor", "plateHealth",
+               "partyPowerColor", "raidHealth", "raidHealthColor", "raidPower", "raidPowerColor", "prdHealth",
+               "prdHealthColor", "prdPower", "prdPowerColor", "plateHealth",
                "plateHealthColor", "plateDots", "plateKillIcon", "plateFriendly", "plateFriendlyColor", "mobClassColor",
                "externalBars", "waves", "swirl", "bubbles", "sparkles", "ambient", "lightning", "dots", "dotKillIcon", "heals", "manaBuild", "rageFury"],
       f"settings page rows: {keys}")
@@ -587,6 +662,185 @@ run(pf, 0.3)
 check(pf.eval(f"{PARTY_HEALTH.format(1)}.fill.alpha") == 1 and pf.eval(f"(select(2, __liquid({PARTY_HEALTH.format(1)})))") == 0,
       "Party Health off and on while a member is offline: their bar stays the game's grey one, not an empty bar")
 pf.execute("__units.party1.offline = nil")
+
+print("== raid frames")
+# Raid-style frames (CompactUnitFrameTemplate) as /sab raid saw them in Edit Mode: a 96x42 health bar at its button's
+# level, no mask, its value and colour secret. Two members of a raid, one whose class the client keeps secret.
+rf = session()
+rf.execute("""
+    __cvars.raidFramesDisplayClassColor = '1'
+    __cvars.raidFramesHealthBarColor = 'FF2B9305'
+    __units.raid1 = { isOtherPlayer = true, class = 'MAGE', power = 0 }
+    __units.raid2 = { isOtherPlayer = true, class = __secret(), power = 1 }
+    -- The power bar 8 px under the health (shown for everyone here), on a frame of its own at level 5.
+    function __raidFrame(name, unit)
+        local f = CreateFrame("Button", name, UIParent)
+        f.w, f.h, f.unit, f.displayedUnit = 98, 44, unit, unit
+        f.healthBar = CreateFrame("StatusBar", name .. "HealthBar", f)
+        f.healthBar.w, f.healthBar.h = 96, 34
+        f.healthBar:SetMinMaxValues(0, __secret()); f.healthBar:SetValue(__secret())
+        f.healthBar:SetStatusBarColor(__secret(), __secret(), __secret())
+        f.powerBar = CreateFrame("StatusBar", name .. "PowerBar", f)
+        f.powerBar.w, f.powerBar.h = 96, 8
+        f.powerBar:SetFrameLevel(5)
+        f.powerBar:SetMinMaxValues(0, __secret()); f.powerBar:SetValue(__secret())
+        f:Show()
+        return f
+    end
+    __raidFrame("CompactRaidFrame1", "raid1")
+    __raidFrame("CompactRaidFrame2", "raid2")
+""")
+run(rf, 0.3)
+check(rf.eval("(select(2, __liquid(CompactRaidFrame1.healthBar)))") == 0
+      and rf.eval("CompactRaidFrame1.healthBar.fill.alpha") == 1, "off to start with: the raid frames keep the game's bars")
+rf.execute("__settings.raidHealth:SetValue(true)")
+run(rf, 0.3)
+RAID = ["CompactRaidFrame1.healthBar", "CompactRaidFrame2.healthBar"]
+check(all(rf.eval(f"(select(2, __liquid({b})))") > 0 and rf.eval(f"{b}.fill.alpha") == 0 for b in RAID),
+      "Raid Frames Health on: liquid in each raid frame's health bar on its secret value, the game's fill hidden")
+check(rf.eval("""(function()
+    local _, clip, mover = __ours(CompactRaidFrame1.healthBar)
+    local n = 0
+    for _, r in ipairs(__regions) do
+        if r.parent == mover and r.kind == "Texture" then
+            if r.layer ~= "BORDER" or r.sub > 4 then return false end
+            n = n + 1
+        end
+    end
+    return n > 0 and clip.useParentLevel and mover.useParentLevel
+end)()"""), "drawn in BORDER at the bar's level, under the game's heal prediction (BORDER 5) and everything over it")
+check(rf.eval("""(function()
+    local _, clip, mover = __ours(CompactRaidFrame1.healthBar)
+    local tl, br = clip.points.TOPLEFT, clip.points.BOTTOMRIGHT
+    if not (tl.x == 0 and tl.y == 0 and br.x == 0 and br.y == 0) or clip.clipsChildren then return false end
+    local mask
+    for _, r in ipairs(__regions) do
+        if r.parent == mover and r.kind == "Texture" then
+            if not (r.masks and r.masks[1]) then return false end
+            mask = mask or r.masks[1]
+            if r.masks[1] ~= mask then return false end
+        end
+    end
+    return mask ~= nil and mask.file:find("Square$") and mask.points.TOPLEFT.rel == CompactRaidFrame1.healthBar
+end)()"""), "cut to the bar by a square mask, motes and all (the frames touch), not by a clip frame: in game the "
+      "frame's background drew over a liquid in one")
+r, g, b = rf.eval("__tint(CompactRaidFrame1.healthBar)")
+check(b > 0.8 and r < 0.5, f"Game Colour with the game's class colours on: a mage blue ({r:.2f}, {g:.2f}, {b:.2f})")
+TINTED = """(function(bar)
+    local _, _, mover = __ours(bar)
+    for _, r in ipairs(__regions) do
+        if r.parent == mover and r.blend == "MOD" then return r.shown and issecretvalue(r.vc[1]) end
+    end
+    return false
+end)"""
+check(rf.eval(f"{TINTED}(CompactRaidFrame2.healthBar)") and not rf.eval(f"{TINTED}(CompactRaidFrame1.healthBar)"),
+      "a class kept secret: the bar's secret colour tints the liquid, which the readable class does not need")
+rf.execute("__cvars.raidFramesDisplayClassColor = '0'")
+run(rf, 0.6)
+r, g, b = rf.eval("__tint(CompactRaidFrame1.healthBar)")
+check(g > r and g > b and not rf.eval(f"{TINTED}(CompactRaidFrame2.healthBar)"),
+      f"class colours off in the game: the colour set in its Raid Frames options, green ({r:.2f}, {g:.2f}, {b:.2f})")
+rf.execute("__settings.raidHealthColor:SetValue('class')")
+run(rf, 0.1)
+r, g, b = rf.eval("__tint(CompactRaidFrame1.healthBar)")
+check(b > 0.8 and r < 0.5, f"Class Color: the member's class ({r:.2f}, {g:.2f}, {b:.2f})")
+rf.execute("__settings.raidHealthColor:SetValue('game')")
+# Motes there are in BORDER 3 (OVERLAY 4 moved down), not where __motes looks.
+RAID_MOTES = """(function(bar)
+    local _, _, mover = __ours(bar)
+    local n = 0
+    for _, r in ipairs(__regions) do
+        if r.parent == mover and r.shown and r.layer == "BORDER" and r.sub == 3 then n = n + 1 end
+    end
+    return n
+end)"""
+before = rf.eval(f"{RAID_MOTES}(CompactRaidFrame1.healthBar)")
+rf.execute("CompactRaidFrame1.displayedUnit = 'raid2'; CompactRaidFrame1.unit = 'raid2'")
+run(rf, 0.1)
+rf.execute("__fire('UNIT_HEALTH', 'raid2')")
+run(rf, 0.05)
+check(rf.eval(f"{RAID_MOTES}(CompactRaidFrame1.healthBar)") > before,
+      "a frame handed to another member follows them: their health change stirs it")
+rf.execute("CompactRaidFrame1.displayedUnit = 'raid1'; CompactRaidFrame1.unit = 'raid1'; __units.raid1.offline = true")
+run(rf, 0.7)
+check(rf.eval("CompactRaidFrame1.healthBar.fill.alpha") == 1 and rf.eval("(select(2, __liquid(CompactRaidFrame1.healthBar)))") == 0
+      and rf.eval("(select(2, __liquid(CompactRaidFrame2.healthBar)))") > 0,
+      "a member offline: the game's grey bar back for them, the others keep the liquid")
+rf.execute("__units.raid1.offline = nil")
+run(rf, 0.7)
+check(rf.eval("(select(2, __liquid(CompactRaidFrame1.healthBar)))") > 0, "and the liquid again once they are back")
+rf.execute("__units.raid3 = { isOtherPlayer = true, class = 'WARRIOR' }; __raidFrame('CompactRaidGroup1Member1', 'raid3')")
+run(rf, 1.2)
+check(rf.eval("(select(2, __liquid(CompactRaidGroup1Member1.healthBar)))") > 0,
+      "a frame the game makes later (someone joining, groups kept apart) gets the liquid within a second")
+rf.execute("CompactRaidFrame2:Hide()")
+run(rf, 0.1)
+check(rf.eval("(select(2, __liquid(CompactRaidFrame1.healthBar)))") > 0, "a hidden frame leaves the others alone")
+rf.execute("CompactRaidFrame2:Show()")
+check(row(rf, "raidHealthColor").frame.shown, "its colour option shows while it is on")
+POWER = ["CompactRaidFrame1.powerBar", "CompactRaidFrame2.powerBar"]
+check(all(rf.eval(f"(select(2, __liquid({b})))") == 0 and rf.eval(f"{b}.fill.alpha") == 1 for b in POWER)
+      and not row(rf, "raidPowerColor").frame.shown, "power is a setting of its own, off to start with")
+rf.execute("__settings.raidPower:SetValue(true)")
+run(rf, 0.3)
+check(all(rf.eval(f"(select(2, __liquid({b})))") > 0 and rf.eval(f"{b}.fill.alpha") == 0 for b in POWER),
+      "Raid Frames Power on: liquid in each member's power bar, the game's fill hidden")
+check(rf.eval("""(function()
+    local _, clip, mover = __ours(CompactRaidFrame1.powerBar)
+    for _, r in ipairs(__regions) do
+        if r.parent == mover and r.kind == "Texture" then
+            if r.layer ~= "BORDER" or r.sub > 4 or not (r.masks and r.masks[1]) then return false end
+        end
+    end
+    return clip.useParentLevel and not clip.clipsChildren and clip:GetFrameLevel() == 5
+end)()"""), "drawn as the health's: BORDER, cut by a mask, at the power bar's own level")
+r, g, b = rf.eval("__tint(CompactRaidFrame1.powerBar)")
+pr, pg, pb = rf.eval("__tint(CompactRaidFrame2.powerBar)")
+check(b > 0.6 and r < 0.4 and pr > 0.6 and pb < 0.3,
+      f"Same as Party: each member's power type, mana blue and rage red, the class kept secret or not "
+      f"({r:.2f}, {g:.2f}, {b:.2f} / {pr:.2f}, {pg:.2f}, {pb:.2f})")
+rf.execute("CompactRaidFrame1.powerBar:Hide()")  # healers only: the game hides the others' power bars
+run(rf, 0.2)
+check(rf.eval("(select(2, __liquid(CompactRaidFrame1.healthBar)))") > 0 and not any("Error" in m for m in chat(rf)),
+      "a power bar the game hides (healers only) leaves the health alone")
+rf.execute("CompactRaidFrame1.powerBar:Show()")
+# How often a raid liquid updates: the player's idle rate for a party's worth, slower for a raid's dozens.
+rf.execute("""(function()
+    local l = __ns.Bars.Liquid(CompactRaidFrame1.healthBar)
+    local update = l.Update
+    l.Update = function(self, ...) __updates = __updates + 1; return update(self, ...) end
+end)()""")
+COUNT_UPDATES = "__updates = 0"
+rf.execute(COUNT_UPDATES)
+run(rf, 1)
+few = rf.eval("__updates")
+rf.execute("""for i = 1, 12 do
+        __units['raid' .. (10 + i)] = { isOtherPlayer = true, class = 'PRIEST', power = 0 }
+        __raidFrame('CompactRaidGroup' .. (2 + math.floor((i - 1) / 5)) .. 'Member' .. ((i - 1) % 5 + 1), 'raid' .. (10 + i))
+    end""")
+run(rf, 1.2)
+rf.execute(COUNT_UPDATES)
+run(rf, 1)
+many = rf.eval("__updates")
+check(27 <= few <= 31 and 13 <= many <= 16,
+      f"a raid liquid updates 30 times a second with a party's worth showing, 15 with a raid's ({few}, {many})")
+rf.execute("""for i = 1, 12 do
+        _G['CompactRaidGroup' .. (2 + math.floor((i - 1) / 5)) .. 'Member' .. ((i - 1) % 5 + 1)]:Hide()
+    end""")
+rf.execute("SlashCmdList.SMOOTHANIMATEDBARS('raid')")
+check(any("CompactRaidFrame1HealthBar): liquid yes" in m for m in chat(rf)), "/sab raid says which bars have the liquid")
+rf.execute("__settings.raidHealth:SetValue(false)")
+run(rf, 0.2)
+check(all(rf.eval(f"(select(2, __liquid({b})))") == 0 and rf.eval(f"{b}.fill.alpha") == 1
+          for b in RAID + ["CompactRaidGroup1Member1.healthBar"]), "off again: every raid frame has the game's bar back")
+check(rf.eval("(select(2, __liquid(CompactRaidFrame2.powerBar)))") > 0
+      and rf.eval("(select(2, __liquid(CompactRaidGroup1Member1.powerBar)))") > 0,
+      "and power keeps its liquid with health off, on frames made later too")
+rf.execute("__settings.raidPower:SetValue(false)")
+run(rf, 0.2)
+check(all(rf.eval(f"(select(2, __liquid({b})))") == 0 and rf.eval(f"{b}.fill.alpha") == 1 for b in POWER),
+      "Power off: the game's power bars back")
+check(not any("Error" in m for m in chat(rf)), "no errors")
 
 print("== a bar whose size is kept secret")
 ss = session("{ setupDone = true, dots = true }")

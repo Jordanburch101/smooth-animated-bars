@@ -68,7 +68,11 @@ function Region:SetResizable() end
 function Region:SetResizeBounds(...) self.bounds = { ... } end
 function Region:StartSizing(point) self.sizing = point end
 function Region:SetFrameLevel(l) self.level = l end
-function Region:GetFrameLevel() return self.level or 1 end
+-- A frame at its parent's level (SetUsingParentLevel) reports the parent's, as in the client.
+function Region:GetFrameLevel()
+    if self.useParentLevel and self.parent then return self.parent:GetFrameLevel() end
+    return self.level or 1
+end
 -- Showing a hidden frame runs its OnShow and hiding a shown one its OnHide, as in the client.
 -- SetShown does not go through Show or Hide.
 local function setShown(self, v)
@@ -511,7 +515,8 @@ end
 
 function Region:GetAlpha() return self.alpha end
 function Region:GetDrawLayer() return self.layer, self.sub end
-function Region:GetDebugName() return self.debugName or "?" end
+-- A named frame's debug name is its name, as in the client.
+function Region:GetDebugName() return self.debugName or self.name or "?" end
 
 function Region:SetUsingParentLevel(v) self.useParentLevel = v end
 -- Atlases by name; __missingAtlases[name] makes one fail, as an atlas the client does not have.

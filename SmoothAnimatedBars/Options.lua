@@ -285,12 +285,28 @@ function Options.Register(savedDB, defaultValues)
         whose = "your target's target's and your focus's target's", health = SAME_TARGET, power = SAME_TARGET })
     Frame("Party", "party", "partyHealthColor", "partyPowerColor", SameAsOptions("Same as Yours"), {
         whose = "your party members'",
-        aboutHealth = "Raid-style party frames keep the game's bars. While a member is offline the game's grey bar "
+        aboutHealth = "Raid-style party frames are under Raid Frames. While a member is offline the game's grey bar "
             .. "comes back.",
-        aboutPower = "Raid-style party frames keep the game's bars.",
+        aboutPower = "Raid-style party frames are under Raid Frames.",
         health = "Same as Yours follows your own health colour. Class Color shows each member's class. While a member "
-            .. "is offline the game's grey bar comes back. Raid-style party frames keep the game's bars.",
+            .. "is offline the game's grey bar comes back. Raid-style party frames are under Raid Frames.",
         power = "Same as Yours follows your own power colour, so Game Colour shows each member's power type." })
+
+    Header("Raid Frames")
+    Checkbox("raidHealth", "Health",
+        "Liquid in the raid frames' health bars, and the party's when the game shows raid-style party frames. The "
+        .. "game's names, icons, heal prediction and shields stay on top. While a member is offline the game's grey bar "
+        .. "comes back. /sab perf shows what it costs in a big raid.")
+    Dropdown("raidHealthColor", "Colour",
+        "Game Colour takes the raid frames' own: class colours, or the colour set in the game's Raid Frames options. "
+        .. "Same as Party follows your party frames' colour.",
+        SameAsOptions("Same as Party"), { indent = true, shown = On("raidHealth") })
+    Checkbox("raidPower", "Power",
+        "Liquid in the raid frames' power bars, where the game shows them: its Raid Frames options can show them for "
+        .. "everyone or for healers only.")
+    Dropdown("raidPowerColor", "Colour",
+        "Same as Party follows your party frames' power colour, so Game Colour shows each member's power type.",
+        SameAsOptions("Same as Party"), { indent = true, shown = On("raidPower") })
     Frame("Personal Resource Display", "prd", "prdHealthColor", "prdPowerColor", SameAsOptions("Same as Yours"), {
         whose = "the Personal Resource Display's",
         aboutHealth = "The extra bars the game shows with its Personal Resource Display option on, placed with Edit Mode.",

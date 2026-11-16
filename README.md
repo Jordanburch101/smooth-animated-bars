@@ -251,8 +251,8 @@ as it was.
 ## Good to know
 
 - **WoW Forever only.** It draws on Forever's own unit frames.
-- **Player, target, pet, focus, target-of-target and party frames, the Personal Resource Display and nameplates.**
-  Raid-style party frames keep the game's bars. Unit frame addons can hand over their own bars (For addon authors). A target of target's liquid follows its bar but is not stirred by
+- **Player, target, pet, focus, target-of-target, party and raid frames, the Personal Resource Display and nameplates.**
+  Raid frames (and raid-style party frames) get it in their health and power bars, off to start with. Unit frame addons can hand over their own bars (For addon authors). A target of target's liquid follows its bar but is not stirred by
   changes, as the game sends no events for it.
 - **Always matches the game.** WoW Forever keeps health and power hidden from addons, so the addon never knows
   how full a bar is: the game itself places the liquid on its own bar. That is why it always matches the game

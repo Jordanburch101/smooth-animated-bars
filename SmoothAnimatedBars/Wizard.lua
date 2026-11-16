@@ -264,7 +264,8 @@ function BUILD.party(p)
     Row("Bars", "party", -56, PARTY)
     Row("Colour", "partyHealthColor", -102, PARTY_COLORS)
     local note = Font(p, "GameFontHighlightSmall", "Class Color shows each member's class. Power follows your own power "
-        .. "colour; every theme is in the settings. Raid-style party frames keep the game's bars.", "LEFT")
+        .. "colour; every theme is in the settings. Raid-style party frames are under Raid Frames in the settings.",
+        "LEFT")
     note:SetPoint("TOPLEFT", 0, -178)
     note:SetWidth(W - 72)
     note:SetWordWrap(true)

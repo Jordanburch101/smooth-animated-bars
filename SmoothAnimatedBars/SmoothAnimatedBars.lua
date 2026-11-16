@@ -25,6 +25,10 @@ local DEFAULTS = {
     -- The Personal Resource Display's bars (the game shows them with its Personal Resource Display option on)
     prdHealth    = true,
     prdPower     = true,
+    -- The raid frames' health, and the raid-style party frames' (Bars.lua, Bars.raid), off until it has been tried in a
+    -- raid
+    raidHealth   = false,
+    raidPower    = false,
     -- Enemy nameplates' health (Bars.lua), off until it has been tried in a crowd
     plateHealth  = false,
     -- Friendly nameplates' health, the same way (outside instances: the game keeps those there to itself)
@@ -52,6 +56,9 @@ local DEFAULTS = {
     partyPowerColor   = "same",
     prdHealthColor    = "same",
     prdPowerColor     = "same",
+    -- The raid frames: the game's raid colour (class colours or the colour set in its Raid Frames options) by default
+    raidHealthColor   = "game",
+    raidPowerColor    = "same",
     plateHealthColor  = "same",
     -- Friendly nameplates: their own colour by default, or "same" for the enemy plates'
     plateFriendlyColor = "game",
@@ -98,11 +105,12 @@ local COLOR_KEYS = {
     tot    = { health = "totHealthColor", power = "totPowerColor" },
     party  = { health = "partyHealthColor", power = "partyPowerColor" },
     prd    = { health = "prdHealthColor", power = "prdPowerColor" },
+    raid   = { health = "raidHealthColor", power = "raidPowerColor" },
     plate  = { health = "plateHealthColor" },
     friend = { health = "plateFriendlyColor" },
 }
 local FOLLOWS = { target = "player", pet = "player", focus = "target", tot = "target", party = "player", prd = "player",
-                  plate = "target", friend = "plate" }
+                  raid = "party", plate = "target", friend = "plate" }
 
 -- The colour a frame's bar of this kind ("health" or "power") shows: "game" or a theme key, "same" followed through.
 function Core.ColorChoice(frame, kind)
@@ -160,6 +168,8 @@ local SETTING_APPLY = {
     plateDots   = function() ns.Marker.Apply() end,
     plateKillIcon = function() ns.Marker.Apply() end,
     plateFriendly = function() ApplyBars(false) end,
+    raidHealth  = function() ApplyBars(false) end,
+    raidPower   = function() ApplyBars(false) end,
     externalBars = function()
         ApplyBars(false)
         ns.HealMarker.Apply()
@@ -403,6 +413,8 @@ local HELP = {
         .. "tools/perf_report.py after /reload (perf reset: time afresh, perf clear: forget the saved ones)",
     "/sab party [note] - what the game lets the addon read about the party frames, saved for /reload "
         .. "(party clear: forget the saved ones)",
+    "/sab raid [note] - the same for the raid-style frames (raid clear: forget the saved ones); /sab raid test "
+        .. "[low | up | off] - a magenta block where their liquid would go, to see what the game draws over it",
 }
 
 -- /sab perf keeps each report in the saved variables, which the client writes to disk on /reload or logout (addons
@@ -435,15 +447,23 @@ end
 -- /sab party: the same, its lines kept for reading after /reload, while the party frames have no liquid yet.
 local PARTY_LOG_MAX = 20
 
-local function SaveParty(lines, note)
+local function SaveParty(lines, note, key)
+    key = key or "partyProbe"
     local snap = { lines = lines, note = note, combat = InCombatLockdown() and true or false }
     snap.when = date and date("%Y-%m-%d %H:%M:%S") or nil
     snap.zone, snap.instance = Where()
     snap.version = C_AddOns and C_AddOns.GetAddOnMetadata and C_AddOns.GetAddOnMetadata(ADDON_NAME, "Version") or nil
-    db.partyProbe = db.partyProbe or {}
-    table.insert(db.partyProbe, snap)
-    while #db.partyProbe > PARTY_LOG_MAX do table.remove(db.partyProbe, 1) end
+    db[key] = db[key] or {}
+    table.insert(db[key], snap)
+    while #db[key] > PARTY_LOG_MAX do table.remove(db[key], 1) end
 end
+
+local RAID_TEST = { ["raid test"] = "liquid", ["raid test low"] = "low", ["raid test up"] = "up", ["raid test off"] = "off" }
+local RAID_TEST_SAYS = {
+    liquid = "in the liquid's layer at the bar's level",
+    low = "in the game fill's layer at the bar's level",
+    up = "in the liquid's layer one level above the bar",
+}
 
 SLASH_SMOOTHANIMATEDBARS1 = "/sab"
 SlashCmdList.SMOOTHANIMATEDBARS = function(input)
@@ -500,6 +520,23 @@ SlashCmdList.SMOOTHANIMATEDBARS = function(input)
         for _, line in ipairs(lines) do Core.Print(line) end
         SaveParty(lines, strtrim(input or ""):match("^%S+%s+(.+)$"))
         Core.Print("Saved (" .. #db.partyProbe .. " in the log). /reload writes it to disk.")
+    elseif RAID_TEST[cmd] then
+        local mode = RAID_TEST[cmd]
+        local n = ns.Bars.RaidTest(mode)
+        if mode == "off" then
+            Core.Print("Raid test blocks hidden.")
+        else
+            Core.Print(string.format("Magenta blocks on %d raid-style health bars, %s. Whatever shows over the magenta "
+                .. "draws over the liquid there. /sab raid test off to hide them.", n, RAID_TEST_SAYS[mode]))
+        end
+    elseif cmd == "raid clear" then
+        db.raidProbe = nil
+        Core.Print("Saved raid reports cleared.")
+    elseif cmd == "raid" or cmd:match("^raid ") then
+        local full, brief = ns.Bars.RaidDebug()
+        for _, line in ipairs(brief) do Core.Print(line) end
+        SaveParty(full, strtrim(input or ""):match("^%S+%s+(.+)$"), "raidProbe")
+        Core.Print("Saved the full report (" .. #db.raidProbe .. " in the log). /reload writes it to disk.")
     elseif cmd == "perf reset" then
         ns.Bars.PerfReset()
         Core.Print("Timing from now on. /sab perf in a few seconds.")
