@@ -2,7 +2,7 @@
 
 Usage: python gallery.py <addon dir> [out dir] [scenario ...]
 Default out dir: branding/gallery. Writes each scenario as an animated WebP (hero is the warrior, then
-mage, rogue, then warlock and rend, whose targets carry the DoT marker, priest, with the heal marker, druid, with both, eating, a meal up to its buff, mana, the build-up to mana regenerating, and fury, a warrior's rage building to full and spent), frames.png (a still of the warrior), themes.png (the player frame in a few themes) plates.webp (four nameplates, from the plate art capture_art.py --plates cut out) and prd.webp (a warrior's Personal Resource Display through a fight and a bandage, on the same plate art) and party.webp (four party members through a fight, from the party art capture_art.py --party cut out).
+mage, rogue, then warlock and rend, whose targets carry the DoT marker, priest, with the heal marker, druid, with both, eating, a meal up to its buff, mana, the build-up to mana regenerating, and fury, a warrior's rage building to full and spent), frames.png (a still of the warrior), themes.png (the player frame in a few themes) plates.webp (four nameplates, from the plate art capture_art.py --plates cut out) and prd.webp (a warrior's Personal Resource Display through a fight and a bandage, on the same plate art) and party.webp (four party members through a fight, from the party art capture_art.py --party cut out) and breath.webp (the breath bar running out under water, bubbles rising off it, then refilling at the surface, from the art capture_art.py --breath cut out).
 A full run takes about a quarter of an hour.
 
 The frame art comes from branding/art, which tools/capture_art.py cuts out of the screenshots /sab
@@ -1184,6 +1184,107 @@ def party():
     print(f"wrote party.webp ({os.path.getsize(webp) // 1024} KB)")
 
 
+# ---------------------------------------------------------------------------- the breath bar
+
+# Forever's breath bar (Blizzard_MirrorTimer/Mainline MirrorTimer.xml), from the art /sab capture breath captured
+# (capture_art.py --breath): its text box, background and border in one cell, with the bar where breath.json says. The
+# game sets the bar's value every frame, with no smoothing, so the liquid's front follows the script exactly. The bar's
+# value is kept secret, so the bubbles go by the timer's own scale, as they would if Forever kept it secret too.
+BREATH_W, BREATH_H = 195, 13
+BREATH_LOOP = 9.0
+# (seconds, fraction): breath running out at the timer's -1 a second (sped up), then back at the surface at its 10.
+BREATH_SCRIPT = [(0.0, 1.00, -1), (6.4, 0.28, 10), (9.0, 1.00, 10)]
+BREATH_ROOM = (20, 78, 20, 10)  # left, top, right, bottom around the bar: the top for the bubbles to rise into
+
+
+def breath_session():
+    """The addon in the mock with the first mirror timer showing breath; its liquid's frame becomes __breathMover and
+    its bubbles' frame __breathBubbles."""
+    before = """
+        SmoothAnimatedBarsDB.setupDone = true
+    """
+    after = f"""
+        __startMirror(1, 'BREATH', -1)
+        local bar = MirrorTimerContainer.mirrorTimers[1].StatusBar
+        bar:SetMinMaxValues(0, __secret()); bar:SetValue(__secret())
+        __step(1 / 60)
+        for _, f in ipairs(__frames) do
+            if f.parent == bar and not f.SetValue and f.clipsChildren then
+                for _, m in ipairs(__frames) do
+                    if m.parent == f and not m.SetValue then __breathMover = m end
+                end
+            end
+        end
+        for _, r in ipairs(__regions) do
+            if r.kind == "Texture" and r.file and r.file:sub(-6) == "Bubble" and r.parent.parent == bar then
+                __breathBubbles = r.parent
+            end
+        end
+        __breathMover.w, __breathMover.h = {BREATH_W}, {BREATH_H}
+        local unmasked = 0
+        function __unmask()
+            for i = unmasked + 1, #__regions do __regions[i].masks = nil end
+            unmasked = #__regions
+        end
+        __unmask()
+    """
+    off = {k: "false" for k in ("playerHealth", "playerPower", "targetHealth", "targetPower")}
+    events = [(t, f"MirrorTimerContainer.mirrorTimers[1].scale = {scale}") for t, _, scale in BREATH_SCRIPT]
+    return render.Session(ADDON, settings=off, before_login=before, after_login=after, scenario=events)
+
+
+def breath():
+    """The breath bar running out under water, bubbles rising off its front, then refilling: breath.webp."""
+    path = os.path.join(ART, "breath.json")
+    if not os.path.exists(path):
+        sys.exit(f"No breath bar art in {ART}: run /sab capture breath in game, then tools/capture_art.py --breath.")
+    spec = json.load(open(path, encoding="utf-8"))
+    cw, ch = spec["cell"]
+    bx0, by0 = spec["bar"][:2]
+    art = resize_rgba(Image.open(os.path.join(ART, "breath-art.png")).convert("RGBA"), (round(cw * K), round(ch * K)))
+    session = breath_session()
+    left, top, right, bottom = BREATH_ROOM
+    w, h = round((BREATH_W + left + right) * K), round((top + ch - by0 + bottom) * K)
+    back = backdrop(w, h)
+    canvas = back.convert("RGBA")
+    canvas.alpha_composite(art, (round((left - bx0) * K), round((top - by0) * K)))
+    back = canvas.convert("RGB")
+    bar = (round(left * K), round(top * K), round((left + BREATH_W) * K), round((top + BREATH_H) * K))
+    label = ((left + BREATH_W / 2) * K, (top + BREATH_H + 6) * K)  # the text box under the bar, as the game centres it
+
+    def at(t):
+        rows = [r for r in BREATH_SCRIPT if r[0] <= t]
+        (t0, f0, _), nxt = rows[-1], [r for r in BREATH_SCRIPT if r[0] > t]
+        if not nxt:
+            return f0
+        t1, f1, _ = nxt[0]
+        return f0 + (f1 - f0) * (t - t0) / (t1 - t0)
+
+    frames, t, dt = [], 0.0, 1 / FPS
+    while t < BREATH_LOOP - 1e-9:
+        session.run_until(t)
+        session.lua.execute("__unmask()")
+        fill = at(t) * BREATH_W
+        img = back.copy()
+        # The liquid, its front at the fill's edge, cut to the bar: its clip frame has no room past the bar.
+        session.frame = "__breathMover"
+        full = session.render(img, bar[0] + (fill - BREATH_W) * K, bar[1], K)
+        img.paste(full.crop(bar), bar[:2])
+        draw = ImageDraw.Draw(img)
+        text(draw, label[0], label[1], "Breath", 10, (255, 255, 255), True)
+        # The bubbles, anchored to the fill's right edge: their frame is sized to the fill, so its right is the front.
+        session.lua.execute(f"__breathBubbles.w, __breathBubbles.h = {fill}, {BREATH_H}")
+        session.frame = "__breathBubbles"
+        img = session.render(img, bar[0], bar[1], K)
+        frames.append(img)
+        t += dt
+    os.makedirs(OUT, exist_ok=True)
+    webp = os.path.join(OUT, "breath.webp")
+    frames[0].save(webp, save_all=True, append_images=frames[1:], duration=round(1000 / FPS), loop=0,
+                   quality=92, method=6)
+    print(f"wrote breath.webp ({os.path.getsize(webp) // 1024} KB)")
+
+
 if __name__ == "__main__":
     if not ONLY or any(k in ONLY for k in list(SCENARIOS) + ["themes"]):
         art = load_art()
@@ -1198,3 +1299,5 @@ if __name__ == "__main__":
         prd()
     if not ONLY or "party" in ONLY:
         party()
+    if not ONLY or "breath" in ONLY:
+        breath()

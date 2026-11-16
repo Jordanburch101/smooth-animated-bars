@@ -472,6 +472,8 @@ SlashCmdList.SMOOTHANIMATEDBARS = function(input)
         ns.Capture.Start("plates")
     elseif cmd == "capture party" then -- and a party member frame's
         ns.Capture.Start("party")
+    elseif cmd == "capture breath" then -- and the breath bar's
+        ns.Capture.Start("breath")
     elseif cmd == "setup" then
         ns.Wizard.Open()
     elseif cmd == "changes" then

@@ -12,6 +12,8 @@ Defaults: the Forever client's Screenshots folder, and branding/art.
                    real plate, read from the saved variables after a /reload)
   --party          the pair /sab capture party takes: the party member frame's art, its bar masks and four class
                    portraits, each 120 x 53 grid units, written as party-*.png with party.json (their scale)
+  --breath         the pair /sab capture breath takes: the breath bar's text box, background and border around its
+                   bar, written as breath-art.png with breath.json (its scale, and where the bar is in it)
 
 A pair is the grid on black and then on white. A pixel drawn with colour c and opacity a over black
 shows a*c, over white a*c + (1 - a), so a = 1 - (white - black) and c = black / a. Two red squares
@@ -53,6 +55,12 @@ PARTY_CELLS = ["party-art", "party-health-mask", "party-power-mask", "party-port
                "party-portrait-priest", "party-portrait-mage", "party-portrait-rogue"]
 PARTY_CELL_W, PARTY_CELL_H, PARTY_STEP_X, PARTY_STEP_Y = 120, 53, 140, 70
 PARTY_MARK_APART = 540
+
+# The breath grid (Capture.lua's BREATH_*): one cell, left, top, width, height in grid units, its bar's top-left and size
+# within it; marks 220 apart.
+BREATH_CELL = (20, 30, 215, 37)
+BREATH_BAR = (10, 4, 195, 13)
+BREATH_MARK_APART = 220
 SAVED = r"C:\Program Files (x86)\World of Warcraft\_forever_\WTF\Account\*\SavedVariables\SmoothAnimatedBars.lua"
 
 
@@ -85,6 +93,7 @@ def main():
     parser.add_argument("--pair", type=int, default=1, help="the Nth newest pair of screenshots")
     parser.add_argument("--plates", action="store_true", help="cut the nameplate capture (/sab capture plates)")
     parser.add_argument("--party", action="store_true", help="cut the party frame capture (/sab capture party)")
+    parser.add_argument("--breath", action="store_true", help="cut the breath bar capture (/sab capture breath)")
     args = parser.parse_args()
 
     shots = sorted(glob.glob(os.path.join(args.shots, "*.tga")), key=os.path.getmtime)
@@ -98,8 +107,9 @@ def main():
     if black[2:6, 2:6].mean() > 0.1 or white[2:6, 2:6].mean() < 0.9:
         raise SystemExit(f"Expected the black shot then the white one:\n  {black_path}\n  {white_path}")
 
-    (x1, y1), (x2, _) = markers(black, 6 if args.plates or args.party else 25)
-    ppu = (x2 - x1) / (PLATE_MARK_APART if args.plates else PARTY_MARK_APART if args.party else MARK_APART)
+    (x1, y1), (x2, _) = markers(black, 6 if args.plates or args.party or args.breath else 25)
+    ppu = (x2 - x1) / (PLATE_MARK_APART if args.plates else PARTY_MARK_APART if args.party
+                       else BREATH_MARK_APART if args.breath else MARK_APART)
     print(f"black {os.path.basename(black_path)}, white {os.path.basename(white_path)}: {ppu:.3f} px per unit")
 
     alpha = np.clip(1 - (white - black).mean(axis=2), 0, 1)
@@ -111,6 +121,8 @@ def main():
         return cut_plates(rgba, x1, y1, ppu, args.out)
     if args.party:
         return cut_party(rgba, x1, y1, ppu, args.out)
+    if args.breath:
+        return cut_breath(rgba, x1, y1, ppu, args.out)
     w, h = round(CELL_W * ppu), round(CELL_H * ppu)
     wanted = ["player-portrait"] if args.portrait else CELLS
     for i, name in enumerate(CELLS):
@@ -186,6 +198,20 @@ def cut_party(rgba, x1, y1, ppu, out):
     with open(os.path.join(out, "party.json"), "w", encoding="utf-8") as f:
         json.dump({"ppu": ppu, "cell": [PARTY_CELL_W, PARTY_CELL_H], "cells": PARTY_CELLS}, f, indent=2)
     print(f"wrote party.json ({ppu:.2f} px per unit) to {out}")
+
+
+def cut_breath(rgba, x1, y1, ppu, out):
+    gx, gy, gw, gh = BREATH_CELL
+    left = round(x1 + (gx - MARK_CENTRE[0]) * ppu)
+    top = round(y1 + (gy - MARK_CENTRE[1]) * ppu)
+    piece = rgba[top:top + round(gh * ppu), left:left + round(gw * ppu)]
+    if piece[..., 3].max() < 0.05:
+        print("warning: breath-art came out empty: the game may not have loaded its art")
+    Image.fromarray((piece * 255 + 0.5).astype(np.uint8), "RGBA").save(os.path.join(out, "breath-art.png"))
+    print("wrote breath-art.png")
+    with open(os.path.join(out, "breath.json"), "w", encoding="utf-8") as f:
+        json.dump({"ppu": ppu, "cell": [gw, gh], "bar": list(BREATH_BAR)}, f, indent=2)
+    print(f"wrote breath.json ({ppu:.2f} px per unit) to {out}")
 
 
 if __name__ == "__main__":

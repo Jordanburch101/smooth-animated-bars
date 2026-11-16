@@ -57,6 +57,19 @@ The extra health and power bars the game shows with its Personal Resource Displa
 *   **Colours:** Same as Yours follows your own; Game Colour takes the display's own, including its class colour setting in Edit Mode.
 *   **A druid in Cat or Bear Form** gets the liquid in the mana bar under the power bar too, with drink and the mana build-up there.
 
+## Breath bar
+
+![The game's bronze breath bar under water: the blue liquid running out, bubbles letting go from its front and floating up out of the bar, then refilling at the surface with no bubbles](https://raw.githubusercontent.com/Jordanburch101/smooth-animated-bars/refs/heads/main/branding/gallery/breath.webp)
+
+_Breath bar: bubbles escape as your breath runs out._
+
+The bar the game shows while you hold your breath under water. On by default, under Breath in the settings:
+
+*   **The liquid inside the game's own bar,** with its Breath label over it.
+*   **Bubbles** rise off the front as your breath runs out, none while it comes back. They need the Bubbles effect on too.
+*   **Colours:** Game Colour is the game's breath blue; Same as Your Power and the themes work as on your frame.
+*   **Fatigue and Feign Death** keep the game's own bars.
+
 ## Your heals on the way
 
 ![A priest's Renew showing as a gold Holy liquid ahead of the green health, Flash Heal joining it while cast, then a bandage as a spring green liquid past it throwing up green pluses, the health rising into them tick by tick](https://raw.githubusercontent.com/Jordanburch101/smooth-animated-bars/refs/heads/main/branding/gallery/priest.webp)

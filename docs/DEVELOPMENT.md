@@ -82,7 +82,7 @@ Capture again only if the game's frame art changes. The mage, rogue and warlock 
 characters' portraits: capture on each, then `capture_art.py --portrait mage --pair 2`, `--portrait rogue
 --pair 1` and `--portrait warlock --pair N` (the newest pair is the last capture; until a warlock portrait is
 captured, the warlock uses the capturing character's; `rend` is the warrior again). `gallery.py` takes scenario
-names to render only some: `hero`, `mage`, `rogue`, `warlock`, `rend`, `priest`, `druid`, `eating`, `mana`, `fury`, `themes`. `eating` is the player frame alone, a meal up to its buff, with the druid's portrait. `mana` is the player frame alone, the build-up to mana regenerating, with the mage's portrait. `fury` is the warrior's rage building to full and spent on Heroic Strikes and a Hamstring, through the addon's own Rage Fury. The druid
+names to render only some: `hero`, `mage`, `rogue`, `warlock`, `rend`, `priest`, `druid`, `eating`, `mana`, `fury`, `themes`, `plates`, `prd`, `party`, `breath`. `eating` is the player frame alone, a meal up to its buff, with the druid's portrait. `mana` is the player frame alone, the build-up to mana regenerating, with the mage's portrait. `fury` is the warrior's rage building to full and spent on Heroic Strikes and a Hamstring, through the addon's own Rage Fury. The druid
 carries both markers (Moonfire on the target, Rejuvenation and Healing Touch on itself) and has its own
 portrait (`--portrait druid`). The priest's
 health carries the heal marker (Holy, then a bandage's Nature), its casts going through the addon's own heal
@@ -93,6 +93,11 @@ the health liquid's front moved back over it. The kill icon is the game's skull,
 `target-killicon.png`; captures from before 1.1.0 lack it, and the gallery then leaves the icon out. A full
 capture also replaces `player-portrait.png`, which is the hero's, so take it on the warrior. Animations are animated WebP, in full colour. A full run takes about a
 quarter of an hour; the gallery is rebuilt for a release when something visible has changed.
+
+The breath bar's art is captured on its own: `/sab capture breath` in game (out of combat), then
+`tools/capture_art.py --breath`, which writes `breath-art.png` and `breath.json`. `gallery.py ... breath` then
+renders `breath.webp`: the breath bar running out under water with bubbles rising off its front, then refilling at the
+surface.
 
 ## Adding a theme
 

@@ -18,6 +18,10 @@
 -- /sab capture party does the same for the party member frame (Mainline PartyFrameTemplates.xml), built by Preview.lua
 -- as the setup's party step shows it: its art, its health and power masks, and the four class portraits the gallery's
 -- party uses, each in a cell the frame's size (120 x 53), on a grid of its own drawn large, for capture_art.py --party.
+--
+-- /sab capture breath does the same for the breath bar (Blizzard_MirrorTimer/Mainline MirrorTimer.xml, forever branch):
+-- its text box, dark background and border, laid around a 195 x 13 bar as the timer frame lays them, in one cell, for
+-- capture_art.py --breath. The game's fill is left out: the liquid hides it.
 
 local _, ns = ...
 
@@ -75,6 +79,19 @@ local PARTY_CELLS = {
 }
 Capture.PARTY_CELLS = PARTY_CELLS
 
+-- The breath grid: one cell, from (20, 30), 215 x 37, its bar's top-left at (30, 34); marks as above, 220 apart. The
+-- pieces: atlas, then left, top, width and height from the bar's top-left, layer and sublevel, as MirrorTimer.xml has
+-- them (the text box down to 14 below the bar, the background 1 out and the border 2 out all round).
+local BREATH_GRID_W, BREATH_GRID_H = 240, 80
+local BREATH_MARKS = { 8, 228 }
+local BREATH_BAR = { 30, 34 }
+local BREATH_PIECES = {
+    { "ui-castingbar-textbox", 0, 0, 195, 27, "BACKGROUND", 0 },
+    { "ui-castingbar-background", -1, -1, 197, 15, "BACKGROUND", 1 },
+    { "ui-castingbar-frame", -2, -2, 199, 17, "OVERLAY", 0 },
+}
+Capture.BREATH_PIECES = BREATH_PIECES
+
 -- One piece of the party frame in its cell, placed as on the preview's member frames.
 local function PartyPiece(cell, piece)
     local P = ns.Preview
@@ -126,12 +143,12 @@ local function Piece(cell, which, piece)
 end
 
 local GRID_NAMES = { frames = "SmoothAnimatedBarsCapture", plates = "SmoothAnimatedBarsCapturePlates",
-                     party = "SmoothAnimatedBarsCaptureParty" }
+                     party = "SmoothAnimatedBarsCaptureParty", breath = "SmoothAnimatedBarsCaptureBreath" }
 
 local function Build(which)
-    local plates, party = which == "plates", which == "party"
-    local gridW = plates and PLATE_GRID_W or party and PARTY_GRID_W or GRID_W
-    local gridH = plates and PLATE_GRID_H or party and PARTY_GRID_H or GRID_H
+    local plates, party, breath = which == "plates", which == "party", which == "breath"
+    local gridW = plates and PLATE_GRID_W or party and PARTY_GRID_W or breath and BREATH_GRID_W or GRID_W
+    local gridH = plates and PLATE_GRID_H or party and PARTY_GRID_H or breath and BREATH_GRID_H or GRID_H
     grid = CreateFrame("Frame", GRID_NAMES[which], UIParent)
     grid:SetFrameStrata("FULLSCREEN_DIALOG")
     grid:EnableMouse(true)
@@ -142,13 +159,20 @@ local function Build(which)
     bg = grid:CreateTexture(nil, "BACKGROUND", nil, -8)
     bg:SetAllPoints()
     grids[which] = { grid = grid, bg = bg }
-    for _, x in ipairs(plates and PLATE_MARKS or party and PARTY_MARKS or MARKS) do
+    for _, x in ipairs(plates and PLATE_MARKS or party and PARTY_MARKS or breath and BREATH_MARKS or MARKS) do
         local mark = grid:CreateTexture(nil, "OVERLAY", nil, 7)
         mark:SetColorTexture(1, 0, 0, 1)
         mark:SetSize(6, 6)
         mark:SetPoint("TOPLEFT", x, -8)
     end
-    if party then
+    if breath then
+        for _, c in ipairs(BREATH_PIECES) do
+            local t = grid:CreateTexture(nil, c[6], nil, c[7])
+            if not t:SetAtlas(c[1]) then t:Hide() end
+            t:SetPoint("TOPLEFT", BREATH_BAR[1] + c[2], -(BREATH_BAR[2] + c[3]))
+            t:SetSize(c[4], c[5])
+        end
+    elseif party then
         for i, c in ipairs(PARTY_CELLS) do
             local cell = CreateFrame("Frame", nil, grid)
             cell:SetSize(PARTY_CELL_W, PARTY_CELL_H)
@@ -263,6 +287,8 @@ function Capture.Finish(problem)
         plates = "nameplate art: two screenshots, on black and on white. /reload, then run tools/capture_art.py "
             .. "--plates to cut it out.",
         party = "party frame art: two screenshots, on black and on white. Run tools/capture_art.py --party to cut it "
+            .. "out.",
+        breath = "breath bar art: two screenshots, on black and on white. Run tools/capture_art.py --breath to cut it "
             .. "out.",
     }
     ns.Core.Print(problem or ("Captured the " .. (done[what] or done.frames)))

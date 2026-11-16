@@ -131,6 +131,18 @@ them with Edit Mode. On by default, under Personal Resource Display in the setti
   build-up there.
 - **Shown only in combat?** If you set it so in Edit Mode, the liquid picks up where the bar is each time it shows.
 
+## Breath bar
+
+<p align="center"><img src="https://raw.githubusercontent.com/Jordanburch101/smooth-animated-bars/refs/heads/main/branding/gallery/breath.webp" alt="The game's bronze breath bar under water: the blue liquid running out, bubbles letting go from its front and floating up out of the bar, then refilling at the surface with no bubbles"></p>
+<p align="center"><em>Breath bar: bubbles escape as your breath runs out.</em></p>
+
+The bar the game shows while you hold your breath under water. On by default, under Breath in the settings:
+
+- **The liquid inside the game's own bar,** with its Breath label over it.
+- **Bubbles** rise off the front as your breath runs out, none while it comes back. They need the Bubbles effect on too.
+- **Colours:** Game Colour is the game's breath blue; Same as Your Power and the themes work as on your frame.
+- **Fatigue and Feign Death** keep the game's own bars.
+
 ## Your heals on the way
 
 <p align="center"><img src="https://raw.githubusercontent.com/Jordanburch101/smooth-animated-bars/refs/heads/main/branding/gallery/priest.webp" alt="A priest's Renew showing as a gold Holy liquid ahead of the green health, Flash Heal joining it while cast, then a bandage as a spring green liquid past it throwing up green pluses, the health rising into them tick by tick"></p>
