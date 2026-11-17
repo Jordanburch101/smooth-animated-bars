@@ -8,49 +8,27 @@ Sections are `### New` and `### Fixed`; skip one that would be empty.
 
 ### New
 - **The editor**: every setting in one window, beside live examples of all
-  your frames: your own and your target's, your pet, focus and target of
-  target, the party, nameplates, the Personal Resource Display and raid
-  frames, laid out as on your screen.
-  Click one to change it; frames with the liquid off are dimmed. Each bar
-  opens to its colour, every theme a tile in its own colours, and resting
-  the mouse on a tile tries it on your bars before you pick it. The examples
-  can play a fight, a beating, a heal or spending power. Open it with
-  `/sab`, by right-clicking your player, target, pet, focus or party frame
-  (it opens at that frame), or from Open Editor on the addon's page in the
-  game's AddOns settings.
-- **Effects for one bar**: waves, swirl, bubbles, sparkles, theme particles
-  and lightning are still set for every bar under Effects, and now each
-  bar can have its own too: open a bar in the editor, untick Use the global
-  effects under its Effects tab, and turn off Bubbles for just your power
-  bar, say.
-- **Raid frames**: the liquid in the raid frames' health and power bars, and
-  in the party's when you use raid-style party frames. The game's names, role
-  icons, heal prediction and shields stay on top of it, and an offline member
-  keeps the game's grey bar. Health takes the raid frames' own colours, class
-  colours or the colour set in the game's Raid Frames options, power its power
-  type's, or any theme. Off to start with: turn them on with Health and Power
-  under Raid in the editor.
-- **ClassicUI Forever**: with ClassicUI Forever's classic unit frames, the
-  liquid now fills its bars on your player, target, focus, target of target
-  and party frames, under its frame art. They follow your settings for those
-  frames in the editor: on or off, colour and effects. Your pet's bars fit
-  its smaller frame too.
-- **Your colours on other addons' bars**: unit frame addons that hand their
-  bars to Smooth Animated Bars, such as FlareUI, keep their own colours, as
-  before. Tick Your Colours on Their Bars under Other Addons in the editor
-  and their bars take the colour you pick for each frame instead: your theme
-  on their player bar, your target's on their target bar. Game Colour there
-  means the game's own: green health, and power in its usual colour.
+  your frames laid out as on your screen. Click a frame to change it, and
+  hover over a colour to try it on your bars first. Open it with `/sab`, by
+  right-clicking your frame, or from the addon's page in the game's AddOns
+  settings.
+- **Effects for one bar**: any bar can now have its own effects. Open it in
+  the editor and untick Use the global effects on its Effects tab, to turn
+  off Bubbles on just your power bar, say.
+- **Raid frames**: the liquid in raid frames, and in raid-style party
+  frames. Names, icons, heals and shields stay on top. Off to start with:
+  turn on Health and Power under Raid in the editor.
+- **ClassicUI Forever**: the liquid now fills ClassicUI Forever's player,
+  target, focus, target of target, party and pet bars, following your
+  settings for each frame.
+- **Your colours on other addons' bars**: tick Your Colours on Their Bars
+  under Other Addons to give bars from addons like FlareUI the colours you
+  pick for each frame, instead of their own.
 
 ### Fixed
-- **Faded-out frames**: bars on a frame that another addon has faded out
-  completely (a unit frame addon hiding the game's player frame, or an
-  addon that fades your UI while you are idle) no longer keep animating
-  unseen. The liquid pauses and picks up again as soon as the frame fades
-  back in.
-- **`/sab off`**: now turns the liquid off everywhere, nameplates and raid
-  frames included. `/sab on` still leaves those as they were, since they
-  start off.
+- **Faded-out frames**: bars on a frame another addon has faded out no
+  longer keep animating unseen. The liquid pauses until the frame is back.
+- **`/sab off`**: now turns off nameplates and raid frames too.
 
 ## 1.10.0
 
