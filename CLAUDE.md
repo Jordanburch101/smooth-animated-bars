@@ -442,6 +442,16 @@ Facts found while building this, which the code relies on and which are not obvi
   pinned to its parent's too, which gave it a negative height (the mock does not model that); panes take both top
   corners now. The stage's backdrop is a vertical gradient (`SetGradient`), dusky blue as in the mockup. The settings page's preview is built at `PLAYER_ENTERING_WORLD` (`Options.BuildPreview`), never
   while the settings panel is open. Not yet seen in game: this layout.
+- **Adaptors** (`SmoothAnimatedBars/Adaptors/`, `agent.md` there says when to write one and how): for a unit frame
+  addon that does not call `AddBar`, a file of ours finds its bars and hands them over (`Bars.AddBar`'s internal `key`:
+  our frame's settings, not `externalBars`). The first is ClassicUI Forever's. Read the other addon's code, never copy
+  it, and ask its author to call `AddBar` too. Seen in game: ClassicUI Forever's player health, inside its art.
+  FlareUI (6.10 on, `Modules/UnitFrames.lua` `ns.SAB`) calls `AddBar` itself, with no theme, so its bars kept its
+  colours (a warrior's player bar in class tan whatever the editor said). Your Colours on Their Bars (`externalColors`,
+  off by default; `Bars.lua`, `ChoiceFor`, `GameColor`) gives every handed-over bar the colour picked for the frame it
+  stands for, Game Colour being the game's (green health), not the bar's. A bar's `spot.frame` is set before `NewBar`
+  colours it: set after, a bar handed over with the setting on (after a `/reload`) failed to set up and kept its own
+  fill (seen in game). Seen in game and right on FlareUI's bars after that.
 - **Toc changes** (a new file) need a full game restart; `/reload` does not pick them up.
 - **Capture:** `/sab capture` uses `Screenshot()` and the `screenshotFormat` CVar (TGA, put back after).
   The screenshot is the full render resolution (an ultrawide 3440x1440 here), and the red "?" target

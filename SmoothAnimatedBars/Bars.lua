@@ -340,7 +340,7 @@ local External = { LOOK_EVERY = 0.1, KINDS = { health = true, power = true }, un
 -- than 200 local variables").
 function Bars.FillEffects(b)
     local key
-    if b.spot.external then
+    if b.spot.external and not b.spot.adapter then
         key = nil
     elseif b.spot.plate and not b.spot.preview then
         key = b.side == "friend" and "plateFriendly" or "plateHealth"
@@ -432,6 +432,12 @@ end
 GameColor = function(b, unflat)
     -- A raid frame's power takes its power type's colour, as the game's does (CompactUnitFrame_UpdatePowerColor).
     if (b.spot.raid or b.spot.raidLook) and b.kind == "health" and not unflat then return Bars.raid.Color(b), "HEALTH" end
+    -- Another addon's bar with Your Colours on Their Bars (externalColors): Game Colour is the game's, as on its own
+    -- frames, not the bar's (FlareUI's player bar in its class colour stayed tan under Game Colour, seen in game).
+    if b.spot.external and not unflat and ns.Core.Get("externalColors") then
+        b.plateSecret = nil
+        return GameColor(b, true)
+    end
     if (b.spot.flat or b.spot.external) and not unflat then return PlateColor(b), "HEALTH" end
     if b.kind == "health" then return HEALTH_COLOR, "HEALTH" end
     local index, token
@@ -572,10 +578,14 @@ end
 -- A bar's colour choice: its frame's, which can be to follow the player's (target, pet) or the target's (focus,
 -- targets of target). A preview's bars are the player's or the target's.
 local function ChoiceFor(b)
-    -- Another addon's bar keeps the colour that addon gives it, unless it asked for one of ours (AddBar's theme).
+    -- Another addon's bar keeps the colour that addon gives it, unless it asked for one of ours (AddBar's theme) or the
+    -- player wants ours on every such bar (externalColors): then the colour picked for the frame it stands for, where
+    -- Game Colour is the game's (GameColor).
     local ext = b.spot.external
     if ext then
-        if ext.theme == "settings" then return ns.Core.ColorChoice(b.spot.frame, b.kind) end
+        if ext.theme == "settings" or ns.Core.Get("externalColors") then
+            return ns.Core.ColorChoice(b.spot.frame, b.kind)
+        end
         return ext.theme or "game"
     end
     return ns.Core.ColorChoice(b.spot.frame or (b.unit == "target" and "target" or "player"), b.kind)
@@ -1045,7 +1055,7 @@ local function NewBar(spot, bar)
         tint:AddMaskTexture(b.mask)
         tint:Hide()
         b.plateTint = tint
-    else
+    elseif not Bars.unmasked[bar] then
         b.mask = BarMask(bar, spot.kind)
     end
     if b.mask then
@@ -2211,11 +2221,10 @@ function Bars.Apply()
             if b.live then live = live + 1 end
         end
     end
-    -- Other addons' bars (AddBar), on with their own setting.
-    local allowed = ns.Core.Get("externalBars") and true or false
+    -- Other addons' bars (AddBar), on with their own setting; an adapter's (Adaptors/) with the frame's.
     for _, spot in pairs(externals) do
         local b = bars[spot]
-        SetLive(b, allowed and not spot.removed and not b.err)
+        SetLive(b, ns.Core.Get(spot.key) and not spot.removed and not b.err and true or false)
         if b.live then live = live + 1 end
     end
     partyWaiting = waiting
@@ -2500,11 +2509,15 @@ end
 -- True when the bar is taken (it shows the liquid, or will once the player allows other addons' bars), false when it
 -- is declined: vertical, one of this addon's own, a nameplate's, or past the cap on group members' bars. Calling it
 -- again with the same arguments does nothing, so an addon can call it whenever it updates its frame.
-function Bars.AddBar(bar, unit, kind, options)
+-- key is ours, never the public API's: an adapter for an addon that does not call AddBar (Adaptors/) hands its bars
+-- over with the on/off setting of the frame they stand for ("playerHealth"), which they then follow, with that bar's
+-- effects, instead of the Other Addons' Bars setting.
+function Bars.AddBar(bar, unit, kind, options, key)
     local bad = Bars.CheckAddBar(bar, unit, kind, options)
     if bad then error(bad, 2) end
     options = options or {}
     unit = unit:lower()
+    key = key or "externalBars"
     if OwnBar(bar) then return false end
     local spot = externals[bar]
     local added = spot and not spot.removed
@@ -2524,20 +2537,28 @@ function Bars.AddBar(bar, unit, kind, options)
 
     local ext = spot and spot.external
     if added and spot.unit == unit and spot.kind == kind and ext.theme == theme and ext.level == level
-        and ext.spill == spill and ext.name == name and not bars[spot].err then
+        and ext.spill == spill and ext.name == name and spot.key == key and not bars[spot].err then
         return true
     end
 
     local b
     local new = not spot
     if new then
-        spot = { key = "externalBars", optional = true, external = { mask = options.mask }, unit = unit, kind = kind }
+        -- Its frame before NewBar, which colours it: with externalColors on that asks for the frame's colour (a bar
+        -- handed over with it on failed to set up, and kept its own fill, seen in game after a /reload).
+        spot = { key = key, optional = true, external = { mask = options.mask }, unit = unit, kind = kind,
+                 adapter = key ~= "externalBars" or nil, frame = External.FrameOf(unit) }
         b = NewBar(spot, bar)
         bars[spot] = b
         externals[bar] = spot
         ext = spot.external
     else
         b = bars[spot]
+        if spot.key ~= key then
+            spot.key, spot.adapter = key, key ~= "externalBars" or nil
+            Bars.FillEffects(b)
+            b.liquid:ApplyOptions()
+        end
     end
     local unitChanged = new or not added or spot.unit ~= unit or spot.kind ~= kind
     local themeChanged = new or ext.theme ~= theme
@@ -2564,7 +2585,10 @@ function Bars.AddBar(bar, unit, kind, options)
     -- marker.
     if unit == "player" and unitChanged and ns.HealMarker then ns.HealMarker.Apply() end
     if unit == "target" and kind == "health" and unitChanged and ns.Marker then ns.Marker.Apply() end
-    if not ns.Core.Get("externalBars") then return true end
+    if not ns.Core.Get(key) then
+        SetLive(b, false)
+        return true
+    end
     External.Wake()
     SetLive(b, true)
     if b.live and unitChanged then
@@ -2633,6 +2657,35 @@ end
 function Bars.HasBar(bar)
     local spot = externals[bar]
     return spot ~= nil and not spot.removed
+end
+
+-- Game bars another addon has moved and resized and taken the game's mask off (ClassicUI Forever's pet frame): bar ->
+-- true. The mask, still laid out for the game's art, would cut the liquid short of the new bar's ends, so the liquid
+-- there goes without it, cut by its clip frame as another addon's plain bar is. For good: the other addon puts the bar
+-- back only on a reload.
+Bars.unmasked = {}
+function Bars.Unmask(bar)
+    if Bars.unmasked[bar] then return end
+    Bars.unmasked[bar] = true
+    for spot, b in pairs(bars) do
+        local mask = b.mask
+        if b.bar == bar and mask and not (spot.external or spot.flat or spot.raid) then
+            b.mask = nil
+            local liquids = { b.liquid }
+            if b.fury then liquids[2] = b.fury.liquid end
+            for _, liquid in ipairs(liquids) do
+                local free = {}
+                for _, m in ipairs(liquid.motes) do free[m.tex] = true end
+                for _, t in ipairs(liquid.textures) do
+                    if not free[t] then t:RemoveMaskTexture(mask) end
+                end
+            end
+            if b.fury then
+                b.fury.wash:RemoveMaskTexture(mask)
+                b.fury.glow:RemoveMaskTexture(mask)
+            end
+        end
+    end
 end
 
 -- A region's width and height, or the fallbacks while the client keeps them secret (for the markers).

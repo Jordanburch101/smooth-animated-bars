@@ -231,7 +231,8 @@ following another frame's or a theme picked from its tiles (rest the mouse on on
   A bar can have its own instead (its Effects tab), so one bar can go without bubbles, say.
 - **The Combat tab:** DoT Marker and its Kill Icon, Heal Marker (your heals, bandages, food and drink; play Healing
   to see it), Mana Regen Build-Up and Rage Fury.
-- **The Other Addons tab:** the liquid in other unit frame addons' bars.
+- **The Other Addons tab:** the liquid in other unit frame addons' bars, and Your Colours on Their Bars, which gives
+  them the colours picked here for each frame instead of that addon's.
 - **Defaults** puts the frame or tab shown back as it started. **Run Setup** runs the seven-step setup again, and
   **What's New** shows what changed in the latest versions.
 
@@ -260,7 +261,7 @@ as it was.
 
 - **WoW Forever only.** It draws on Forever's own unit frames.
 - **Player, target, pet, focus, target-of-target, party and raid frames, the Personal Resource Display and nameplates.**
-  Raid frames (and raid-style party frames) get it in their health and power bars, off to start with. Unit frame addons can hand over their own bars (For addon authors). A target of target's liquid follows its bar but is not stirred by
+  Raid frames (and raid-style party frames) get it in their health and power bars, off to start with. Unit frame addons can hand over their own bars (For addon authors), and ClassicUI Forever's classic frames get it too. A target of target's liquid follows its bar but is not stirred by
   changes, as the game sends no events for it.
 - **Always matches the game.** WoW Forever keeps health and power hidden from addons, so the addon never knows
   how full a bar is: the game itself places the liquid on its own bar. That is why it always matches the game
@@ -309,6 +310,8 @@ of its own; a raid frame would cost more than the game's frames together). Remov
 **Options**, all optional:
 - `theme`: left out, your bar's own colour; `"settings"`, the colours chosen in Smooth Animated Bars for that unit;
   or a key from `GetThemes()`. A key it does not know (renamed, or from a later version) means your bar's colour.
+  A player who ticks Your Colours on Their Bars gets the colours chosen in Smooth Animated Bars whatever you ask
+  for, Game Colour meaning the game's own (green health, power in its type's colour).
 - `mask`: a MaskTexture to cut the liquid to, taken the first time the bar is added.
 - `level`: whole frame levels above your bar, 0 to 20, default 1.
 - `spill`: `true` lets the motes fly past the bar's edges.

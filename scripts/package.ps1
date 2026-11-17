@@ -49,6 +49,8 @@ Write-Host "Packaging $addonName $Version"
 if (Test-Path $buildRoot) { Remove-Item $buildRoot -Recurse -Force }
 New-Item -ItemType Directory -Path $build -Force | Out-Null
 Copy-Item -Path (Join-Path $source "*") -Destination $build -Recurse
+# Notes for whoever works on the addon (Adaptors/agent.md) are not for players.
+Get-ChildItem -Path $build -Recurse -Filter "*.md" | Remove-Item -Force
 # The MIT notices (ours and DoesItDie's, which Dots.lua also carries) travel with every copy.
 Copy-Item -Path (Join-Path $root "LICENSE") -Destination $build
 

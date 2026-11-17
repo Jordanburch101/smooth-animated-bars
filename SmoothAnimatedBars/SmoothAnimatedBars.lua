@@ -35,6 +35,8 @@ local DEFAULTS = {
     plateFriendly = false,
     -- Bars other addons hand us with SmoothAnimatedBars.AddBar (unit frame addons that hide the game's frames)
     externalBars = true,
+    -- Those bars in the colours picked here for the frame each stands for (Bars.lua, ChoiceFor), not the other addon's
+    externalColors = false,
     -- The DoT marker on enemy nameplates (Marker.lua), with plateHealth
     plateDots    = false,
     -- The kill icon beside a nameplate whose mob the player's DoTs will finish, with plateDots
@@ -179,6 +181,7 @@ end
 local SETTING_APPLY = {
     healthColor = function() ns.Bars.ApplyColors() end,
     powerColor  = function() ns.Bars.ApplyColors() end,
+    externalColors = function() ns.Bars.ApplyColors() end,
     mobClassColor     = function() ns.Bars.ApplyColors() end,
     dots        = function() ns.Marker.Apply() end,
     dotKillIcon = function() ns.Marker.Apply() end,
@@ -444,6 +447,7 @@ events:SetScript("OnEvent", function(self, event, arg1, arg2)
         ns.Marker.Apply()
         ns.HealMarker.Apply()
         ns.ManaRule.Apply()
+        ns.Adaptors.Start() -- other unit frame addons' own bars, for those that do not hand them over (Adaptors/)
         -- The settings page's preview, once the bars are set up and before the settings panel can be open.
         ns.Options.BuildPreview()
         -- The setup wizard, once per account, a moment after the first login with the addon.

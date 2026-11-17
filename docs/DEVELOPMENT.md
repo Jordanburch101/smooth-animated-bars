@@ -14,7 +14,7 @@ explains the details.
 
 | Folder | What it is |
 |---|---|
-| `SmoothAnimatedBars/` | The addon. `Bars.lua` puts the liquid on the unit frames, `Liquid.lua` draws it, `Themes.lua` holds the themes, `Dots.lua` tracks the player's DoTs (ported from DoesItDie) and `Marker.lua` marks them on the target, `Heals.lua` tracks the player's heals on themselves and `HealMarker.lua` marks them on the player's health, `ManaRule.lua` times the wait before mana regenerates, which `Bars.lua` draws, `Editor.lua` the editor (every setting beside a live preview), `Options.lua` the settings page that opens it, `Wizard.lua` the setup and `Preview.lua` the preview frames both use, `Capture.lua` the gallery's art capture |
+| `SmoothAnimatedBars/` | The addon. `Bars.lua` puts the liquid on the unit frames, `Liquid.lua` draws it, `Themes.lua` holds the themes, `Dots.lua` tracks the player's DoTs (ported from DoesItDie) and `Marker.lua` marks them on the target, `Heals.lua` tracks the player's heals on themselves and `HealMarker.lua` marks them on the player's health, `ManaRule.lua` times the wait before mana regenerates, which `Bars.lua` draws, `Editor.lua` the editor (every setting beside a live preview), `Options.lua` the settings page that opens it, `Wizard.lua` the setup and `Preview.lua` the preview frames both use, `Capture.lua` the gallery's art capture, `Adaptors/` other unit frame addons' bars for those that do not hand them over (`Adaptors/agent.md`) |
 | `tools/make_media.py` | Generates the textures in `SmoothAnimatedBars/Media/` |
 | `tools/harness/` | A mock of the Forever client's API that runs the addon outside the game: tests, previews and the gallery |
 | `tools/capture_art.py` | Cuts Forever's frame art out of the screenshots `/sab capture` takes |

@@ -303,7 +303,7 @@ OPTION_KEYS = ["playerHealth", "healthColor", "playerPower", "powerColor", "targ
                "partyPowerColor", "raidHealth", "raidHealthColor", "raidPower", "raidPowerColor", "prdHealth",
                "prdHealthColor", "prdPower", "prdPowerColor", "plateHealth", "plateHealthColor", "plateFriendly",
                "plateFriendlyColor", "plateDots", "plateKillIcon", "waves", "swirl", "bubbles", "sparkles", "ambient",
-               "lightning", "dots", "dotKillIcon", "heals", "manaBuild", "rageFury", "externalBars"]
+               "lightning", "dots", "dotKillIcon", "heals", "manaBuild", "rageFury", "externalBars", "externalColors"]
 keys = list(lua.eval("__ns.Editor.Keys()").values())
 check(sorted(keys) == sorted(OPTION_KEYS), f"the editor has a control for every setting ({sorted(set(keys) ^ set(OPTION_KEYS))})")
 check(all(lua.eval(f"__settings.{k} ~= nil") for k in OPTION_KEYS),
@@ -3616,6 +3616,29 @@ check(taken is True
       "an unknown theme (one renamed or added later) falls back to the bar's own colour rather than failing")
 ex.execute("SmoothAnimatedBars.AddBar(__ufHealth, 'player', 'health')")
 run(ex, 0.3)
+check(ex.eval("SmoothAnimatedBarsDB.externalColors") is False, "your colours on their bars: off by default")
+ex.execute("__settings.healthColor:SetValue('arcane'); __settings.externalColors:SetValue(true)")
+run(ex, 0.3)
+check(ex.eval("__ns.Bars.Liquid(__ufHealth).theme.fillA[1]") == ex.eval("__ns.Bars.Liquid(PlayerFrame.healthbar).theme.fillA[1]"),
+      "on: a player bar that asked for no theme takes the colour picked for our player frame")
+ex.execute("__ufHealth:SetStatusBarColor(0.78, 0.61, 0.43); __settings.healthColor:SetValue('game')")
+run(ex, 0.3)
+r, g, b = ex.eval("__tint(__ufHealth)")
+check(g > r and g > b, f"with Game Colour there, the game's green health, not the addon's warrior tan (FlareUI's, seen "
+      f"in game) ({r:.2f}, {g:.2f}, {b:.2f})")
+ex.execute("__settings.targetHealthColor:SetValue('fire'); __ufLate = __ufBar(180, 24)")
+taken = ex.eval("SmoothAnimatedBars.AddBar(__ufLate, 'target', 'health')")
+run(ex, 0.3)
+check(taken is True and ex.eval("(select(2, __liquid(__ufLate)))") > 0
+      and ex.eval("__ns.Bars.Liquid(__ufLate).theme.fillA[1]") == ex.eval("__ns.Bars.Liquid(TargetFrame.healthbar).theme.fillA[1]"),
+      "a bar handed over while it is on (after a /reload) is taken, in its frame's colour (it failed to set up, seen in game)")
+ex.execute("SmoothAnimatedBars.RemoveBar(__ufLate); __settings.targetHealthColor:SetValue('same')")
+ex.execute("__settings.externalColors:SetValue(false)")
+run(ex, 0.3)
+r, g, b = ex.eval("__tint(__ufHealth)")
+check(r > g > b, f"off again: the addon's own colour back ({r:.2f}, {g:.2f}, {b:.2f})")
+ex.execute("__ufHealth:SetStatusBarColor(0.2, 0.8, 0.2)")
+run(ex, 0.3)
 
 # Called again with nothing changed, as an addon may on every update: nothing happens.
 ex.execute("__ns.Bars.Liquid(__ufHealth):Splash(0.8, 170, 180)")
@@ -3886,6 +3909,100 @@ check(on and not quiet.eval("__listening('UNIT_MAXPOWER')"),
 check(early.eval("__earlyTaken") is True and early.eval("(select(2, __liquid(__early)))") > 0,
       "a bar handed over before our settings loaded gets the liquid once they have")
 check(early.eval("__earlyVTaken") is False, "and a vertical one is declined then too")
+
+print("== ClassicUI Forever (Adaptors/ClassicUIForever.lua)")
+# Its unit frames as 0.58.0 builds them: the game's bars faded out, StatusBars of its own in frame.fcui.host.fcui (and
+# tot.fcui.totHealth/totPower), and the pet's game bars kept, moved, with the game's mask taken off their fill.
+CUIF = """
+    function __cuifBar(parent, w, h)
+        local b = CreateFrame("StatusBar", nil, parent)
+        b.w, b.h, b.level = w, h, 4
+        b:SetStatusBarTexture(b:CreateTexture(nil, "ARTWORK"))
+        b:SetMinMaxValues(0, __secret()); b:SetValue(__secret())
+        b:SetStatusBarColor(0, 1, 0)
+        return b
+    end
+    function __cuifHost(frame, hw, hh, pw, ph)
+        local host = CreateFrame("Frame", nil, frame)
+        host.level = 3
+        host.fcui = { health = __cuifBar(host, hw, hh), power = __cuifBar(host, pw, ph) }
+        frame.fcui = { host = host }
+        return host.fcui.health, host.fcui.power
+    end
+    function __cuifSkin()
+        __cP, __cPp = __cuifHost(PlayerFrame, 119, 12, 119, 12)
+        __cT, __cTp = __cuifHost(TargetFrame, 119, 12, 119, 12)
+        PlayerFrame.PlayerFrameContent.PlayerFrameContentMain.HealthBarsContainer:SetAlpha(0)
+        TargetFrame.healthbar:SetAlpha(0)
+        local barHost = CreateFrame("Frame", nil, TargetFrameToT)
+        TargetFrameToT.fcui = { barHost = barHost, totHealth = __cuifBar(barHost, 46, 7), totPower = __cuifBar(barHost, 46, 7) }
+        __cTot = TargetFrameToT.fcui.totHealth
+        local m = PartyFrame.MemberFrame1
+        m:Show()
+        __cM, __cMp = __cuifHost(m, 70, 10, 74, 7)
+        PetFrame.fcui = { petArt = CreateFrame("Frame", nil, PetFrame) }
+        PetFrameHealthBar:GetStatusBarTexture():RemoveMaskTexture(PetFrameHealthBarMask)
+    end
+"""
+cu = session("{ setupDone = true, heals = false, dots = false, manaBuild = false }",
+             "__addons.ClassicUIForever = true" + CUIF)
+run(cu, 0.5)
+_, _, _, pet_masked_before, _ = cu.eval("__liquid(PetFrameHealthBar)")
+cu.execute("__cuifSkin()")
+run(cu, 1.2)
+for bar, what in [("__cP", "player health"), ("__cPp", "player power"), ("__cT", "target health"),
+                  ("__cTot", "target of target health"), ("__cM", "party member health")]:
+    n, shown, alpha, masked, free = cu.eval(f"__liquid({bar})")
+    check(shown > 0 and alpha == 0 and masked == 0,
+          f"its {what} bar, built after ours, gets the liquid, its fill hidden, no mask ({shown}/{n})")
+check(cu.eval("""(function()
+    local _, clip = __ours(__cP)
+    return clip.useParentLevel == true and clip.points.TOPLEFT.y == 0
+end)()"""), "at the bar's own level, under its art, motes kept in the bar")
+check(cu.eval("(__ns.Bars.External(__cT))") == "target"
+      and cu.eval("(__ns.Bars.External(__cTot))") == "targettarget"
+      and cu.eval("(__ns.Bars.External(__cM))") == "party1", "each follows its frame's unit")
+r, g, b = cu.eval("__tint(__cP)")
+check(g > r and g > b, f"with Game Colour, the colour it gives its bar ({r:.2f}, {g:.2f}, {b:.2f})")
+cu.execute("__settings.healthColor:SetValue('arcane')")
+run(cu, 0.3)
+r2, g2, b2 = cu.eval("__tint(__cP)")
+check(cu.eval("__ns.Bars.Liquid(__cP).theme.fillA[1]") == cu.eval("__ns.Bars.Liquid(PlayerFrame.healthbar).theme.fillA[1]")
+      and (r2, g2, b2) != (r, g, b), f"and the theme picked for our player frame's health ({r2:.2f}, {g2:.2f}, {b2:.2f})")
+check(cu.eval("__ns.Bars.Sight(PlayerFrame.healthbar)") == "faded", "the game's bar under it is faded, so its liquid pauses")
+_, _, _, pet_masked, _ = cu.eval("__liquid(PetFrameHealthBar)")
+check(pet_masked_before > 0 and pet_masked == 0 and cu.eval("(select(2, __liquid(PetFrameHealthBar)))") > 0,
+      f"the pet's moved bar keeps its liquid, no longer cut by the game's mask ({pet_masked_before} masked before)")
+cu.execute("PartyFrame.MemberFrame1.unit = 'party3'")
+run(cu, 1.2)
+check(cu.eval("(__ns.Bars.External(__cM))") == "party3", "a party button given another member: the liquid follows")
+
+cu.execute("__settings.playerHealth:SetValue(false)")
+run(cu, 0.2)
+check(cu.eval("(select(2, __liquid(__cP)))") == 0 and cu.eval("__cP.fill.alpha") == 1
+      and cu.eval("(select(2, __liquid(__cPp)))") > 0, "follows our player health setting: off, its own fill back")
+cu.execute("__settings.playerHealth:SetValue(true); __settings.externalBars:SetValue(false)")
+run(cu, 1.2)
+check(cu.eval("(select(2, __liquid(__cP)))") > 0, "and not the Other Addons' Bars setting")
+cu.execute("__ns.Core.SetEffect('playerHealth', 'lightning', false)")
+run(cu, 0.2)
+check(cu.eval("__ns.Bars.EffectOptions(__cP).lightning") is False and cu.eval("__ns.Bars.EffectOptions(__cT).lightning"),
+      "with the player health bar's own effects")
+cu.execute("__cP:GetParent():Hide()")
+run(cu, 0.3)
+check(cu.eval("__ns.Bars.Sight(__cP)") == "hidden", "a piece turned off (its bars hidden): paused there")
+check(not any("Error" in m or "ClassicUI" in m for m in chat(cu)), "no errors")
+
+plain = session("{ setupDone = true }", CUIF)
+plain.execute("__cuifSkin()")
+run(plain, 1.2)
+check(not plain.eval("SmoothAnimatedBars.HasBar(__cP)") and plain.eval("(select(4, __liquid(PetFrameHealthBar)))") > 0,
+      "without ClassicUI Forever loaded, nothing is looked for")
+piece = session("{ setupDone = true }", "__addons.ClassicUIForeverStandaloneUnitFrames = true" + CUIF)
+piece.execute("__cuifSkin()")
+run(piece, 1.2)
+check(piece.eval("SmoothAnimatedBars.HasBar(__cP)") and piece.eval("(select(2, __liquid(__cP)))") > 0,
+      "its standalone unit frames piece is looked for too")
 
 if failures:
     print(f"\n{len(failures)} check(s) failed:")

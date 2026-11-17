@@ -123,6 +123,10 @@ local TABS = {
       rows = {
           { key = "externalBars", label = "Other Addons' Bars",
             desc = "Liquid in their bars. They keep the colours you set in that addon, unless it offers a theme from here." },
+          { key = "externalColors", label = "Your Colours on Their Bars",
+            desc = "Their bars take the colour you pick here for the frame each one stands for, Game Colour too: green "
+                .. "health, and power in its own colour.",
+            shown = function() return Get("externalBars") end },
       } },
 }
 local TAB_BY_ID = {}
