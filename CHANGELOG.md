@@ -18,9 +18,11 @@ Sections are `### New` and `### Fixed`; skip one that would be empty.
 - **Raid frames**: the liquid in raid frames, and in raid-style party
   frames. Names, icons, heals and shields stay on top. Off to start with:
   turn on Health and Power under Raid in the editor.
-- **ClassicUI Forever**: the liquid now fills ClassicUI Forever's player,
-  target, focus, target of target, party and pet bars, following your
-  settings for each frame.
+- **Proven with other unit frame addons**: tried in game with FlareUI (from
+  6.10) and Frames Forever (from 1.4.3), which build the liquid into their
+  own bars, and now ClassicUI Forever, whose player, target, focus, target
+  of target, party and pet bars follow your settings for each frame. The
+  addon's page lists what each supports.
 - **Your colours on other addons' bars**: tick Your Colours on Their Bars
   under Other Addons to give bars from addons like FlareUI the colours you
   pick for each frame, instead of their own.
