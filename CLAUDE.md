@@ -445,7 +445,10 @@ Facts found while building this, which the code relies on and which are not obvi
 - **Adaptors** (`SmoothAnimatedBars/Adaptors/`, `agent.md` there says when to write one and how): for a unit frame
   addon that does not call `AddBar`, a file of ours finds its bars and hands them over (`Bars.AddBar`'s internal `key`:
   our frame's settings, not `externalBars`). The first is ClassicUI Forever's. Read the other addon's code, never copy
-  it, and ask its author to call `AddBar` too. Seen in game: ClassicUI Forever's player health, inside its art.
+  it, and ask its author to call `AddBar` too. An adaptor steps aside for a bar that addon hands over itself, removed
+  or not, and for one whose liquid failed (`Bars.HandedBy`, `Adaptors.Hand`): a review found the two would otherwise
+  swap the bar's options every second and undo its `RemoveBar`. A game bar it unmasks (`Bars.Unmask`) is cut by its
+  clip frame at the bar's edges instead (no spill), or the front's glow showed past a smaller bar onto its art. Seen in game: ClassicUI Forever's player health, inside its art.
   FlareUI (6.10 on, `Modules/UnitFrames.lua` `ns.SAB`) calls `AddBar` itself, with no theme, so its bars kept its
   colours (a warrior's player bar in class tan whatever the editor said). Your Colours on Their Bars (`externalColors`,
   off by default; `Bars.lua`, `ChoiceFor`, `GameColor`) gives every handed-over bar the colour picked for the frame it

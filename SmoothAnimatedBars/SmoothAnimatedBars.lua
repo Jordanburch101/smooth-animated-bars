@@ -60,7 +60,7 @@ local DEFAULTS = {
     prdPowerColor     = "same",
     -- The raid frames: the game's raid colour (class colours or the colour set in its Raid Frames options) by default
     raidHealthColor   = "game",
-    raidPowerColor    = "same",
+    raidPowerColor    = "game",
     plateHealthColor  = "same",
     -- Friendly nameplates: their own colour by default, or "same" for the enemy plates'
     plateFriendlyColor = "game",
@@ -413,7 +413,10 @@ events:SetScript("OnEvent", function(self, event, arg1, arg2)
         for frame, keys in pairs(COLOR_KEYS) do
             if frame ~= "player" then
                 for _, key in pairs(keys) do
-                    if db[key] ~= "same" and db[key] ~= "game" and not ns.Themes.list[db[key]] then db[key] = "same" end
+                    -- An unknown choice (a theme from a later version) goes back to the bar's own default.
+                    if db[key] ~= "same" and db[key] ~= "game" and not ns.Themes.list[db[key]] then
+                        db[key] = DEFAULTS[key] or "same"
+                    end
                 end
             end
         end
@@ -537,6 +540,12 @@ SlashCmdList.SMOOTHANIMATEDBARS = function(input)
     elseif cmd == "on" or cmd == "off" then
         for _, key in ipairs(BAR_KEYS) do Core.SetSetting(key, cmd == "on") end
         Core.SetSetting("externalBars", cmd == "on") -- other addons' bars too
+        -- Off is every bar; on leaves the ones that start off (raid frames, nameplates) as they were.
+        if cmd == "off" then
+            for _, key in ipairs({ "raidHealth", "raidPower", "plateHealth", "plateFriendly" }) do
+                Core.SetSetting(key, false)
+            end
+        end
         Core.Print(cmd == "on" and "Liquid in the unit frames' bars." or "The game's own bars again.")
     elseif cmd == "capture" then -- photographs the frame art for the gallery; see Capture.lua
         ns.Capture.Start()

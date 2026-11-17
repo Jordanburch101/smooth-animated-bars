@@ -643,8 +643,8 @@ local function AlphaTo(region, alpha)
     if Secret(now) or now ~= alpha then region:SetAlpha(alpha) end
 end
 
--- How a bar can be seen: "shown", "hidden" (IsVisible says no) or "faded" (shown, but its effective alpha under 0.01;
--- not a local of its own, as the file is at Lua's 200). Addons hide frames with SetAlpha(0) too (Frames Forever hides the player frame so, and "immersion"
+-- How a bar can be seen: "shown", "hidden" (IsVisible says no) or "faded" (shown, but its effective alpha under 0.01).
+-- It is the main chunk's 200th local: the file is now at Lua's limit, with no room for another. Addons hide frames with SetAlpha(0) too (Frames Forever hides the player frame so, and "immersion"
 -- addons fade idle frames out), which IsVisible does not see, and a liquid there would run for nothing. IsVisible and
 -- GetEffectiveAlpha can answer with secrets (SecretReturnsForAspect Shown, Alpha), taken as shown. GetEffectiveAlpha
 -- is under pcall: Forever's docs mark it RequiresScriptObjectAlphaAccess, which may refuse some frames.
@@ -979,7 +979,9 @@ local function NewBar(spot, bar)
     -- motes too, which would only clutter a crowd of plates. The Personal Resource Display is one frame, the player's
     -- own, so its motes fly free as on the unit frames; its plate mask cuts the waves.
     -- A raid frame's neighbours touch it, so its motes stay inside its bar too.
-    local spill = (spot.plate or spot.raid or spot.raidLook or (spot.external and not spot.external.spill)) and 0 or SPILL
+    -- A game bar another addon has taken the mask off (Bars.Unmask) is cut by its clip frame instead, so it keeps none.
+    local spill = (spot.plate or spot.raid or spot.raidLook or (spot.external and not spot.external.spill)
+                   or Bars.unmasked[bar]) and 0 or SPILL
     clip:SetPoint("TOPLEFT", bar, "TOPLEFT", 0, spill)
     clip:SetPoint("BOTTOMRIGHT", bar, "BOTTOMRIGHT", spill, -spill)
     clip:SetClipsChildren(not spot.raid) -- a raid bar's liquid is cut by a mask (Bars.raid.MASK)
@@ -1041,7 +1043,7 @@ local function NewBar(spot, bar)
         tint:Hide()
         b.plateTint = tint
     elseif spot.raid then
-        -- A raid frame's bar: square, cut by the clip frame, drawn under what the game puts over its fill (Bars.raid),
+        -- A raid frame's bar: square, cut by a mask of ours (its clip frame does not clip), drawn under what the game puts over its fill (Bars.raid),
         -- with a tint for a colour the game keeps secret, over the liquid and still under the heal prediction.
         b.liquid:SetLayerMap(Bars.raid.LAYERS)
         b.mask = clip:CreateMaskTexture()
@@ -1972,7 +1974,16 @@ local function OnUpdate(_, elapsed)
         end
     end
     Bars.raid.shown = raid -- the rate for the next frame (Bars.raid.Rate)
-    for _, b in ipairs(previews) do if RunBar(b, dt) then units = units + 1 end end
+    -- A hidden preview (the editor or the setup closed) is looked at five times a second, not every frame: the editor's
+    -- forty, built once, would otherwise each cost a visibility check every frame for the rest of the session.
+    for _, b in ipairs(previews) do
+        if (b.wait or 0) > 0 then
+            b.wait = b.wait - dt
+        else
+            if RunBar(b, dt) then units = units + 1 end
+            b.wait = b.sight == "hidden" and 0.2 or 0
+        end
+    end
     local t1 = clock and clock()
     if next(pending) then TryPending() end
     for _, b in pairs(plates) do if RunBar(b, dt) then live = live + 1 end end
@@ -2659,6 +2670,16 @@ function Bars.HasBar(bar)
     return spot ~= nil and not spot.removed
 end
 
+-- Who last handed a bar over, for the adaptors (Adaptors.Hand): "adaptor" (with a frame's key), "addon" (the public
+-- AddBar, whether or not the addon has since removed it), "failed" (its liquid errored and it is back to its own fill),
+-- or nil (never handed over).
+function Bars.HandedBy(bar)
+    local spot = externals[bar]
+    if not spot then return nil end
+    if bars[spot] and bars[spot].err then return "failed" end
+    return spot.adapter and "adaptor" or "addon"
+end
+
 -- Game bars another addon has moved and resized and taken the game's mask off (ClassicUI Forever's pet frame): bar ->
 -- true. The mask, still laid out for the game's art, would cut the liquid short of the new bar's ends, so the liquid
 -- there goes without it, cut by its clip frame as another addon's plain bar is. For good: the other addon puts the bar
@@ -2671,6 +2692,10 @@ function Bars.Unmask(bar)
         local mask = b.mask
         if b.bar == bar and mask and not (spot.external or spot.flat or spot.raid) then
             b.mask = nil
+            -- Its clip frame cuts it now, so it reaches no further than the bar (it had room for motes past it, which
+            -- the mask cut): the front's glow and its waves past a full bar would show over the other addon's art.
+            b.spill = 0
+            External.SetMirror(b, false, true)
             local liquids = { b.liquid }
             if b.fury then liquids[2] = b.fury.liquid end
             for _, liquid in ipairs(liquids) do

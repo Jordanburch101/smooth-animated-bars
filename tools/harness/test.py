@@ -494,6 +494,11 @@ check(lua.eval("SmoothAnimatedBarsDB.plateHealth") and lua.eval("__page().rows.p
 lua.execute("__click(__card(1).check); __card(1).colour.tiles.frost.scripts.OnEnter(); __click(" + ED + ".close)")
 check(not lua.eval("SmoothAnimatedBarsEditor.shown") and lua.eval("SmoothAnimatedBarsDB.plateHealthColor") == "same",
       "Close closes it, and a colour being tried goes with it")
+run(lua, 0.3)
+st = ED + ".examples.frames.bars[1].state"
+check(lua.eval(st + ".wait") > 0,
+      f"its examples, hidden, are looked at a few times a second, not every frame "
+      f"({lua.eval(st + '.wait')}, {lua.eval(st + '.sight')}, {lua.eval(st + '.live')})")
 check(not any("Error" in m for m in chat(lua)), "no errors")
 lua.execute("__settings.playerHealth:SetValue(false)")
 run(lua, 0.2)
@@ -523,12 +528,17 @@ check(lua.eval("""(function()
     end
     return true
 end)()"""), "effects switched off: no bubbles")
+lua.execute("__settings.raidHealth:SetValue(true); __settings.plateHealth:SetValue(true)")
 lua.execute("SlashCmdList.SMOOTHANIMATEDBARS('off')")
 run(lua, 0.2)
 check(all(lua.eval(f"__bars()[{i}].fill.alpha") == 1 for i in range(1, 5))
       and lua.eval("SmoothAnimatedBarsDB.targetPower") is False, "/sab off: all four bars back to the game's, saved")
+check(lua.eval("SmoothAnimatedBarsDB.raidHealth") is False and lua.eval("SmoothAnimatedBarsDB.plateHealth") is False,
+      "and the raid frames and nameplates too: off is every bar")
 lua.execute("SlashCmdList.SMOOTHANIMATEDBARS('on')")
 run(lua, 0.2)
+check(lua.eval("SmoothAnimatedBarsDB.raidHealth") is False and lua.eval("SmoothAnimatedBarsDB.plateHealth") is False,
+      "/sab on leaves the bars that start off (raid frames, nameplates) as they were")
 check(all(lua.eval(f"(select(2, __liquid(__bars()[{i}])))") > 0 for i in range(1, 5)), "/sab on: liquid again")
 lua.execute("SlashCmdList.SMOOTHANIMATEDBARS('')")
 check(lua.eval("SmoothAnimatedBarsEditor.shown") and lua.eval("__ns.Editor.State().section") == "plates"
@@ -620,9 +630,11 @@ check(lua6.eval("SmoothAnimatedBarsDB.effects.playerHealth.bubbles") is False
       and lua6.eval("SmoothAnimatedBarsDB.effects.targetPower") is None
       and lua6.eval("SmoothAnimatedBarsDB.effects.focusHealth") is None,
       "saved effects for a bar: only known effects, true or false, kept")
-lua5 = session("{ setupDone = true, targetHealthColor = 'gone', mobClassColor = 'gone' }")
+lua5 = session("{ setupDone = true, targetHealthColor = 'gone', mobClassColor = 'gone', raidHealthColor = 'gone' }")
 check(lua5.eval("SmoothAnimatedBarsDB.targetHealthColor") == "same" and lua5.eval("SmoothAnimatedBarsDB.mobClassColor") == "reaction",
       "unknown saved choices fall back")
+check(lua5.eval("SmoothAnimatedBarsDB.raidHealthColor") == "game" and lua5.eval("SmoothAnimatedBarsDB.raidPowerColor") == "game",
+      "each to its own default: the raid frames' to the game's raid colours, not to following the party")
 
 print("== pet, focus and target of target")
 sf = session()
@@ -4001,9 +4013,27 @@ check(cu.eval("__ns.Bars.Sight(PlayerFrame.healthbar)") == "faded", "the game's 
 _, _, _, pet_masked, _ = cu.eval("__liquid(PetFrameHealthBar)")
 check(pet_masked_before > 0 and pet_masked == 0 and cu.eval("(select(2, __liquid(PetFrameHealthBar)))") > 0,
       f"the pet's moved bar keeps its liquid, no longer cut by the game's mask ({pet_masked_before} masked before)")
+check(cu.eval("""(function()
+    local _, clip = __ours(PetFrameHealthBar)
+    local tl, br = clip.points.TOPLEFT, clip.points.BOTTOMRIGHT
+    return tl.rel == PetFrameHealthBar and tl.x == 0 and tl.y == 0 and br.x == 0 and br.y == 0
+end)()"""), "and cut by its clip frame at the bar's edges instead, as the mask did")
 cu.execute("PartyFrame.MemberFrame1.unit = 'party3'")
 run(cu, 1.2)
 check(cu.eval("(__ns.Bars.External(__cM))") == "party3", "a party button given another member: the liquid follows")
+cu.execute("PartyFrame.MemberFrame1.unit = 'player'")
+run(cu, 1.2)
+check(cu.eval("(__ns.Bars.External(__cM))") == "party3",
+      "a member frame on the player (Edit Mode's preview) is not handed over as the player's bar")
+cu.execute("PartyFrame.MemberFrame1.unit = 'party3'")
+cu.execute("SmoothAnimatedBars.AddBar(__cT, 'target', 'health', { name = 'ClassicUI Forever' })")
+run(cu, 1.2)
+check(cu.eval("__ns.Bars.HandedBy(__cT)") == "addon",
+      "once the addon hands a bar over itself, the adaptor leaves it to the addon's options")
+cu.execute("SmoothAnimatedBars.RemoveBar(__cT)")
+run(cu, 1.2)
+check(not cu.eval("SmoothAnimatedBars.HasBar(__cT)") and cu.eval("__cT.fill.alpha") == 1,
+      "and its RemoveBar holds: the adaptor does not take the bar back")
 
 cu.execute("__settings.playerHealth:SetValue(false)")
 run(cu, 0.2)

@@ -18,8 +18,9 @@ All of these:
   each update).
 
 Look first at whether it already does: FlareUI calls `AddBar` from its own code since 6.10 (`ns.SAB` in its
-`Modules/UnitFrames.lua`), so it needs no adaptor. Ask the author first or at the same time. If they adopt `AddBar`, the adaptor can go: their call and ours hand over the
-same bars, and an `AddBar` with nothing changed does nothing, so both together are harmless until then.
+`Modules/UnitFrames.lua`), so it needs no adaptor. Ask the author first or at the same time. If they adopt `AddBar`, the adaptor can go. Until it does, it steps aside
+for any bar their addon has handed over itself (`Bars.HandedBy`, in `Adaptors.Hand`), removed or not, so the two never
+fight over a bar's options or undo their `RemoveBar`.
 
 ## How one works
 

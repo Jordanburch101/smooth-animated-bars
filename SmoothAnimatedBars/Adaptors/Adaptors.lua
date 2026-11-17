@@ -38,7 +38,12 @@ end
 -- "target", "focus", "pet", "tot" or "party"; Bars.AddBar's key) rather than the Other Addons' Bars setting: to the
 -- player these are still their unit frames. options as AddBar's; theme "settings" gives it our colour settings.
 -- An error is reported once per adaptor and the look carries on.
+-- A bar the other addon handed over itself (it has taken up AddBar) is its own to look after, removed or not: taking
+-- it back each look would undo its RemoveBar and swap its options for ours every second. A bar whose liquid failed is
+-- left on its own fill: handing it over again each look would flicker it.
 function Adaptors.Hand(adaptor, bar, unit, kind, frame, options)
+    local by = ns.Bars.HandedBy(bar)
+    if by == "addon" or by == "failed" then return end
     local key = frame .. (kind == "health" and "Health" or "Power")
     local ok, err = pcall(ns.Bars.AddBar, bar, unit, kind, options, key)
     if not ok and not adaptor.reported then

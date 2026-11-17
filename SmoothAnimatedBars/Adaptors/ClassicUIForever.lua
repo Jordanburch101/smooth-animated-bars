@@ -41,7 +41,9 @@ local function Look(self)
     for i = 1, 4 do
         local frame = A.Table(party, "MemberFrame" .. i)
         local unit = frame and A.Unit(frame.unit)
-        if unit then
+        -- A party member's own unit only (party1..4, partypet1..4 in a vehicle): Edit Mode's preview may put the player on
+        -- a member frame, and a bar handed over as "player" would take the player frame's heal and mana markers.
+        if unit and unit:find("^party") then
             for _, kind in ipairs({ "health", "power" }) do
                 local bar = HostBar(frame, kind)
                 if bar then A.Hand(self, bar, unit, kind, "party", OPTIONS) end
