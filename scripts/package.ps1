@@ -71,9 +71,12 @@ $listed = @($toc | Where-Object { $_ -and -not $_.StartsWith("#") } | ForEach-Ob
 foreach ($entry in $listed) {
     if (-not (Test-Path (Join-Path $build $entry))) { Fail "toc lists $entry, which is missing" }
 }
+# The toc writes a subfolder's files with backslashes (Adaptors\Adaptors.lua), as the game reads them; both sides are
+# compared with forward slashes, the build's own on Linux.
+$listedPaths = @($listed | ForEach-Object { $_.Replace('\', '/') })
 foreach ($file in Get-ChildItem $build -Filter *.lua -Recurse) {
     $relative = $file.FullName.Substring($build.Length + 1).Replace('\', '/')
-    if ($listed -notcontains $relative) { Fail "$relative is not listed in the toc" }
+    if ($listedPaths -notcontains $relative) { Fail "$relative is not listed in the toc" }
 }
 $leftovers = Get-ChildItem $build -Recurse -File -Include *.lua, *.toc | Select-String -Pattern "@project-version@"
 if ($leftovers) { Fail ("markers left in the build:`n" + ($leftovers -join "`n")) }
