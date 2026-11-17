@@ -88,17 +88,23 @@ local FRAMES = {
                      desc = "The game's skull beside a nameplate when your DoTs will finish that mob off.",
                      shown = function() return Get("plateHealth") and Get("plateDots") end },
                } },
-    breath = { label = "Breath", desc = "Liquid in the bar the game shows while you hold your breath under water. "
-                   .. "Fatigue and Feign Death keep the game's own bar.",
+    breath = { label = "Breath and Fatigue", desc = "Liquid in the bars the game shows while you hold your breath under "
+                   .. "water, and out in open sea. Feign Death keeps the game's own bar. The example shows the open card.",
                bars = {
                    { on = "breath", color = "breathColor", frame = "breath", kind = "breath", label = "Breath Bar",
+                     same = "Same as Your Power", whose = "your" },
+                   { on = "fatigue", color = "fatigueColor", frame = "breath", kind = "fatigue", label = "Fatigue Bar",
                      same = "Same as Your Power", whose = "your" },
                },
                rows = {
                    { key = "breathBubbles", label = "Bubbles While Holding Breath",
-                     desc = "Bubbles escape from the bar's front and float up while your breath runs out, not while it "
-                         .. "comes back. With the Bubbles effect on.",
+                     desc = "Bubbles escape from the breath bar's front and float up while your breath runs out, not "
+                         .. "while it comes back. With the Bubbles effect on.",
                      shown = function() return Get("breath") end },
+                   { key = "fatigueDrips", label = "Drips While Fatigued",
+                     desc = "Drops gather under the fatigue bar's front and fall while fatigue runs out, not while it "
+                         .. "comes back.",
+                     shown = function() return Get("fatigue") end },
                } },
 }
 
@@ -206,7 +212,7 @@ local function Ends(choice, frame, kind)
         elseif frame == "friend" then c = { 0, 1, 0 }
         elseif kind == "health" then c = { 0, 0.8, 0 }
         elseif frame == "player" or frame == "pet" or frame == "prd" then c = PowerColor()
-        elseif frame == "breath" then c = ns.Bars.mirror.Color()
+        elseif frame == "breath" then c = ns.Bars.mirror.Color(kind)
         else c = { 0, 0, 1 } end
         return { c[1] * 0.45, c[2] * 0.45, c[3] * 0.45 }, c
     end
@@ -918,6 +924,8 @@ function Refresh()
     local page = ui.pages[current]
     local f = FRAMES[current] or TAB_BY_ID[current]
     if page.cards then RefreshCards(page, f) end
+    -- The breath and fatigue example shows the bar whose card is open.
+    if current == "breath" and page.open and ui.examples.breath then ui.examples.breath:SetKind(page.open.kind) end
     if page.mob then
         for key, chip in pairs(page.mob.chips) do chip:SetPicked(Get("mobClassColor") == key) end
     end

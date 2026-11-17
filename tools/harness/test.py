@@ -302,7 +302,8 @@ OPTION_KEYS = ["playerHealth", "healthColor", "playerPower", "powerColor", "targ
                "totHealthColor", "totPower", "totPowerColor", "partyHealth", "partyHealthColor", "partyPower",
                "partyPowerColor", "raidHealth", "raidHealthColor", "raidPower", "raidPowerColor", "prdHealth",
                "prdHealthColor", "prdPower", "prdPowerColor", "plateHealth", "plateHealthColor", "plateFriendly",
-               "plateFriendlyColor", "plateDots", "plateKillIcon", "breath", "breathColor", "breathBubbles", "waves",
+               "plateFriendlyColor", "plateDots", "plateKillIcon", "breath", "breathColor", "breathBubbles", "fatigue",
+               "fatigueColor", "fatigueDrips", "waves",
                "swirl", "bubbles", "sparkles", "ambient", "lightning", "dots", "dotKillIcon", "heals", "manaBuild",
                "rageFury", "externalBars", "externalColors"]
 keys = list(lua.eval("__ns.Editor.Keys()").values())
@@ -510,7 +511,7 @@ end""")
 lua.execute(f"__click({ED}.hots.breath)")
 check(lua.eval("__ns.Editor.State().section") == "breath" and lua.eval(BX + ".speed") == 1
       and lua.eval(BX + ".bar.state.spot.key") == "breath" and lua.eval(BX + ".bar.state.kind") == "breath"
-      and lua.eval(f"__ns.Bars.IsLive({BX}.bar)") and lua.eval(ED + ".hots.breath.name.text") == "Breath",
+      and lua.eval(f"__ns.Bars.IsLive({BX}.bar)") and lua.eval(ED + ".hots.breath.name.text") == "Breath and Fatigue",
       "clicking the breath bar edits it: an example of the game's breath bar, the liquid in it, on its settings")
 check(lua.eval("__card(1).label.text") == "Breath Bar" and lua.eval("__card(1).colour.follow.label.text")
       == "Follow your power colour" and lua.eval("__page().rows.breathBubbles.shown"),
@@ -528,11 +529,26 @@ lua.execute(f"__click({ED}.defaults)")
 check(lua.eval("SmoothAnimatedBarsDB.effects.breath") is None, "and Defaults gives it the global effects back")
 lua.execute("__click(__card(1).check)")
 run(lua, 1.0)
-check(lua.eval("SmoothAnimatedBarsDB.breath") is False and lua.eval(ED + ".hots.breath.off")
+check(lua.eval("SmoothAnimatedBarsDB.breath") is False and not lua.eval(ED + ".hots.breath.off")
       and not lua.eval("__page().rows.breathBubbles.shown")
       and lua.eval(BX + ".bar:GetValue()") == lua.eval(f"select(2, {BX}.bar:GetMinMaxValues())"),
-      "Breath Bar off: the example dimmed, resting full, and its bubbles' setting hidden")
+      "Breath Bar off: the example rests full and its bubbles' setting is hidden; not dimmed while Fatigue is on")
 lua.execute("__click(__card(1).check)")
+# Fatigue: its own card, and the example turns to fatigue while that card is open.
+lua.execute("__click(__card(2).header)")
+check(lua.eval(BX + ".showing") == "fatigue" and lua.eval(BX + ".bar.state.kind") == "fatigue"
+      and lua.eval("__card(2).label.text") == "Fatigue Bar" and lua.eval("__page().rows.fatigueDrips.shown"),
+      "opening the Fatigue Bar's card turns the example to fatigue, with Drips While Fatigued")
+r, g, b = lua.eval(f"unpack(__ns.Bars.Liquid({BX}.bar).theme.fillB)")
+check(r > 0.8 and g > 0.6 and b < 0.4, f"in the fatigue bar's gold ({r:.2f}, {g:.2f}, {b:.2f})")
+most = lua.eval("__breathMost(9.5)")
+check(most > 0, f"its fatigue runs out and drips fall off its front ({most} at most)")
+lua.execute("__click(__card(2).check)")
+check(lua.eval(ED + ".hots.breath.off") is False, "one bar still on: not dimmed")
+lua.execute("__click(__card(1).check)")
+check(lua.eval(ED + ".hots.breath.off"), "both off: the example dimmed")
+lua.execute("__click(__card(1).check); __click(__card(2).check); __click(__card(1).header)")
+check(lua.eval(BX + ".showing") == "breath", "and the Breath Bar's card turns it back to breath")
 lua.execute(f"__click({ED}.hots.plates)")
 check(not lua.eval("__page().rows.plateDots.shown"), "Nameplates: Your DoTs on Nameplates hidden while they are off")
 lua.execute("__click(__card(1).check)")
@@ -3977,7 +3993,7 @@ check(eh.eval("__marker(__ufHealth).name") == "mana",
 
 # All our own bars off: the last other addon's bar removed stops the driver's unit events.
 keys = ["playerHealth", "playerPower", "targetHealth", "targetPower", "petHealth", "petPower", "focusHealth",
-        "focusPower", "totHealth", "totPower", "partyHealth", "partyPower", "prdHealth", "prdPower", "breath"]
+        "focusPower", "totHealth", "totPower", "partyHealth", "partyPower", "prdHealth", "prdPower", "breath", "fatigue"]
 quiet = session("{ setupDone = true, " + ", ".join(k + " = false" for k in keys) + " }")
 quiet.execute("""
     __q = CreateFrame("StatusBar", nil, UIParent)
@@ -4136,6 +4152,25 @@ br.execute("""
         end
         return n, top, anchored
     end
+    -- Fatigue's drips: how many show, the lowest one's top (px from the bar's middle, up), and whether each hangs from
+    -- the hidden bar's fill edge.
+    function __drips(bar)
+        local _, clip = __ours(bar)
+        local n, low, anchored = 0, 100, true
+        for _, f in ipairs(__frames) do
+            if f.parent == bar and f ~= clip then
+                for _, r in ipairs(__regions) do
+                    if r.parent == f and r.kind == "Texture" and r.file and r.file:sub(-5) == "Ember" and r.shown then
+                        n = n + 1
+                        local p = r.points.TOP
+                        if not (p and p.rel == (__ours(bar)).fill and p.relPoint == "RIGHT") then anchored = false end
+                        if p then low = math.min(low, p.y) end
+                    end
+                end
+            end
+        end
+        return n, low, anchored
+    end
 """)
 
 
@@ -4191,15 +4226,42 @@ breath(br, 0, 1)
 n, _, _ = br.eval(f"__bubbles({B1})")
 check(n == 0 and br.eval(f"(select(2, __liquid({B1})))") > 0, f"Bubbles While Holding Breath off: none, liquid stays ({n})")
 br.execute("__settings.breathBubbles:SetValue(true)")
-br.execute(f"{MT}[1].timer = 'EXHAUSTION'")
-breath(br, 0, 0.3)
+# Fatigue: the same frame handed EXHAUSTION, out in open sea.
+br.execute(f"{MT}[1].timer = 'EXHAUSTION'; {MT}[1].Text:SetText('Fatigue'); {B1}:SetMinMaxValues(0, 60); {B1}:SetValue(60)")
+breath(br, -1, 1.5)
+n, shown, alpha, _, _ = br.eval(f"__liquid({B1})")
+check(shown > 0 and alpha == 0, f"fatigue: the same frame keeps the liquid, the game's fill hidden ({shown}/{n}, alpha {alpha})")
+r, g, b = br.eval(f"__tint({B1})")
+check(r > 0.8 and g > 0.6 and b < 0.4, f"in the fatigue bar's gold ({r:.2f}, {g:.2f}, {b:.2f})")
+n, low, anchored = br.eval(f"__drips({B1})")
+check(n > 0 and anchored and low < -6.5 and br.eval(f"__bubbles({B1})")[0] == 0,
+      f"fatigue running out: drips hang from the front and fall below the bar, no bubbles ({n} shown, lowest {low:.1f} px)")
+breath(br, 6, 2.5)
+n, _, _ = br.eval(f"__drips({B1})")
+check(n == 0, f"fatigue coming back: no new drips, and the last ones have fallen away ({n})")
+br.execute("__settings.fatigueDrips:SetValue(false)")
+breath(br, -1, 1.5)
+n, _, _ = br.eval(f"__drips({B1})")
+check(n == 0 and br.eval(f"(select(2, __liquid({B1})))") > 0, f"Drips While Fatigued off: none, liquid stays ({n})")
+br.execute("__settings.fatigueDrips:SetValue(true); __settings.fatigueColor:SetValue('fel')")
+breath(br, -1, 0.3)
+r, g, b = br.eval(f"__tint({B1})")
+check(g > r and g > b, f"a colour of its own for fatigue, apart from breath's ({r:.2f}, {g:.2f}, {b:.2f})")
+br.execute("__settings.fatigueColor:SetValue('game'); __settings.fatigue:SetValue(false)")
+breath(br, -1, 0.3)
 check(br.eval(f"(select(2, __liquid({B1})))") == 0 and br.eval(f"{B1}.fill.alpha") == 1
-      and br.eval(f"__bubbles({B1})")[0] == 0,
-      "the same frame showing fatigue instead keeps the game's own bar, with no bubbles")
-br.execute(f"{MT}[1].timer = 'BREATH'")
-breath(br, 0, 0.3)
-check(br.eval(f"(select(2, __liquid({B1})))") > 0 and br.eval(f"{B1}.fill.alpha") == 0,
-      "and back to breath, the liquid again")
+      and br.eval(f"__drips({B1})")[0] == 0, "Fatigue Bar off: the game's own fatigue bar, with no drips")
+br.execute("__settings.fatigue:SetValue(true)")
+br.execute(f"{MT}[1].timer = 'FEIGNDEATH'")
+breath(br, -1, 0.3)
+check(br.eval(f"(select(2, __liquid({B1})))") == 0 and br.eval(f"{B1}.fill.alpha") == 1
+      and br.eval(f"__drips({B1})")[0] == 0 and br.eval(f"__bubbles({B1})")[0] == 0,
+      "the same frame showing feign death keeps the game's own bar, with nothing off it")
+br.execute(f"{MT}[1].timer = 'BREATH'; {MT}[1].Text:SetText('Breath')")
+breath(br, -1, 0.3)
+r, g, b = br.eval(f"__tint({B1})")
+check(br.eval(f"(select(2, __liquid({B1})))") > 0 and br.eval(f"{B1}.fill.alpha") == 0 and b > 0.8 and r < 0.3,
+      f"and back to breath, the liquid again in its blue ({r:.2f}, {g:.2f}, {b:.2f})")
 br.execute(f"{B2}:SetMinMaxValues(0, 60); __startMirror(2, 'BREATH', -1)")
 breath(br, -1, 0.3, B2)
 check(br.eval(f"(select(2, __liquid({B2})))") > 0, "breath on the second timer frame gets it too")
@@ -4213,6 +4275,13 @@ br.execute("__settings.breath:SetValue(false)")
 breath(br, 0, 0.2)
 check(br.eval(f"(select(2, __liquid({B1})))") == 0 and br.eval(f"{B1}.fill.alpha") == 1
       and br.eval(f"__bubbles({B1})")[0] == 0, "Breath Bar off: the game's own bar back")
+br.execute(f"{MT}[1].timer = 'EXHAUSTION'")
+breath(br, -1, 0.3)
+check(br.eval(f"(select(2, __liquid({B1})))") > 0, "with Breath Bar off, fatigue still gets the liquid")
+br.execute("__settings.fatigue:SetValue(false)")
+breath(br, -1, 0.3)
+check(br.eval(f"(select(2, __liquid({B1})))") == 0 and br.eval(f"{B1}.fill.alpha") == 1,
+      "and with both off, the game's own bars")
 
 if failures:
     print(f"\n{len(failures)} check(s) failed:")

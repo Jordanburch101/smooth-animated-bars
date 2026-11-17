@@ -33,6 +33,9 @@ local DEFAULTS = {
     breath       = true,
     -- Bubbles rising off the breath bar's front while breath runs out (read live, with the Bubbles effect)
     breathBubbles = true,
+    -- The fatigue bar out in open sea (the same mirror timers), and drops falling off its front while fatigue runs out
+    fatigue      = true,
+    fatigueDrips = true,
     -- Enemy nameplates' health (Bars.lua), off until it has been tried in a crowd
     plateHealth  = false,
     -- Friendly nameplates' health, the same way (outside instances: the game keeps those there to itself)
@@ -68,6 +71,8 @@ local DEFAULTS = {
     plateHealthColor  = "same",
     -- The breath bar: the game's blue by default, or "same" for the player's power colour
     breathColor       = "game",
+    -- The fatigue bar: the game's gold by default, or "same" for the player's power colour
+    fatigueColor      = "game",
     -- Friendly nameplates: their own colour by default, or "same" for the enemy plates'
     plateFriendlyColor = "game",
     -- What Class Color gives a mob: "reaction", "game" (the bar's own colour), "class" (its own) or "own" (the player's)
@@ -116,7 +121,7 @@ local COLOR_KEYS = {
     raid   = { health = "raidHealthColor", power = "raidPowerColor" },
     plate  = { health = "plateHealthColor" },
     friend = { health = "plateFriendlyColor" },
-    breath = { breath = "breathColor" },
+    breath = { breath = "breathColor", fatigue = "fatigueColor" },
 }
 local FOLLOWS = { target = "player", pet = "player", focus = "target", tot = "target", party = "player", prd = "player",
                   raid = "party", plate = "target", friend = "plate", breath = "player" }
@@ -140,7 +145,7 @@ function Core.ColorChoice(frame, kind)
     local key = COLOR_KEYS[frame][kind]
     local choice = (trial and trial.key == key) and trial.choice or Core.Get(key)
     if choice == "same" and FOLLOWS[frame] then
-        return Core.ColorChoice(FOLLOWS[frame], kind == "breath" and "power" or kind)
+        return Core.ColorChoice(FOLLOWS[frame], (kind == "breath" or kind == "fatigue") and "power" or kind)
     end
     return choice
 end
@@ -178,7 +183,8 @@ function Core.PlatesUseClass()
 end
 
 local BAR_KEYS = { "playerHealth", "playerPower", "targetHealth", "targetPower", "petHealth", "petPower", "focusHealth",
-                   "focusPower", "totHealth", "totPower", "partyHealth", "partyPower", "prdHealth", "prdPower", "breath" }
+                   "focusPower", "totHealth", "totPower", "partyHealth", "partyPower", "prdHealth", "prdPower", "breath",
+                   "fatigue" }
 
 local function ApplyBars(verbose)
     local live, missing = ns.Bars.Apply()

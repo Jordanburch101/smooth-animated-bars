@@ -368,12 +368,14 @@ Facts found while building this, which the code relies on and which are not obvi
   (`Liquid:Settle`): a burst in flight when it hid would otherwise finish when it shows. Settled, it counts as quiet,
   so it is drawn at once (`drawNow`): waiting for its next idle update left an empty bar for a few frames. Every class has the
   `AlternatePowerBar`, but on Forever only a druid's is used, so only druids build one.
-- **Breath bar** (`Bars.lua`, `Bars.mirror`, the `breath` spots): Forever's mirror timers are
+- **Breath and fatigue bars** (`Bars.lua`, `Bars.mirror`, the `breath` spots): Forever's mirror timers are
   `Blizzard_MirrorTimer/Mainline` (forever branch): `MirrorTimerContainer.mirrorTimers`, three pooled
   `MirrorTimerTemplate` frames that each show whichever timer the game hands them, named in the frame's `.timer`
-  (`BREATH`, `EXHAUSTION`, `FEIGNDEATH`; nil once cleared). Each frame gets a spot; its liquid shows while it shows
-  `BREATH`, and the others get the game's fill back (`Bars.mirror.Away`, through `SetAway` as an offline party
-  member's). The `StatusBar` (195x13) is lowered to the frame's own level (`LowerFrameLevel`), and the dark
+  (`BREATH`, `EXHAUSTION`, `FEIGNDEATH`; nil once cleared). Each frame gets a spot, on with either the `breath` or the
+  `fatigue` setting (`Bars.mirror.Wanted`). The spot's `b.kind` follows the timer its frame shows (`Bars.mirror.Kind`,
+  `KINDS`): turning, `Bars.mirror.SetKind` gives it that kind's effects (`Bars.FillEffects` keys a mirror bar's by its
+  kind), colour (`breathColor` or `fatigueColor`, both under `COLOR_KEYS.breath`) and particles. Feign death, or a kind
+  switched off, gets the game's fill back (through `SetAway` as an offline party member's). The `StatusBar` (195x13) is lowered to the frame's own level (`LowerFrameLevel`), and the dark
   `ui-castingbar-background`, the text box and the border are textures on the frame itself, so at the bar's level the
   background drew over the liquid and the bar looked empty (seen in game). The liquid is one level above the bar and
   copies of the frame's texts (the label, under the bar) one more up (`Bars.mirror.Raise`, `Bars.mirror.Setup`). The
@@ -383,10 +385,14 @@ Facts found while building this, which the code relies on and which are not obvi
   `GetMirrorTimerProgress`; whether Forever keeps it secret is not known, so bubbles (`Bars.mirror.UpdateBubbles`, rising
   off the fill's edge on an unclipped frame two levels above the liquid) go by the value falling where it is readable,
   else by `GetMirrorTimerInfo`'s scale below 0 and `paused` (a number) 0. The bubbles follow the bar's own Bubbles
-  effect (`b.opts.bubbles`, so a breath bar with effects of its own decides). In the editor the breath bar is a frame
-  of its own (`FRAMES.breath`), its example `Preview.CreateBreath`: the game's art around a preview bar
-  (`spec.breath`, which gets bubbles from `Bars.Preview`) playing its own loop of breath running out and coming back,
-  not the scenes. Seen in game: the liquid. Not yet seen in game: the bubbles, and the editor's example.
+  effect (`b.opts.bubbles`, so a breath bar with effects of its own decides). Fatigue's are drips instead
+  (`Bars.mirror.STYLES`, `DRIP`, `Drip`): the same pool, Ember's teardrop hung by its top from the front's bottom edge,
+  swelling, then falling under gravity, on `fatigueDrips` alone. In the editor the two are one frame (`FRAMES.breath`,
+  a card each), its example `Preview.CreateBreath`: the game's art around a preview bar (`spec.breath`, which gets
+  bubbles from `Bars.Preview` and is live by its kind's setting) playing its own loop of running out and coming back,
+  not the scenes, showing the kind whose card is open (`holder:SetKind`; not `holder.kind`, which the mock uses for a
+  region's type). Seen in game: the breath liquid. Not yet seen in game: the bubbles, fatigue, and the editor's
+  example.
 - **Unit frame menus** (`Options.lua`, `AddToUnitMenus`): `Menu.ModifyMenu("MENU_UNIT_" .. which, ...)` adds Open
   Editor (Open Settings before the editor), opening it at that frame's section; the frames pass themselves as `contextData.ownerFrame` (Mainline `PlayerFrame.lua`, `TargetFrame.lua`,
   `PetFrame.lua`), which tells them from chat names. The party's member frames are pooled and nameless, so they are

@@ -1397,14 +1397,14 @@ BREATH_SCRIPT = [(0.0, 1.00, -1), (6.4, 0.28, 10), (9.0, 1.00, 10)]
 BREATH_ROOM = (20, 78, 20, 10)  # left, top, right, bottom around the bar: the top for the bubbles to rise into
 
 
-def breath_session():
-    """The addon in the mock with the first mirror timer showing breath; its liquid's frame becomes __breathMover and
-    its bubbles' frame __breathBubbles."""
+def breath_session(timer="BREATH", label="Breath"):
+    """The addon in the mock with the first mirror timer showing breath (or fatigue: EXHAUSTION); its liquid's frame
+    becomes __breathMover and its bubbles' (or drips') frame __breathBubbles."""
     before = """
         SmoothAnimatedBarsDB.setupDone = true
     """
     after = f"""
-        __startMirror(1, 'BREATH', -1)
+        __startMirror(1, '{timer}', -1, '{label}')
         local bar = MirrorTimerContainer.mirrorTimers[1].StatusBar
         bar:SetMinMaxValues(0, __secret()); bar:SetValue(__secret())
         __step(1 / 60)
@@ -1416,7 +1416,8 @@ def breath_session():
             end
         end
         for _, r in ipairs(__regions) do
-            if r.kind == "Texture" and r.file and r.file:sub(-6) == "Bubble" and r.parent.parent == bar then
+            if r.kind == "Texture" and type(r.file) == "string"
+                    and (r.file:sub(-6) == "Bubble" or r.file:sub(-5) == "Ember") and r.parent.parent == bar then
                 __breathBubbles = r.parent
             end
         end
@@ -1433,8 +1434,9 @@ def breath_session():
     return render.Session(ADDON, settings=off, before_login=before, after_login=after, scenario=events)
 
 
-def breath():
-    """The breath bar running out under water, bubbles rising off its front, then refilling: breath.webp."""
+def breath(timer="BREATH", label="Breath", name="breath"):
+    """The breath bar running out under water, bubbles rising off its front, then refilling: breath.webp. With
+    EXHAUSTION, the fatigue bar out in open sea, drops falling off its front: fatigue.webp."""
     path = os.path.join(ART, "breath.json")
     if not os.path.exists(path):
         sys.exit(f"No breath bar art in {ART}: run /sab capture breath in game, then tools/capture_art.py --breath.")
@@ -1442,7 +1444,7 @@ def breath():
     cw, ch = spec["cell"]
     bx0, by0 = spec["bar"][:2]
     art = resize_rgba(Image.open(os.path.join(ART, "breath-art.png")).convert("RGBA"), (round(cw * K), round(ch * K)))
-    session = breath_session()
+    session = breath_session(timer, label)
     left, top, right, bottom = BREATH_ROOM
     w, h = round((BREATH_W + left + right) * K), round((top + ch - by0 + bottom) * K)
     back = backdrop(w, h)
@@ -1450,7 +1452,7 @@ def breath():
     canvas.alpha_composite(art, (round((left - bx0) * K), round((top - by0) * K)))
     back = canvas.convert("RGB")
     bar = (round(left * K), round(top * K), round((left + BREATH_W) * K), round((top + BREATH_H) * K))
-    label = ((left + BREATH_W / 2) * K, (top + BREATH_H + 6) * K)  # the text box under the bar, as the game centres it
+    at_label = ((left + BREATH_W / 2) * K, (top + BREATH_H + 6) * K)  # the text box under the bar, as the game centres it
 
     def at(t):
         rows = [r for r in BREATH_SCRIPT if r[0] <= t]
@@ -1471,7 +1473,7 @@ def breath():
         full = session.render(img, bar[0] + (fill - BREATH_W) * K, bar[1], K)
         img.paste(full.crop(bar), bar[:2])
         draw = ImageDraw.Draw(img)
-        text(draw, label[0], label[1], "Breath", 10, (255, 255, 255), True)
+        text(draw, at_label[0], at_label[1], label, 10, (255, 255, 255), True)
         # The bubbles, anchored to the fill's right edge: their frame is sized to the fill, so its right is the front.
         session.lua.execute(f"__breathBubbles.w, __breathBubbles.h = {fill}, {BREATH_H}")
         session.frame = "__breathBubbles"
@@ -1479,10 +1481,10 @@ def breath():
         frames.append(img)
         t += dt
     os.makedirs(OUT, exist_ok=True)
-    webp = os.path.join(OUT, "breath.webp")
+    webp = os.path.join(OUT, name + ".webp")
     frames[0].save(webp, save_all=True, append_images=frames[1:], duration=round(1000 / FPS), loop=0,
                    quality=92, method=6)
-    print(f"wrote breath.webp ({os.path.getsize(webp) // 1024} KB)")
+    print(f"wrote {name}.webp ({os.path.getsize(webp) // 1024} KB)")
 
 
 if __name__ == "__main__":
@@ -1503,3 +1505,5 @@ if __name__ == "__main__":
         raid()
     if not ONLY or "breath" in ONLY:
         breath()
+    if not ONLY or "fatigue" in ONLY:
+        breath("EXHAUSTION", "Fatigue", "fatigue")

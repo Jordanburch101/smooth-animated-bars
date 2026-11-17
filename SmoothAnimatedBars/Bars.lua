@@ -207,12 +207,15 @@ end
 local PLATE_TEXTS = { "Text", "LeftText", "RightText" }
 local PRD_TEXTS = { "TextString", "LeftText", "RightText" }
 
--- The breath bar: the game's mirror timers, a small pool of bars (MirrorTimerContainer.mirrorTimers on the retail
--- branch, MirrorTimer1..3 with MirrorTimerNStatusBar on the classic one) that each show whichever timer the game hands
--- them: BREATH, EXHAUSTION (fatigue) or FEIGNDEATH, named in the timer frame's .timer. Each frame gets a spot, and its
--- liquid shows only while that frame shows breath; the others keep the game's own fill (Bars.mirror.Away). On Bars, as
--- the file is at Lua's limit of 200 locals.
-Bars.mirror = { TIMER = "BREATH", COUNT = 3, COLOR = { 0, 0.5, 1 } }
+-- The breath and fatigue bars: the game's mirror timers, a small pool of bars (MirrorTimerContainer.mirrorTimers on the
+-- retail branch, MirrorTimer1..3 with MirrorTimerNStatusBar on the classic one) that each show whichever timer the game
+-- hands them: BREATH, EXHAUSTION (fatigue) or FEIGNDEATH, named in the timer frame's .timer. Each frame gets a spot, and
+-- its liquid shows while that frame shows breath or fatigue with that one's setting on, taking that one's kind (its
+-- colour setting, colour, effects and particles) each time the frame turns from one to the other; feign death keeps the
+-- game's own fill. On Bars, as the file is at Lua's limit of 200 locals.
+Bars.mirror = { COUNT = 3, KINDS = { BREATH = "breath", EXHAUSTION = "fatigue" },
+                TIMERS = { breath = "BREATH", fatigue = "EXHAUSTION" },
+                COLORS = { breath = { 0, 0.5, 1 }, fatigue = { 1, 0.9, 0 } } } -- the classic branch's MirrorTimerColors
 
 function Bars.mirror.IsBar(bar)
     return type(bar) == "table" and bar.GetStatusBarTexture and bar.GetValue and true or false
@@ -247,20 +250,26 @@ function Bars.mirror.Bar(i)
     return Bars.mirror.IsBar(bar) and bar or nil
 end
 
--- Whether a mirror bar shows some other timer than breath now. A frame that does not say is taken as breath.
-function Bars.mirror.Away(b)
-    local f = b.bar:GetParent()
-    local t = type(f) == "table" and f.timer
-    if type(t) ~= "string" or Secret(t) then return false end
-    return t ~= Bars.mirror.TIMER
+-- Whether either mirror bar is switched on.
+function Bars.mirror.Wanted()
+    return (ns.Core.Get("breath") or ns.Core.Get("fatigue")) and true or false
 end
 
--- The game's breath colour: MirrorTimerColors where the client has it, else its blue. The retail branch draws the
--- timers with coloured atlases instead, and leaves the bar's colour white.
-function Bars.mirror.Color()
-    local c = type(MirrorTimerColors) == "table" and MirrorTimerColors[Bars.mirror.TIMER]
+-- What a mirror bar shows now: "breath", "fatigue", or false for another timer (feign death). A frame that does not
+-- say (its timer cleared, or secret) keeps what it showed.
+function Bars.mirror.Kind(b)
+    local f = b.bar:GetParent()
+    local t = type(f) == "table" and f.timer
+    if type(t) ~= "string" or Secret(t) then return b.kind end
+    return Bars.mirror.KINDS[t] or false
+end
+
+-- The game's colour for a kind: MirrorTimerColors where the client has it, else the classic branch's. The retail branch
+-- draws the timers with coloured atlases instead, and leaves the bar's colour white.
+function Bars.mirror.Color(kind)
+    local c = type(MirrorTimerColors) == "table" and MirrorTimerColors[Bars.mirror.TIMERS[kind]]
     if type(c) == "table" and type(c.r) == "number" and not Secret(c.r, c.g, c.b) then return { c.r, c.g, c.b } end
-    return Bars.mirror.COLOR
+    return Bars.mirror.COLORS[kind] or Bars.mirror.COLORS.breath
 end
 
 -- UnitFrame_Initialize stores each unit frame's bars as .healthbar and .manabar; the paths are where
@@ -334,8 +343,9 @@ local SPOTS = {
         return Path(rawget(_G, "PersonalResourceDisplayFrame"), "AlternatePowerBar")
     end },
 }
--- The breath bar, one spot per mirror timer frame (Bars.mirror above). bare: no mask and no spill, so the liquid stays
--- inside the bar's rectangle under its border.
+-- The breath and fatigue bars, one spot per mirror timer frame (Bars.mirror above), on with either setting (Wanted);
+-- its kind changes with the timer the frame shows. bare: no mask and no spill, so the liquid stays inside the bar's
+-- rectangle under its border.
 for i = 1, Bars.mirror.COUNT do
     SPOTS[#SPOTS + 1] = { key = "breath", frame = "breath", optional = true, bare = true, mirror = i, unit = "player",
                           kind = "breath", label = "breath bar " .. i, find = function() return Bars.mirror.Bar(i) end }
@@ -358,6 +368,7 @@ end
 
 -- Whether a spot is switched on.
 local function Wanted(spot)
+    if spot.mirror then return Bars.mirror.Wanted() end
     return ns.Core.Get(spot.key) and true or false
 end
 
@@ -406,6 +417,8 @@ function Bars.FillEffects(b)
         key = nil
     elseif b.spot.plate and not b.spot.preview then
         key = b.side == "friend" and "plateFriendly" or "plateHealth"
+    elseif Bars.mirror.TIMERS[b.kind] then
+        key = b.kind -- a mirror bar's are the breath bar's or the fatigue bar's, as it shows
     else
         key = b.spot.key
     end
@@ -492,7 +505,7 @@ end
 -- The bar's own colour: health green (a flat bar's its own, unless unflat), or the game's colour for the unit's power
 -- type (a preview bar, and the Personal Resource Display's mana under a druid's form, name their power type).
 GameColor = function(b, unflat)
-    if b.kind == "breath" then return Bars.mirror.Color(), "BREATH" end
+    if Bars.mirror.TIMERS[b.kind] then return Bars.mirror.Color(b.kind), Bars.mirror.TIMERS[b.kind] end
     -- A raid frame's power takes its power type's colour, as the game's does (CompactUnitFrame_UpdatePowerColor).
     if (b.spot.raid or b.spot.raidLook) and b.kind == "health" and not unflat then return Bars.raid.Color(b), "HEALTH" end
     -- Another addon's bar with Your Colours on Their Bars (externalColors): Game Colour is the game's, as on its own
@@ -1046,7 +1059,14 @@ end
 -- can be read, else the breath timer's scale (GetMirrorTimerInfo: below 0 while draining) and not paused.
 Bars.mirror.BUBBLE = { count = 20, rate = 7, hold = 0.3, rise = { 14, 28 }, life = { 1.3, 2.4 }, size = { 3, 6.5 },
                         alpha = 0.8, pop = 0.15, white = 0.55,
-                        texture = "Interface\\AddOns\\SmoothAnimatedBars\\Media\\Bubble" }
+                        texture = "Interface\\AddOns\\SmoothAnimatedBars\\Media\\Bubble",
+                        setting = "breathBubbles", effect = "bubbles" }
+-- Fatigue's drips: drops of the liquid gather under the front while fatigue runs out, swelling as they hang, then let go
+-- and fall, stretching as they speed up, fading out below the bar. The teardrop is Ember's, its tail up.
+Bars.mirror.DRIP = { rate = 3.5, hold = 0.3, hang = { 0.3, 0.55 }, life = { 0.8, 1.1 }, size = { 6, 8.5 }, gravity = 85,
+                     alpha = 0.95, bright = 0.3, texture = "Interface\\AddOns\\SmoothAnimatedBars\\Media\\Ember",
+                     setting = "fatigueDrips", drip = true }
+Bars.mirror.STYLES = { breath = Bars.mirror.BUBBLE, fatigue = Bars.mirror.DRIP }
 
 function Bars.mirror.Rand(r) return r[1] + (r[2] - r[1]) * math.random() end
 
@@ -1064,12 +1084,12 @@ function Bars.mirror.NewBubbles(b)
     b.breathBubbles = { frame = frame, pool = pool, acc = 0, hold = 0 }
 end
 
--- The breath timer's own say: draining (scale below 0) and not paused. False when the client will not tell.
-function Bars.mirror.TimerDraining()
+-- A timer's own say (BREATH, EXHAUSTION): draining (scale below 0) and not paused. False when the client will not tell.
+function Bars.mirror.TimerDraining(name)
     if not GetMirrorTimerInfo then return false end
     for i = 1, Bars.mirror.COUNT do
         local ok, timer, _, _, scale, paused = pcall(GetMirrorTimerInfo, i)
-        if ok and type(timer) == "string" and not Secret(timer, scale, paused) and timer == Bars.mirror.TIMER then
+        if ok and type(timer) == "string" and not Secret(timer, scale, paused) and timer == name then
             return type(scale) == "number" and scale < 0 and (paused == nil or paused == false or paused == 0)
         end
     end
@@ -1085,18 +1105,34 @@ function Bars.mirror.Draining(b, dt)
         bb.last = v
     else
         bb.last = nil
-        if Bars.mirror.TimerDraining() then bb.hold = Bars.mirror.BUBBLE.hold end
+        if Bars.mirror.TimerDraining(Bars.mirror.TIMERS[b.kind]) then bb.hold = Bars.mirror.BUBBLE.hold end
     end
     bb.hold = bb.hold - dt
     return bb.hold > 0
 end
 
--- One bubble from the front: somewhere up its height, just behind it, in the liquid's own tip colour paled.
-function Bars.mirror.Emit(b, bb)
-    local B, Rand = Bars.mirror.BUBBLE, Bars.mirror.Rand
+-- One bubble from the front: somewhere up its height, just behind it, in the liquid's own tip colour paled. Or (B a
+-- drip) one drop gathering under the front's bottom edge, in the liquid's bright end.
+function Bars.mirror.Emit(b, bb, B)
+    local Rand = Bars.mirror.Rand
     for _, p in ipairs(bb.pool) do
         if not p.active then
             local h = b.height
+            p.style = B
+            p.tex:SetTexture(B.texture)
+            p.tex:ClearAllPoints()
+            if B.drip then
+                p.x, p.y, p.vy = Rand({ -3, 0 }), -h / 2 + 1, 0
+                p.hang, p.size, p.age = Rand(B.hang), Rand(B.size), 0
+                p.life = p.hang + Rand(B.life)
+                local theme = b.liquid.theme
+                local c, t = (theme and theme.fillB) or WHITE, (theme and theme.tip) or WHITE
+                local k = B.bright
+                p.tex:SetVertexColor(c[1] + (t[1] - c[1]) * k, c[2] + (t[2] - c[2]) * k, c[3] + (t[3] - c[3]) * k)
+                p.active = true
+                p.tex:Show()
+                return
+            end
             p.x, p.y = Rand({ -4, 1 }), Rand({ -h / 2 + 2, h / 2 - 2 })
             p.vx, p.vy = Rand({ -5, 3 }), Rand(B.rise)
             p.life, p.size, p.age = Rand(B.life), Rand(B.size), 0
@@ -1123,19 +1159,20 @@ function Bars.mirror.ClearBubbles(b)
     end
 end
 
--- Each frame: new bubbles while breath runs out (with the Bubbles effect and the breath bubbles setting on), and the
--- ones out there rising, swaying, growing a little and popping at the end of their life.
+-- Each frame: new bubbles while breath runs out (with the Bubbles effect and the breath bubbles setting on), or drips
+-- while fatigue does (with its drips setting), and the ones out there rising, swaying, growing a little and popping at
+-- the end of their life, or hanging and falling.
 function Bars.mirror.UpdateBubbles(b, dt)
     local bb = b.breathBubbles
     if not bb then return end
-    local B = Bars.mirror.BUBBLE
-    -- The Bubbles effect as this bar has it: the global one, or the breath bar's own (Core.Effect, the editor).
-    local on = ns.Core.Get("breathBubbles") and b.opts.bubbles
+    local S = Bars.mirror.STYLES[b.kind] or Bars.mirror.BUBBLE
+    -- An effect it needs as this bar has it: the global one, or the bar's own (Core.Effect, the editor).
+    local on = ns.Core.Get(S.setting) and (not S.effect or b.opts[S.effect])
     if on and Bars.mirror.Draining(b, dt) then
-        bb.acc = bb.acc + dt * B.rate
+        bb.acc = bb.acc + dt * S.rate
         while bb.acc >= 1 do
             bb.acc = bb.acc - 1
-            Bars.mirror.Emit(b, bb)
+            Bars.mirror.Emit(b, bb, S)
         end
     else
         bb.acc = 0
@@ -1149,7 +1186,10 @@ function Bars.mirror.UpdateBubbles(b, dt)
             if k >= 1 then
                 p.active = false
                 p.tex:Hide()
+            elseif p.style.drip then
+                Bars.mirror.Drip(p, p.style, fill, dt)
             else
+                local B = p.style
                 p.vy = p.vy + 6 * dt -- buoyant: a little faster as it rises
                 p.vx = p.vx * math.exp(-1.5 * dt)
                 p.x, p.y = p.x + p.vx * dt, p.y + p.vy * dt
@@ -1166,6 +1206,36 @@ function Bars.mirror.UpdateBubbles(b, dt)
             end
         end
     end
+end
+
+-- One drip: swelling where it gathers under the front, then falling, stretching as it speeds up and fading at the end.
+-- Its top hangs from the front, so it grows downward.
+function Bars.mirror.Drip(p, D, fill, dt)
+    local w, h, alpha
+    if p.age < p.hang then
+        local g = p.age / p.hang
+        w, h, alpha = p.size * (0.4 + 0.6 * g), p.size * (0.35 + 0.75 * g), math.min(1, p.age / 0.12)
+    else
+        p.vy = p.vy - D.gravity * dt
+        p.y = p.y + p.vy * dt
+        local q = (p.age - p.hang) / (p.life - p.hang)
+        w, h = p.size, p.size * (1.1 + math.min(0.5, -p.vy / 90))
+        alpha = q < 0.55 and 1 or 1 - (q - 0.55) / 0.45
+    end
+    p.tex:SetSize(w, h)
+    p.tex:SetAlpha(alpha * D.alpha)
+    p.tex:SetPoint("TOP", fill, "RIGHT", p.x, p.y)
+end
+
+-- A mirror bar turns to showing the other kind (breath, fatigue): that one's effects, colour and particles.
+function Bars.mirror.SetKind(b, kind)
+    b.kind = kind
+    Bars.mirror.ClearBubbles(b)
+    Bars.FillEffects(b)
+    b.liquid:ApplyOptions()
+    ApplyColor(b, true)
+    -- The editor's example: on with the setting of what it now shows.
+    if b.spot.preview then SetLive(b, ns.Core.Get(kind) and not b.err and true or false) end
 end
 
 function Bars.mirror.Setup(b)
@@ -1762,9 +1832,12 @@ local function UpdateBar(b, dt)
         Bars.raid.Follow(b, dt)
         if b.away then return end
     end
-    -- A mirror timer frame showing fatigue or feign death rather than breath keeps the game's own fill.
+    -- A mirror timer frame takes the kind of the timer it shows; one showing feign death, or a kind switched off, keeps
+    -- the game's own fill.
     if b.spot.mirror then
-        SetAway(b, Bars.mirror.Away(b))
+        local kind = Bars.mirror.Kind(b)
+        if kind and kind ~= b.kind then Bars.mirror.SetKind(b, kind) end
+        SetAway(b, not (kind and ns.Core.Get(kind)))
         if b.mirrorTexts then b.mirrorTexts.frame:SetShown(not b.away) end
         if b.breathBubbles then b.breathBubbles.frame:SetShown(not b.away) end
         if b.away then
@@ -2366,8 +2439,8 @@ local BOTH = { UNIT_HEALTH = true, UNIT_MAXHEALTH = true } -- the frames' events
 -- later, after the game's own handler has set it up), and a breath bar stirs as its timer starts, turns or pauses.
 Bars.mirror.events = CreateFrame("Frame")
 Bars.mirror.events:SetScript("OnEvent", function(_, event, timer)
-    if not ns.Core.Get("breath") then return end
-    if type(timer) == "string" and not Secret(timer) and timer ~= Bars.mirror.TIMER then return end
+    if not Bars.mirror.Wanted() then return end
+    if type(timer) == "string" and not Secret(timer) and not Bars.mirror.KINDS[timer] then return end
     local missing = false
     for _, spot in ipairs(SPOTS) do
         if spot.mirror and not bars[spot] then missing = true end
@@ -2541,7 +2614,8 @@ function Bars.Apply()
     -- Previews follow the same settings, so the wizard shows each choice on them.
     local any = live
     for _, b in ipairs(previews) do
-        SetLive(b, ns.Core.Get(b.spot.key) and not b.err and true or false)
+        -- The example breath bar is on with the setting of what it shows, breath or fatigue.
+        SetLive(b, ns.Core.Get(b.spot.breath and b.kind or b.spot.key) and not b.err and true or false)
         if b.live then any = any + 1 end
     end
     local platesOn = PlatesWanted()
@@ -2584,7 +2658,7 @@ function Bars.Preview(bar, spec)
     -- The editor's example breath bar: bubbles off its front as on the real one, its value going down saying when.
     if spec.breath then Bars.mirror.NewBubbles(b) end
     -- Only the first needs the driver started; the editor builds some forty, in combat too.
-    SetLive(b, ns.Core.Get(b.spot.key) and not b.err and true or false)
+    SetLive(b, ns.Core.Get(b.spot.breath and b.kind or b.spot.key) and not b.err and true or false)
     if b.live and not (driver and driver:IsShown()) then Bars.Apply() end
     return b
 end
@@ -3128,10 +3202,10 @@ function Bars.Debug()
                     end
                 end
             end
-            out[#out + 1] = string.format("%s: timer %s, away %s, bar level %s, liquid level %s, %d text copies; %s",
-                spot.label,
+            out[#out + 1] = string.format(
+                "%s: timer %s, showing %s, away %s, bar level %s, liquid level %s, %d text copies; %s", spot.label,
                 (type(f) == "table" and Secret(f.timer)) and "secret" or tostring(type(f) == "table" and f.timer),
-                YesNo(b.away), Level(b.bar), Level(b.clip),
+                tostring(b.kind), YesNo(b.away), Level(b.bar), Level(b.clip),
                 b.mirrorTexts and #b.mirrorTexts.theirs or 0, table.concat(regions, " "))
         end
     end

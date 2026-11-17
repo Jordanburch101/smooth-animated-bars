@@ -8,13 +8,17 @@ Sections are `### New` and `### Fixed`; skip one that would be empty.
 
 ### New
 - **Breath bar**: the bar the game shows while you hold your breath under
-  water now fills with the liquid too, in its own blue or any theme. Fatigue
-  and Feign Death keep the game's own bar. Turn it off, or pick its colour,
-  under Breath in the editor.
+  water now fills with the liquid too, in its own blue or any theme. Feign
+  Death keeps the game's own bar. Turn it off, or pick its colour, under
+  Breath and Fatigue in the editor.
 - **Bubbles while holding breath**: as your breath runs out, bubbles escape
   from the end of the breath bar and float up out of it, popping as they go.
   None come while your breath is coming back. Turn them off with Bubbles
-  While Holding Breath under Breath in the editor.
+  While Holding Breath under Breath and Fatigue in the editor.
+- **Fatigue bar**: the bar the game shows when you swim out into open sea
+  fills with the liquid too, in its own gold or any theme. As fatigue runs
+  out, drops gather under its front and fall away. Turn it, or the drips,
+  off under Breath and Fatigue in the editor.
 
 ## 1.11.0
 

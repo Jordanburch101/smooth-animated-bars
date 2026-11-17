@@ -930,7 +930,8 @@ end
 -- The game's breath bar (Blizzard_MirrorTimer/Mainline MirrorTimer.xml, forever branch): a 195 x 13 bar in the casting
 -- bar's text box, dark background and border (Capture.lua's BREATH_PIECES, as the timer frame lays them), its label in
 -- the text box under it. It plays its own loop rather than the frames' scenes: breath running out, bubbles rising off
--- the front (Bars.mirror, as on the real bar), then filling back up at the surface.
+-- the front (Bars.mirror, as on the real bar), then filling back up at the surface. Turned to fatigue (holder:SetKind,
+-- as the editor does while the Fatigue Bar's card is open), the same with fatigue's colour, label and drips.
 
 local BREATH_W, BREATH_H, BREATH_MAX = 195, 13, 600
 local BREATH_PIECES = {
@@ -974,23 +975,30 @@ function Preview.CreateBreath(parent)
     local fill = bar:CreateTexture(nil, "ARTWORK")
     fill:SetColorTexture(1, 1, 1, 1)
     bar:SetStatusBarTexture(fill)
-    local c = ns.Bars.mirror.Color()
-    bar:SetStatusBarColor(c[1], c[2], c[3])
     bar:SetMinMaxValues(0, BREATH_MAX)
     bar:SetValue(BREATH_MAX)
     local label = holder:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
     label:SetPoint("TOP", bar, "BOTTOM", 0, -1)
-    -- The game's own word for it (GlobalStrings), as the timer's label shows it.
-    local word = rawget(_G, "BREATH_LABEL")
-    label:SetText(type(word) == "string" and word or "Breath")
     bar.state = ns.Bars.Preview(bar, { key = "breath", frame = "breath", unit = "player", kind = "breath",
                                        bare = true, breath = true })
     local t = 0
     holder:SetScript("OnUpdate", function(_, elapsed)
         t = t + elapsed * (holder.speed or 1)
         -- Off, it rests full and still, as the other examples whose liquid is off.
-        bar:SetValue(Resting(bar) and BREATH_MAX or BreathAt(t) * BREATH_MAX)
+        bar:SetValue(ns.Core.Get(holder.showing) and BreathAt(t) * BREATH_MAX or BREATH_MAX)
     end)
+    -- Shows breath or fatigue: its colour, the game's word for it (GlobalStrings) as the timer's label, and its liquid.
+    function holder.SetKind(_, kind)
+        if kind == holder.showing then return end
+        holder.showing, t = kind, 0
+        local c = ns.Bars.mirror.Color(kind)
+        bar:SetStatusBarColor(c[1], c[2], c[3])
+        local word = rawget(_G, kind == "fatigue" and "EXHAUSTION_LABEL" or "BREATH_LABEL")
+        label:SetText(type(word) == "string" and word or (kind == "fatigue" and "Fatigue" or "Breath"))
+        bar:SetValue(BREATH_MAX)
+        if bar.state.kind ~= kind then ns.Bars.mirror.SetKind(bar.state, kind) end
+    end
+    holder:SetKind("breath")
     holder.bar, holder.bars = bar, { bar }
     return holder
 end

@@ -16,8 +16,8 @@ skip it.
 - **Raid frames (optional):** health and power for every raid member, and for your party in raid-style frames.
 - **Nameplates (optional):** enemy and friendly nameplates, with your DoTs on every mob that has them.
 - **The Personal Resource Display:** the game's extra health and power bars, with everything your own frame gets.
-- **The breath bar:** the liquid in the bar the game shows under water, with bubbles rising off it as your breath
-  runs out.
+- **The breath and fatigue bars:** the liquid in the bars the game shows under water and out in open sea, with
+  bubbles rising off the breath bar and drops falling off the fatigue bar as they run out.
 - **Every power type:** mana, rage, energy and focus, in the game's colours.
 - **Follows the fight:** the liquid moves to wherever the game's bar is, and stirs with every hit, heal and tick.
 - **25 themes:** the game's colours, Class Color, Fire, Frost, Arcane, Shadow, Void and more. Each frame's health and
@@ -117,17 +117,24 @@ Personal Resource in the editor.
 - **Druids in Cat or Bear Form** get the liquid in the mana bar underneath too.
 - **Shown only in combat** (an Edit Mode setting)? The liquid picks up where the bar is each time it appears.
 
-## Breath bar
+## Breath and fatigue bars
 
 <p align="center"><img src="https://raw.githubusercontent.com/Jordanburch101/smooth-animated-bars/refs/heads/main/branding/gallery/breath.webp" alt="The game's bronze breath bar under water: the blue liquid running out, bubbles letting go from its front and floating up out of the bar, then refilling at the surface with no bubbles"></p>
 <p align="center"><em>Breath bar: bubbles escape as your breath runs out.</em></p>
 
-The bar the game shows while you hold your breath under water. On by default, under Breath in the editor:
+<p align="center"><img src="https://raw.githubusercontent.com/Jordanburch101/smooth-animated-bars/refs/heads/main/branding/gallery/fatigue.webp" alt="The game's bronze fatigue bar out in open sea: the gold liquid running out, drops gathering under its front and falling past the Fatigue label, then refilling with no drops"></p>
+<p align="center"><em>Fatigue bar: drops fall away as your fatigue runs out.</em></p>
 
-- **The liquid inside the game's own bar,** with its Breath label over it.
-- **Bubbles** rise off the front as your breath runs out, none while it comes back. They need the Bubbles effect on too.
-- **Colours:** Game Colour is the game's breath blue; Same as Your Power and the themes work as on your frame.
-- **Fatigue and Feign Death** keep the game's own bars.
+The bars the game shows while you hold your breath under water, and when you swim out into open sea. Both on by
+default, under Breath and Fatigue in the editor:
+
+- **The liquid inside the game's own bars,** with their labels over it.
+- **Bubbles** rise off the breath bar's front as your breath runs out, none while it comes back. They need the Bubbles
+  effect on too.
+- **Drips** gather under the fatigue bar's front and fall as your fatigue runs out, none while it comes back.
+- **Colours:** Game Colour is the game's breath blue and fatigue gold; Same as Your Power and the themes work as on
+  your frame. Each bar has its own.
+- **Feign Death** keeps the game's own bar.
 
 ## Your heals on the way
 
