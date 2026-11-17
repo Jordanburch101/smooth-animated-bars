@@ -4,6 +4,22 @@ Player-facing notes for each release. Write for players: what they can now
 do or see, and what was broken and now works. Leave out internal changes.
 Sections are `### New` and `### Fixed`; skip one that would be empty.
 
+## 1.12.0
+
+### New
+- **Settings for each character**: a character can now keep a look of its
+  own, so your warrior and your mage can wear different colours without
+  changing them each time you switch. Your characters still share one set of
+  settings to begin with: untick Use Account-Wide Settings on the editor's
+  new Profiles tab to give a character its own.
+- **Copy another character's settings** from the Profiles tab: pick a
+  character, or the account-wide settings, and press Copy. It replaces the
+  settings the character uses, so while it shares the account-wide ones,
+  every character sharing them takes the copy.
+- **Raid frames in the setup**: the setup has a step for them now, with an
+  example raid to try their bars and colours on.
+- The editor's panels have borders in the game's own style.
+
 ## 1.11.0
 
 ### New

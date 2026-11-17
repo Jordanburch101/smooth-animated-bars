@@ -1,7 +1,8 @@
 -- The editor: every setting beside live examples of every frame, in a window of our own. /sab opens it, as do the
 -- settings page's Open Editor and the unit frames' menus (at that frame).
 --
---   * Tabs along the top: Frames, Effects, Combat and Other Addons, with Run Setup and What's New beside them.
+--   * Tabs along the top: Frames, Effects, Combat, Other Addons and Profiles (per character or account-wide settings,
+--     and copying another character's), with Run Setup and What's New beside them.
 --   * On the left a screen of examples where the game puts them (Preview.lua): the player and target frames, the party
 --     stacked, nameplates, the Personal Resource Display, raid frames, and the focus, pet and target of target. Clicking
 --     one edits it: a gold outline round it, and frames whose liquid is off are dimmed. Scenes (fight, damage, healing,
@@ -128,6 +129,8 @@ local TABS = {
                 .. "health, and power in its own colour.",
             shown = function() return Get("externalBars") end },
       } },
+    { id = "profiles", label = "Profiles", profiles = true,
+      desc = "Share one set of settings across your characters, or give a character its own." },
 }
 local TAB_BY_ID = {}
 for _, t in ipairs(TABS) do TAB_BY_ID[t.id] = t end
@@ -378,6 +381,31 @@ local function Shade(f, alpha)
     return bg
 end
 
+-- A panel in Road to Sixty's style (its Screens.Pane): the game's tooltip border, grey, on a dark ground, as
+-- BackdropTemplate draws it. The border and ground are the tooltip's files by ID, not by path (the project's rule on game
+-- files; AceGUI on Forever uses the same IDs, and Road to Sixty shows the border there). groundAlpha nil: the border only.
+local TOOLTIP_BORDER, TOOLTIP_GROUND = 137057, 137056 -- Interface/Tooltips/UI-Tooltip-Border and -Background
+local PANE_EDGE = { 0.6, 0.6, 0.6 }
+local function Pane(parent, groundAlpha)
+    local ok, f = pcall(CreateFrame, "Frame", nil, parent, "BackdropTemplate")
+    if not (ok and f.SetBackdrop) then
+        f = CreateFrame("Frame", nil, parent)
+        if groundAlpha then Shade(f, groundAlpha) end
+        f.outline = Outline(f, PANE_EDGE)
+        return f
+    end
+    f:SetBackdrop({ edgeFile = TOOLTIP_BORDER, edgeSize = 12, bgFile = groundAlpha and TOOLTIP_GROUND or nil,
+                    insets = { left = 3, right = 3, top = 3, bottom = 3 } })
+    if groundAlpha then f:SetBackdropColor(0, 0, 0, groundAlpha) end
+    f:SetBackdropBorderColor(PANE_EDGE[1], PANE_EDGE[2], PANE_EDGE[3])
+    return f
+end
+
+-- A pane's border in another colour: gold for the one open, as Road to Sixty frames its picked window.
+local function PaneEdge(f, color)
+    if f.outline then Recolor(f.outline, color) else f:SetBackdropBorderColor(color[1], color[2], color[3]) end
+end
+
 -- Every change goes into the settings, through their registered settings, and the window follows.
 local function Set(key, value)
     ns.Core.SetSetting(key, value)
@@ -559,9 +587,7 @@ end
 
 -- A bar's card: its on/off box, its name, what it shows, its colour; opening its drawer under it.
 local function Card(page, bar, f)
-    local c = CreateFrame("Frame", nil, page)
-    c.bg = Shade(c, 0.35)
-    c.edges = Outline(c, EDGE)
+    local c = Pane(page, 0.35)
     c.check = Check(c, nil, function() Set(bar.on, not Get(bar.on)) end)
     c.check:SetPoint("TOPLEFT", 8, -10)
     c.header = CreateFrame("Button", nil, c)
@@ -617,7 +643,7 @@ end
 
 -- An on/off setting's row: the box, its name and what it does.
 local function OptionRow(page, row)
-    local r = CreateFrame("Frame", nil, page)
+    local r = Pane(page, 0.35)
     r.check = Check(r, nil, function() Set(row.key, not Get(row.key)) end)
     r.check:SetPoint("TOPLEFT", 6, -6)
     r.label = Font(r, "GameFontNormal", row.label, "LEFT")
@@ -628,8 +654,6 @@ local function OptionRow(page, row)
     r.desc:SetWordWrap(true)
     r.height = math.max(40, 32 + r.desc:GetStringHeight())
     r:SetHeight(r.height)
-    Shade(r, 0.35)
-    Outline(r, EDGE)
     r.row = row
     return r
 end
@@ -651,12 +675,118 @@ local function MobRow(page)
     return r
 end
 
+-- The Profiles tab, kept as plain as Smooth Experience Bar's Profile section: Use Account-Wide Settings
+-- (Core.SetUseGlobal), a picker for what to copy (Core.CopySources) with arrows either side, as the game's stepped
+-- dropdowns have, and Copy (Core.CopyProfile), with a line saying what it replaces: while this character shares, the
+-- account-wide settings of every character sharing them. Clicking the picker lists them all in the game's own menu,
+-- except under the controller interface, where a menu takes the gamepad's focus and, opened from our code, ran
+-- tainted (Options.lua, GamepadUI): there a click steps to the next, as the arrows do.
+local STEP = 24
+
+local function ProfilesPane(page)
+    local p = CreateFrame("Frame", nil, page)
+    p.global = Check(p, nil, function() ns.Core.SetUseGlobal(not ns.Core.UsesGlobal()) end) -- refreshes the editor
+    p.global:SetPoint("TOPLEFT", 2, -2)
+    Font(p, "GameFontNormal", "Use Account-Wide Settings", "LEFT"):SetPoint("TOPLEFT", 30, -7)
+
+    Font(p, "GameFontNormal", "Copy Settings From", "LEFT"):SetPoint("TOPLEFT", 4, -40)
+    local function Step(by)
+        local sources = p.sources or {}
+        if #sources == 0 then return end
+        local at = 1
+        for i, source in ipairs(sources) do
+            if p.picked and source.key == p.picked.key then at = i end
+        end
+        p.picked = sources[(at - 1 + by) % #sources + 1]
+        Refresh()
+    end
+    p.prev = Button(p, "<", STEP, function() Step(-1) end)
+    p.prev:SetPoint("TOPLEFT", 2, -58)
+    p.next = Button(p, ">", STEP, function() Step(1) end)
+    p.next:SetPoint("TOPRIGHT", -2, -58)
+    p.box = CreateFrame("Button", nil, p)
+    p.box:SetPoint("TOPLEFT", p.prev, "TOPRIGHT", 4, 0)
+    p.box:SetPoint("BOTTOMRIGHT", p.next, "BOTTOMLEFT", -4, 0)
+    Shade(p.box, 0.6)
+    Outline(p.box, EDGE)
+    local hl = p.box:CreateTexture(nil, "HIGHLIGHT")
+    hl:SetAllPoints()
+    hl:SetColorTexture(1, 1, 1, 0.06)
+    p.box.text = Font(p.box, "GameFontHighlightSmall", "", "CENTER")
+    p.box.text:SetPoint("LEFT", 6, 0)
+    p.box.text:SetPoint("RIGHT", -6, 0)
+    p.box.text:SetWordWrap(false)
+    p.box:SetScript("OnClick", function()
+        local sources = p.sources or {}
+        if #sources == 0 then return end
+        if MenuUtil and MenuUtil.CreateContextMenu and not ns.Options.GamepadUI() then
+            MenuUtil.CreateContextMenu(p.box, function(_, root)
+                for _, source in ipairs(sources) do
+                    root:CreateRadio(source.label, function() return p.picked and p.picked.key == source.key end,
+                        function()
+                            p.picked = source
+                            Refresh()
+                        end)
+                end
+            end)
+        else
+            Step(1)
+        end
+    end)
+
+    p.copy = Button(p, "Copy", LIST_W - 4, function()
+        local source = p.picked
+        if not source then return end
+        if ns.Core.CopyProfile(source.key) then
+            ns.Core.Print("Copied the settings from " .. source.label .. ".")
+        end
+        Refresh()
+    end)
+    p.copy:SetHeight(24)
+    p.copy:SetPoint("TOPLEFT", 2, -90)
+    p.replaces = Muted(Font(p, "GameFontHighlightSmall", "", "LEFT"))
+    p.replaces:SetPoint("TOPLEFT", 4, -120)
+    p.replaces:SetWidth(LIST_W - 8)
+    p.replaces:SetWordWrap(true)
+    return p
+end
+
+-- The Profiles tab as things are: the box, and what the picker offers (the first until one is picked).
+local function RefreshProfiles(p)
+    p.global:SetChecked(ns.Core.UsesGlobal())
+    local sources = ns.Core.CopySources()
+    p.sources = sources
+    local still
+    for _, source in ipairs(sources) do
+        if p.picked and p.picked.key == source.key then still = source end
+    end
+    -- A pick no longer offered (the settings in use changed) goes back to the first.
+    p.picked = still or sources[1]
+    local any = p.picked ~= nil
+    p.box.text:SetText(any and p.picked.label or "No other characters' settings yet")
+    if any then p.box.text:SetTextColor(1, 1, 1) else Muted(p.box.text) end
+    p.box:SetEnabled(any)
+    p.prev:SetEnabled(#sources > 1)
+    p.next:SetEnabled(#sources > 1)
+    p.copy:SetEnabled(any)
+    p.replaces:SetText(ns.Core.UsesGlobal()
+        and "Replaces the account-wide settings, for every character sharing them."
+        or "Replaces this character's settings.")
+    p.replaces:SetShown(any)
+    p.height = 120 + (any and (p.replaces:GetStringHeight() + 6) or 0)
+end
+
 local function BuildPage(id)
     local page = CreateFrame("Frame", nil, ui.list)
     page:SetPoint("TOPLEFT")
     page:SetWidth(LIST_W)
     page.items, page.cards, page.rows = {}, {}, {}
     local f = FRAMES[id] or TAB_BY_ID[id]
+    if f.profiles then
+        page.profiles = ProfilesPane(page)
+        RefreshProfiles(page.profiles)
+        page.items[#page.items + 1] = page.profiles
+    end
     for i, bar in ipairs(f.bars or {}) do
         page.cards[i] = Card(page, bar, f)
         page.items[#page.items + 1] = page.cards[i]
@@ -852,7 +982,7 @@ local function RefreshCards(page, f)
         c.summary:SetText(Summary(bar, f))
         Paint(c.swatch, ns.Core.ColorChoice(bar.frame, bar.kind) or "game", bar.frame, bar.kind)
         c.swatch:SetAlpha(on and 1 or 0.3)
-        Recolor(c.edges, open and GOLD or EDGE)
+        PaneEdge(c, open and GOLD or PANE_EDGE)
         for name, t in pairs(c.tabs) do t:SetPicked(name == page.pane) end
         -- Colour.
         local p = c.colour
@@ -906,6 +1036,7 @@ function Refresh()
         for key, chip in pairs(page.mob.chips) do chip:SetPicked(Get("mobClassColor") == key) end
     end
     for key, r in pairs(page.rows) do r.check:SetChecked(Get(key) and true or false) end
+    if page.profiles then RefreshProfiles(page.profiles) end
     Layout()
 end
 Editor.Refresh = function() Refresh() end
@@ -931,6 +1062,8 @@ function Editor.Show(id)
     ui.kicker:SetText(FRAMES[id] and "EDITING" or "")
     ui.title:SetText(f.label)
     ui.desc:SetText(f.desc or "")
+    -- The Profiles tab has no settings of its own to put back.
+    ui.defaults:SetShown(not f.profiles)
     ui.scroll:SetVerticalScroll(0)
     Refresh()
 end
@@ -1041,7 +1174,11 @@ local function Build()
     else
         backdrop:SetColorTexture(0.10, 0.12, 0.16, 1)
     end
-    Outline(ui.stage, EDGE)
+    -- Its border, as Road to Sixty frames its views: a frame of its own over the examples (which keep a 20 px margin),
+    -- on the screen's edges so it lines up with the inspector's.
+    ui.stageEdge = Pane(frame)
+    ui.stageEdge:SetAllPoints(ui.stage)
+    ui.stageEdge:SetFrameLevel(ui.stage:GetFrameLevel() + 60)
     Muted(Font(ui.stage, "GameFontHighlightSmall", "Click a frame to change it.", "RIGHT")):SetPoint("TOPRIGHT", -8, -6)
     for key in pairs(EXAMPLES) do Example(key) end
     for _, id in ipairs(SCREEN) do ui.hots[id] = Hotspot(id) end
@@ -1060,12 +1197,11 @@ local function Build()
     ui.scenes.fight:SetPicked(true)
 
     -- The inspector.
-    local side = CreateFrame("Frame", nil, frame)
+    local side = Pane(frame, 0.6)
     side:SetPoint("TOPRIGHT", -12, -62)
     side:SetPoint("BOTTOMRIGHT", -12, 50)
     side:SetWidth(INSPECT_W)
-    Shade(side, 0.45)
-    Outline(side, EDGE)
+    ui.side = side
     ui.kicker = Muted(Font(side, "GameFontNormalSmall", "", "LEFT"))
     ui.kicker:SetPoint("TOPLEFT", 10, -10)
     ui.title = Font(side, "GameFontNormalLarge", "", "LEFT")
@@ -1082,6 +1218,8 @@ local function Build()
     ui.scroll:SetScrollChild(ui.list)
     if ScrollUtil and ScrollUtil.InitScrollFrameWithScrollBar then
         local bar = CreateFrame("EventFrame", nil, side, "MinimalScrollBar")
+        -- Hidden while there is nothing to scroll (ScrollBarMixin, Forever's Blizzard_SharedXML), as on most tabs.
+        if bar.SetHideIfUnscrollable then bar:SetHideIfUnscrollable(true) end
         ScrollUtil.InitScrollFrameWithScrollBar(ui.scroll, bar)
         bar:SetPoint("TOPLEFT", ui.scroll, "TOPRIGHT", 6, -2)
         bar:SetPoint("BOTTOMLEFT", ui.scroll, "BOTTOMRIGHT", 6, 2)

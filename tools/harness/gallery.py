@@ -224,7 +224,7 @@ def heals_setup(cls, spells):
     lines = [f"__spells[{sid}] = {{ {name!r}, {desc!r} }}" for sid, (name, desc) in spells.items()]
     return "\n".join(lines) + f"""
     __player.class = {cls!r}
-    SmoothAnimatedBarsDB.heals = true
+    __ns.Core.db.heals = true
     local function sent(id, guid) __fire('UNIT_SPELLCAST_SENT', 'player', __player.name, guid, id) end
     function __healCast(id, guid) sent(id, guid); __fire('UNIT_SPELLCAST_SUCCEEDED', 'player', guid, id) end
     function __healStart(id, guid) sent(id, guid); __fire('UNIT_SPELLCAST_START', 'player', guid, id) end
@@ -244,7 +244,7 @@ def dots_setup(target, spells):
     them, and helpers for the events: a cast, a hit on the target, and the next target."""
     lines = [f"__spells[{sid}] = {{ {name!r}, {desc!r} }}" for sid, (name, desc) in spells.items()]
     return "\n".join(lines) + f"""
-    SmoothAnimatedBarsDB.dots = true
+    __ns.Core.db.dots = true
     __target = {{ guid = 'Creature-0-1-2-3-40-0001', name = {target!r} }}
     function __dotsCast(id, guid)
         __fire('UNIT_SPELLCAST_SENT', 'player', __target.name, guid, id)

@@ -156,6 +156,8 @@ local function GamepadUI()
     local ok, current = pcall(style)
     return ok and current == types.Gamepad
 end
+-- The editor's picker opens a menu of the game's too, so it asks the same.
+Options.GamepadUI = GamepadUI
 
 local function AddToUnitMenus()
     if not (Menu and Menu.ModifyMenu) then return end

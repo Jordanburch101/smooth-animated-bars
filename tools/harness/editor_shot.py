@@ -2,7 +2,8 @@
 
 Usage: python editor_shot.py <addon dir> <out dir> [section ...] [setting=value ...] [closed]
 e.g.   python editor_shot.py SmoothAnimatedBars shots player plates effects
-Writes <section>.png for each section (all of them if none are named).
+Writes <section>.png for each section (all of them if none are named). setup:<step> draws the setup window
+(Wizard.lua) at that step instead, e.g. setup:raid, as setup-raid.png.
 
 The mock has no art for the game's templates or atlases, so they are stood in for: the window and buttons as plain
 panels, check buttons as boxes, atlas textures (the preview frames' art) as faint outlines. Solid colours, gradients,
@@ -32,6 +33,9 @@ ARGS = [a for a in ARGS if a != "closed"]
 SETTINGS = dict(a.split("=", 1) for a in ARGS if "=" in a)
 SECTIONS = [a for a in ARGS if "=" not in a]
 K = 2
+# Game files by ID that are drawn flat: their brightness (the tooltip border's line is a light grey, its background
+# near white), times the vertex colour.
+GAME_FILES = {137057: 0.9, 137056: 1.0}
 LAYERS = {"BACKGROUND": 0, "BORDER": 1, "ARTWORK": 2, "OVERLAY": 3}
 # The game's font objects: size and colour.
 FONTS = {
@@ -45,7 +49,9 @@ FONTS = {
 
 lua = LuaRuntime(unpack_returned_tuples=True)
 lua.execute(open(os.path.join(HERE, "wowmock.lua"), encoding="utf-8").read())
-lua.execute("SmoothAnimatedBarsDB = { setupDone = true }")
+# Two other characters with settings of their own, so the Profiles tab has something to copy from.
+lua.execute("SmoothAnimatedBarsDB = { setupDone = true, profiles = { ['Alt - Mockrealm'] = {}, "
+            "['Healer - Mockrealm'] = {} }, ownSettings = { ['Alt - Mockrealm'] = true, ['Healer - Mockrealm'] = true } }")
 G = lua.globals()
 G["__ns"] = G["__loadAddon"](ADDON, "SmoothAnimatedBars")
 lua.execute("__fire('ADDON_LOADED', 'SmoothAnimatedBars'); __fire('PLAYER_ENTERING_WORLD', true, false)")
@@ -167,14 +173,26 @@ def media(cache, path):
 
 
 def shot(section, path):
-    lua.execute(f"__ns.Editor.Open('{section}')")
-    if CLOSED:
-        lua.execute("local p = __ns.Editor.State().ui.pages[__ns.Editor.State().section]; "
-                    "p.open = nil; __ns.Editor.Refresh()")
+    window = "SmoothAnimatedBarsEditor"
+    if section.startswith("setup:"):
+        # The setup window (Wizard.lua) at one of its steps, reached with Next as a player would.
+        window, step = "SmoothAnimatedBarsSetup", section.split(":", 1)[1]
+        lua.execute("__ns.Editor.Close(); __ns.Wizard.Open()")
+        for _ in range(12):
+            if lua.eval("__ns.Wizard.State().page") == step:
+                break
+            if lua.eval("__ns.Wizard.State().ui.next.text") == "Finish":
+                sys.exit(f"no setup step {step!r}")  # rather than Finish and a blank image
+            lua.execute("local n = __ns.Wizard.State().ui.next; n.scripts.OnClick(n)")
+    else:
+        lua.execute(f"__ns.Editor.Open('{section}')")
+        if CLOSED:
+            lua.execute("local p = __ns.Editor.State().ui.pages[__ns.Editor.State().section]; "
+                        "p.open = nil; __ns.Editor.Refresh()")
     run(1.5)
-    items = lua.eval("__shot(SmoothAnimatedBarsEditor)")
-    root = lua.eval("SmoothAnimatedBarsEditor")
-    x0, y0 = lua.eval("__absRect(SmoothAnimatedBarsEditor)")[:2]
+    items = lua.eval(f"__shot({window})")
+    root = lua.eval(window)
+    x0, y0 = lua.eval(f"__absRect({window})")[:2]
     W, H = int(root.w * K), int(root.h * K)
     img = Image.new("RGBA", (W, H), (22, 20, 18, 255))
     cache = {}
@@ -229,6 +247,11 @@ def shot(section, path):
                     arr[..., :3] *= np.array(vc[:3])
                     arr[..., 3] *= vc[3] * a * (0.6 if r.blend == "ADD" else 1)
                     layer.alpha_composite(Image.fromarray(arr.clip(0, 255).astype(np.uint8)), (int(box[0]), int(box[1])))
+            elif isinstance(r.file, (int, float)) and r.file in GAME_FILES:
+                # The game's own art by file ID (a tooltip border's edges, its background), as a flat tint.
+                vc = [r.vc[j] for j in range(1, 5)]
+                tone = GAME_FILES[r.file]
+                d.rectangle(box, fill=tuple(int(255 * tone * vc[j]) for j in range(3)) + (int(255 * vc[3] * a),))
             elif r.atlas:
                 d.rectangle(box, outline=(150, 120, 70, int(140 * a)))
         elif r.kind == "FontString" and r.text:
@@ -261,10 +284,13 @@ def shot(section, path):
             layer.putalpha(Image.fromarray(np.minimum(np.asarray(layer)[..., 3], np.asarray(m))))
         img.alpha_composite(layer)
     img.convert("RGB").save(path)
+    if window != "SmoothAnimatedBarsEditor":
+        lua.execute(f"{window}:Hide()")
 
 
 os.makedirs(OUT, exist_ok=True)
 ids = SECTIONS or list(lua.eval("__ns.Editor.Sections()").values())
 for sid in ids:
-    shot(sid, os.path.join(OUT, f"{sid}.png"))
-    print("wrote", os.path.join(OUT, f"{sid}.png"))
+    out = os.path.join(OUT, sid.replace(":", "-") + ".png")  # setup:raid -> setup-raid.png (no colons on Windows)
+    shot(sid, out)
+    print("wrote", out)

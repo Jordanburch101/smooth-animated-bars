@@ -291,7 +291,7 @@ local function ShowNow(list, seen)
         return
     end
     waiting = nil
-    ns.Core.db.whatsNewSeen = seen
+    ns.Core.account.whatsNewSeen = seen
     WhatsNew.Show(list)
 end
 
@@ -299,7 +299,7 @@ local events = CreateFrame("Frame")
 events:RegisterEvent("PLAYER_LOGIN")
 events:RegisterEvent("PLAYER_REGEN_ENABLED")
 events:SetScript("OnEvent", function(_, event)
-    local db = ns.Core.db
+    local db = ns.Core.account -- the changelog is noted per account
     if not db then return end
     if event == "PLAYER_LOGIN" then
         local list, seen = WhatsNew.AtLogin(ns.WhatsNewData or {}, Version(), db.whatsNewSeen, db.setupDone)

@@ -311,7 +311,7 @@ local ROW_TEMPLATES = {
 }
 local TEMPLATES = { MinimalScrollBar = true, UIPanelButtonTemplate = true, UIRadioButtonTemplate = true,
                     UICheckButtonTemplate = true,
-                    ButtonFrameTemplate = true }
+                    ButtonFrameTemplate = true, BackdropTemplate = true }
 local RowTemplate = {}
 function RowTemplate.Init(self, initializer)
     assert(self.GetElementData and self:GetElementData() == initializer, "row Init without its GetElementData")
@@ -326,6 +326,54 @@ local function insideOpenSettings(f)
     while f do
         if f == __settingsPanel then return __settingsPanel.shown end
         f = f.parent
+    end
+end
+
+-- The game's BackdropTemplate (Blizzard_SharedXML/Backdrop.lua): SetBackdrop lays its pieces out as textures of the
+-- frame in its BACKGROUND layer and hands each its file with SetTexture (so a file ID or a path), SetBackdropColor tints
+-- the centre and SetBackdropBorderColor the edges, with SetVertexColor. The corners are left out here; each edge is
+-- drawn a fifth of edgeSize thick, about the visible line of a tooltip border, so editor_shot.py can show it.
+local function makeBackdrop(f)
+    function f:SetBackdrop(info)
+        assert(type(info) == "table", "SetBackdrop(backdropInfo)")
+        assert(info.edgeFile or info.bgFile, "a backdrop with neither edgeFile nor bgFile")
+        for _, file in ipairs({ info.edgeFile or false, info.bgFile or false }) do
+            assert(file == false or type(file) == "number" or type(file) == "string", "backdrop file: a file ID or path")
+        end
+        self.backdropInfo = info
+        local size = info.edgeSize or 39
+        if info.bgFile then
+            local i = info.insets or {}
+            self.Center = self.Center or NewRegion("Texture", self, "BACKGROUND", -8)
+            self.Center:SetPoint("TOPLEFT", i.left or 0, -(i.top or 0))
+            self.Center:SetPoint("BOTTOMRIGHT", -(i.right or 0), i.bottom or 0)
+            self.Center:SetTexture(info.bgFile)
+        end
+        if info.edgeFile then
+            local thick = math.max(1, size / 5)
+            local edges = {
+                TopEdge = { "TOPLEFT", "TOPRIGHT", "h" }, BottomEdge = { "BOTTOMLEFT", "BOTTOMRIGHT", "h" },
+                LeftEdge = { "TOPLEFT", "BOTTOMLEFT", "w" }, RightEdge = { "TOPRIGHT", "BOTTOMRIGHT", "w" },
+            }
+            for name, e in pairs(edges) do
+                local t = self[name] or NewRegion("Texture", self, "BACKGROUND", -7)
+                t:SetPoint(e[1])
+                t:SetPoint(e[2])
+                if e[3] == "h" then t:SetHeight(thick) else t:SetWidth(thick) end
+                t:SetTexture(info.edgeFile)
+                self[name] = t
+            end
+        end
+    end
+    function f:SetBackdropColor(r, g, b, a)
+        assert(self.Center, "SetBackdropColor without a bgFile")
+        self.Center:SetVertexColor(r, g, b, a)
+        self.backdropColor = { r, g, b, a or 1 }
+    end
+    function f:SetBackdropBorderColor(r, g, b, a)
+        assert(self.TopEdge, "SetBackdropBorderColor without an edgeFile")
+        for _, name in ipairs({ "TopEdge", "BottomEdge", "LeftEdge", "RightEdge" }) do self[name]:SetVertexColor(r, g, b, a) end
+        self.backdropBorderColor = { r, g, b, a or 1 }
     end
 end
 
@@ -352,6 +400,7 @@ function CreateFrame(frameType, name, parent, template)
     if name then _G[name], f.name = f, name end
     if frameType == "StatusBar" then __makeStatusBar(f) end
     if frameType == "PlayerModel" then __makeModel(f) end
+    if template == "BackdropTemplate" then makeBackdrop(f) end
     if ROW_TEMPLATES[template] then
         f.rowTemplate, f.Init, f.Release = template, RowTemplate.Init, RowTemplate.Release
     end
@@ -1054,6 +1103,32 @@ function __openUnitMenu(which, contextData)
               .. "while execution tainted by 'SmoothAnimatedBars')")
     end
     return root.elements
+end
+-- MenuUtil.CreateContextMenu (Blizzard_Menu/MenuUtil.lua): runs the generator on a new root and shows the menu at the
+-- owner. __contextMenu keeps its elements; a radio's onClick sets it as the client's does on a click.
+__contextMenu = nil
+MenuUtil = {}
+function MenuUtil.CreateContextMenu(owner, generator, ...)
+    assert(type(owner) == "table" and type(generator) == "function", "MenuUtil.CreateContextMenu(ownerRegion, generator)")
+    -- The menu takes the gamepad's focus and pushes its bindings; opened from addon code that runs tainted, and the
+    -- gamepad action bar's protected call is blocked (seen in game with the unit menus; Options.lua, GamepadUI).
+    assert(not __gamepadUI, "ADDON_ACTION_FORBIDDEN: SetPreferredGamepadInteractTarget() (a menu opened by an addon "
+        .. "under the controller interface)")
+    local root = { elements = {} }
+    local function add(e)
+        table.insert(root.elements, e)
+        return e
+    end
+    function root:CreateRadio(text, isSelected, setSelected, data)
+        assert(type(text) == "string" and type(isSelected) == "function" and type(setSelected) == "function",
+            "CreateRadio(text, isSelected, setSelected, data)")
+        return add({ kind = "radio", text = text, selected = function() return isSelected(data) end,
+                     onClick = function() return setSelected(data) end })
+    end
+    function root:CreateButton(text, fn) return add({ kind = "button", text = text, onClick = fn }) end
+    generator(owner, root, ...)
+    __contextMenu = { owner = owner, elements = root.elements }
+    return __contextMenu
 end
 function Settings.RegisterAddOnCategory(cat) __settingsCategory = cat end
 -- Opening a canvas category puts its page in the panel and shows it (SettingsPanelMixin:DisplayLayout).

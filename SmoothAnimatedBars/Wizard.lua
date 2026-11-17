@@ -1,5 +1,6 @@
--- First-time setup in seven short steps: which bars, their colours, the target's, the party's, how lively they are,
--- whether to mark the player's DoTs on the target (Marker.lua) and the liquid on nameplates, enemy and friendly. Each pick
+-- First-time setup in eight short steps: which bars, their colours, the target's, the party's, the raid frames', how
+-- lively they are, whether to mark the player's DoTs on the target (Marker.lua) and the liquid on nameplates, enemy and
+-- friendly. Each pick
 -- is applied at once, on the real frames and on the preview player and target frames at the top of
 -- the window (Preview.lua); Skip (or closing the window) puts the settings back as they were, Finish
 -- keeps them. Opens once, on the first login with the addon,
@@ -76,9 +77,19 @@ local PARTY = {
     { key = "off", label = "Off", set = { partyHealth = false, partyPower = false } },
 }
 local PARTY_COLORS = { "same", "game", "class", "fire", "frost", "void" }
-local PAGES = { "bars", "colors", "targetColors", "party", "effects", "dots", "plates" }
+-- The raid frames, and the raid-style party frames (Bars.lua, Bars.raid): off to begin with. Game Colour is the raid
+-- frames' own (class colours, or the colour set in the game's Raid Frames options). Same as Party is left to the editor:
+-- it follows the party's choice, and the party's Game Colour on raid frames is again theirs, so here it would look just
+-- like Game Colour beside a green party (a review caught it).
+local RAID = {
+    { key = "both", label = "Health and power", set = { raidHealth = true, raidPower = true } },
+    { key = "health", label = "Just health", set = { raidHealth = true, raidPower = false } },
+    { key = "off", label = "Off", set = { raidHealth = false, raidPower = false } },
+}
+local RAID_COLORS = { "game", "class", "fire", "frost", "arcane", "void" }
+local PAGES = { "bars", "colors", "targetColors", "party", "raid", "effects", "dots", "plates" }
 
-local frame, ui, page, saved, closing
+local frame, ui, page, saved, closing -- saved: profile table -> its settings when the wizard first saw it
 
 local function ColorName(key)
     if key == "same" then return "Same as Yours" end
@@ -247,29 +258,45 @@ function BUILD.targetColors(p)
     ui.mobLabel = Row("Mobs", "mobClassColor", -186, MOBS, true)
 end
 
+-- A group's step (the party's, the raid's): a row of bar picks, and a row of health colours, three to a line; same
+-- names what following is called there.
+local function GroupRow(p, label, key, y, list, colorKey, same)
+    Font(p, "GameFontNormal", label, "LEFT"):SetPoint("TOPLEFT", 0, y)
+    ui.cards[key] = {}
+    for i, item in ipairs(list) do
+        local value = item.key or item
+        local set = item.set or { [colorKey] = item }
+        local name = item.label or (item == "same" and same) or ColorName(item)
+        local col, line = (i - 1) % 3, math.floor((i - 1) / 3)
+        local c = Card(p, 150, 30, name, nil, function() Set(set) end)
+        c:SetPoint("TOPLEFT", 70 + col * 160, y + 6 - line * 36)
+        ui.cards[key][value] = c
+    end
+end
+
 function BUILD.party(p)
     Heading(p, "Your party too?", "Party members' bars, as above: a warrior, a priest, a mage and a rogue.")
-    local function Row(label, key, y, list)
-        Font(p, "GameFontNormal", label, "LEFT"):SetPoint("TOPLEFT", 0, y)
-        ui.cards[key] = {}
-        for i, item in ipairs(list) do
-            local value = item.key or item
-            local set = item.set or { partyHealthColor = item }
-            local col, line = (i - 1) % 3, math.floor((i - 1) / 3)
-            local c = Card(p, 150, 30, item.label or ColorName(item), nil, function() Set(set) end)
-            c:SetPoint("TOPLEFT", 70 + col * 160, y + 6 - line * 36)
-            ui.cards[key][value] = c
-        end
-    end
-    Row("Bars", "party", -56, PARTY)
-    Row("Colour", "partyHealthColor", -102, PARTY_COLORS)
+    GroupRow(p, "Bars", "party", -56, PARTY, "partyHealthColor")
+    GroupRow(p, "Colour", "partyHealthColor", -102, PARTY_COLORS, "partyHealthColor")
     local note = Font(p, "GameFontHighlightSmall", "Class Color shows each member's class. Power follows your own power "
-        .. "colour; every theme is in the editor. Raid-style party frames are under Raid in the editor.",
+        .. "colour; every theme is in the editor. Raid-style party frames are the next step.",
         "LEFT")
     note:SetPoint("TOPLEFT", 0, -178)
     note:SetWidth(W - 72)
     note:SetWordWrap(true)
     ui.partyWarning = Warning(p, "This may affect performance: a full party adds up to eight more liquids.", note)
+end
+
+function BUILD.raid(p)
+    Heading(p, "Raid frames too?", "The raid frames, and your party in raid style, as above: a raid of ten.")
+    GroupRow(p, "Bars", "raid", -56, RAID, "raidHealthColor")
+    GroupRow(p, "Colour", "raidHealthColor", -102, RAID_COLORS, "raidHealthColor")
+    local note = Font(p, "GameFontHighlightSmall", "Game Colour is the raid frames' own: class colours, or the colour set "
+        .. "in the game's Raid Frames options. Names, icons, heals and shields stay on top. Off to begin with.", "LEFT")
+    note:SetPoint("TOPLEFT", 0, -178)
+    note:SetWidth(W - 72)
+    note:SetWordWrap(true)
+    ui.raidWarning = Warning(p, "This may affect performance: a full raid adds up to eighty liquids.", note)
 end
 
 function BUILD.effects(p)
@@ -317,8 +344,8 @@ end
 function Refresh()
     local picked = {
         bars = Matching(BARS), effects = Matching(EFFECTS), dots = Matching(DOTS),
-        plates = Matching(PLATES), friends = Matching(FRIENDS), party = Matching(PARTY),
-        partyHealthColor = ns.Core.Get("partyHealthColor"),
+        plates = Matching(PLATES), friends = Matching(FRIENDS), party = Matching(PARTY), raid = Matching(RAID),
+        partyHealthColor = ns.Core.Get("partyHealthColor"), raidHealthColor = ns.Core.Get("raidHealthColor"),
         healthColor = ns.Core.Get("healthColor"), powerColor = ns.Core.Get("powerColor"),
         targetHealthColor = ns.Core.Get("targetHealthColor"), targetPowerColor = ns.Core.Get("targetPowerColor"),
         mobClassColor = ns.Core.Get("mobClassColor"),
@@ -338,7 +365,7 @@ function Refresh()
 end
 
 -- The steps with a preview of their own, and the Preview function that builds it.
-local STRIPS = { plates = "CreatePlates", party = "CreateParty" }
+local STRIPS = { plates = "CreatePlates", party = "CreateParty", raid = "CreateRaid" }
 
 local function ShowPage(name)
     page = name
@@ -349,8 +376,8 @@ local function ShowPage(name)
         BUILD[name](p)
     end
     for key, p in pairs(ui.pages) do p:SetShown(key == name) end
-    -- The nameplate and party steps show example nameplates and party frames in the preview strip, the others the unit
-    -- frames. Each is built the first time its step shows.
+    -- The nameplate, party and raid steps show example nameplates, party and raid frames in the preview strip, the
+    -- others the unit frames. Each is built the first time its step shows.
     local own = STRIPS[name]
     if own and not ui.strips[name] then
         ui.strips[name] = ns.Preview[own](ui.strip)
@@ -451,12 +478,18 @@ local function Build()
     ui.step:SetPoint("CENTER")
 end
 
+-- A profile's settings, as Skip puts them back.
+local function Values(p)
+    local out = {}
+    for key in pairs(ns.Core.Defaults()) do out[key] = p[key] end
+    return out
+end
+
 function Wizard.Open()
     if not frame then Build() end
     if frame:IsShown() then return end
     -- What Skip goes back to.
-    saved = {}
-    for key in pairs(ns.Core.Defaults()) do saved[key] = ns.Core.Get(key) end
+    saved = { [ns.Core.db] = Values(ns.Core.db) }
     frame:SetScale(math.min(1, (UIParent:GetHeight() - 40) / H))
     frame:Show()
     ShowPage(PAGES[1])
@@ -464,7 +497,7 @@ end
 
 -- At login: once out of combat, so it never covers the screen mid-fight.
 function Wizard.OpenWhenReady()
-    if ns.Core.Get("setupDone") or (frame and frame:IsShown()) then return end
+    if ns.Core.account.setupDone or (frame and frame:IsShown()) then return end
     if InCombatLockdown() then
         C_Timer.After(5, Wizard.OpenWhenReady)
         return
@@ -472,15 +505,46 @@ function Wizard.OpenWhenReady()
     Wizard.Open()
 end
 
+-- The settings in use changed all at once while the wizard was open (the editor's Profiles tab). Skip puts back every
+-- profile the wizard has seen in use, each as it was when first seen, so switching away and back loses nothing, and the
+-- account-wide settings every sharing character sees go back too. A profile made just now from another (a character's
+-- own, from the account-wide settings) goes back to that one's saved settings: it was made from what the wizard had
+-- already changed. A copy over the profile in use is the player's choice, so Skip leaves that profile as copied. Either
+-- way the wizard's pages show the settings now in use.
+function Wizard.ProfileChanged(how, db, from)
+    if saved then
+        if how == "copy" then
+            saved[db] = false
+        elseif saved[db] == nil then
+            local base = from and saved[from]
+            if base then
+                local copy = {}
+                for k, v in pairs(base) do copy[k] = v end
+                saved[db] = copy
+            else
+                saved[db] = Values(db)
+            end
+        end
+    end
+    if frame and frame:IsShown() then Refresh() end
+end
+
 -- how: "skip" puts the settings back as they were when the wizard opened; "done" keeps them.
 function Wizard.Close(how)
     if how == "skip" and saved then
-        for key, value in pairs(saved) do
-            if ns.Core.Get(key) ~= value then ns.Core.SetSetting(key, value) end
+        for profile, values in pairs(saved) do
+            if values and profile == ns.Core.db then
+                for key, value in pairs(values) do
+                    if ns.Core.Get(key) ~= value then ns.Core.SetSetting(key, value) end
+                end
+            elseif values then
+                -- Not in use: put back as it was, with nothing to apply.
+                for key, value in pairs(values) do profile[key] = value end
+            end
         end
     end
     saved = nil
-    ns.Core.db.setupDone = true
+    ns.Core.account.setupDone = true
     closing = true
     frame:Hide()
     if how == "done" then ns.Core.Print("All set. Change any of it with /sab.") end

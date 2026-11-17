@@ -28,6 +28,8 @@ skip it.
 - **Mana regen build-up:** your mana bar shows the five-second wait after a spell.
 - **Rage Fury:** your rage bar heats up as it fills, and bursts when you spend it.
 - **An editor** with every setting beside live examples of your frames: type `/sab`, or right-click your frame.
+- **Settings per character** if you want them: shared by every character to begin with, or a character's own once
+  you untick Use Account-Wide Settings on the editor's Profiles tab, where you can copy another character's too.
 
 <p align="center"><img src="https://raw.githubusercontent.com/Jordanburch101/smooth-animated-bars/refs/heads/main/branding/gallery/mage.webp" alt="A mage's mana dropping in big bites with each Fireball, and the kobold's health with it"></p>
 <p align="center"><em>Mage: each Fireball takes a chunk of your mana, and of the kobold's health.</em></p>
@@ -92,7 +94,7 @@ On by default, under Party in the editor, or right-click a party member's frame 
 <p align="center"><img src="https://raw.githubusercontent.com/Jordanburch101/smooth-animated-bars/refs/heads/main/branding/gallery/raid.webp" alt="Ten raid members in two groups of the game's raid frames through a pull: each health liquid in its class colour, the two warriors' red rage climbing as they tank, a burst of raid damage dropping everyone's health and the healers bringing it back, the casters' blue mana draining, and the main tank outlined as the target"></p>
 <p align="center"><em>Raid: the tanks build rage, the whole raid takes a hit and is healed back, and the casters' mana drains.</em></p>
 
-Turn on Health and Power under Raid in the editor.
+Turn them on in the setup, or Health and Power under Raid in the editor.
 
 - **The game's raid frames,** and your party's in raid-style frames.
 - **The game's names, icons, health text, heals, shields and target highlight** stay on top of the liquid.
@@ -209,8 +211,8 @@ bar's.
   which puts your colours on their bars instead of theirs, Game Colour meaning the game's own.
 - **Defaults** resets what's shown. **Run Setup** runs the setup again, and **What's New** shows recent changes.
 
-The setup has seven quick steps: which bars you want, your colours, your target's, your party's, how lively the
-liquid is, your DoTs, and nameplates, each shown on example frames. Skip leaves everything as it was.
+The setup has eight quick steps: which bars you want, your colours, your target's, your party's, raid frames, how
+lively the liquid is, your DoTs, and nameplates, each shown on example frames. Skip leaves everything as it was.
 
 ## Commands
 

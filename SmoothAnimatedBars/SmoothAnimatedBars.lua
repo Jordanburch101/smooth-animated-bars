@@ -1,5 +1,6 @@
 -- Smooth Animated Bars: the liquid from Smooth Experience Bar in the game's own player and target
--- frame health and power bars. Settings are account-wide, in SmoothAnimatedBarsDB.
+-- frame health and power bars. Settings are account-wide, or a character's own for a character that asks for that
+-- (Profiles below); both are in SmoothAnimatedBarsDB.
 
 local ADDON_NAME, ns = ...
 
@@ -84,7 +85,10 @@ local DEFAULTS = {
     rageFury    = true,
 }
 
-local db
+-- db is the settings in use: this character's own profile, or the account-wide one (Profiles below). root is
+-- SmoothAnimatedBarsDB itself, which also keeps what belongs to the account whichever profile is in use: the setup's
+-- and the changelog's progress, the DoT tracking's data, /sab's saved reports and the captured plate art.
+local db, root
 
 function Core.Print(msg)
     DEFAULT_CHAT_FRAME:AddMessage("|cff40d060Smooth Animated Bars|r " .. msg)
@@ -223,7 +227,7 @@ for _, key in ipairs(EFFECTS) do
 end
 
 -- Effects for one bar: each of a bar's (by its on/off setting's key, "playerHealth"...) can be set apart from the global
--- one, kept in SmoothAnimatedBarsDB.effects[barKey][effect] = true or false. A nested table cannot be a registered
+-- one, kept in the profile in use, effects[barKey][effect] = true or false. A nested table cannot be a registered
 -- setting, so these are kept in the saved table directly and applied here. Its liquids (Bars.lua, EffectOptions) and its
 -- markers' read them live.
 function Core.Effect(barKey, effect)
@@ -273,6 +277,233 @@ function Core.SetSetting(key, value)
         Core.OnSettingChanged(key)
     end
 end
+
+--------------------------------------------------------------------------------
+-- Profiles
+--------------------------------------------------------------------------------
+
+-- Every character uses the account-wide settings (root.global) unless it asks for its own (root.ownSettings[key] = true,
+-- kept in root.profiles[key]). So by default nothing changes from earlier versions, whose settings were account-wide and
+-- kept flat in SmoothAnimatedBarsDB: those become root.global. The setup runs once per account (root.setupDone), and
+-- its choices reach every character sharing the account-wide settings. A character's own settings start as a copy of
+-- the account-wide ones the first time it asks for them, and are kept if it goes back to sharing. A profile holds every
+-- setting in DEFAULTS and the bars' own effects (effects). Characters are keyed "Name - Realm", or "First Last -
+-- Ruleset" on Forever, as in Smooth Experience Bar.
+local GLOBAL = "*global*" -- the account-wide settings, as a source to copy from
+Core.GLOBAL = GLOBAL
+local profileKey
+
+-- Forever has no realms: names are unique across the region, and a character plays under a ruleset. GetRealmName
+-- there gives a server name, so the ruleset names the character instead.
+local function RulesetName()
+    local active, rules = C_GameRules and C_GameRules.IsGameRuleActive, Enum and Enum.GameRule
+    if not (active and rules) then return end
+    local function on(rule) return rule ~= nil and active(rule) end
+    if on(rules.HardcoreRuleset) then return "Hardcore" end
+    local rp, pvp = on(rules.RPRuleset), on(rules.PvPRuleset)
+    if rp and pvp then return "RP-PVP" end
+    if rp then return "RP" end
+    if pvp then return "PVP" end
+    return "Normal"
+end
+
+local function CharacterKey()
+    local name, surname = UnitName("player")
+    name = type(name) == "string" and name or "Unknown"
+    local realm = GetRealmName() or "Unknown"
+    if type(surname) ~= "string" or surname == "" then return name .. " - " .. realm end
+    local consts = Constants and Constants.CharacterNameSeparatorConsts
+    local sep = consts and consts.CHARACTERNAME_SURNAME_SEPARATOR or " "
+    return name .. sep .. surname .. " - " .. (RulesetName() or realm)
+end
+
+local function CopyValue(v)
+    if type(v) ~= "table" then return v end
+    local out = {}
+    for k, x in pairs(v) do out[k] = CopyValue(x) end
+    return out
+end
+
+-- A profile's settings: every one in DEFAULTS and the bars' own effects.
+local function CopySettings(from, to)
+    to = to or {}
+    for k in pairs(DEFAULTS) do to[k] = CopyValue(from[k]) end
+    to.effects = CopyValue(from.effects)
+    return to
+end
+
+-- Fills a profile's gaps with the defaults and drops what this version does not know (a theme from a later version,
+-- an effect that is gone), so any profile can be put in use.
+local function Clean(p)
+    for k, v in pairs(DEFAULTS) do
+        if p[k] == nil or type(p[k]) ~= type(v) then p[k] = v end
+    end
+    if p.healthColor ~= "game" and not ns.Themes.list[p.healthColor] then p.healthColor = "game" end
+    if p.powerColor ~= "game" and not ns.Themes.list[p.powerColor] then p.powerColor = "game" end
+    for frame, keys in pairs(COLOR_KEYS) do
+        if frame ~= "player" then
+            for _, key in pairs(keys) do
+                -- An unknown choice (a theme from a later version) goes back to the bar's own default.
+                if p[key] ~= "same" and p[key] ~= "game" and not ns.Themes.list[p[key]] then
+                    p[key] = DEFAULTS[key] or "same"
+                end
+            end
+        end
+    end
+    if p.mobClassColor ~= "game" and p.mobClassColor ~= "class" and p.mobClassColor ~= "own" then
+        p.mobClassColor = "reaction"
+    end
+    -- Bars' own effects: only known effects, true or false, and only bars with any.
+    if type(p.effects) ~= "table" then p.effects = {} end
+    for bar, own in pairs(p.effects) do
+        if type(bar) ~= "string" or type(own) ~= "table" then
+            p.effects[bar] = nil
+        else
+            for k, v in pairs(own) do
+                if not IS_EFFECT[k] or type(v) ~= "boolean" then own[k] = nil end
+            end
+            if not next(own) then p.effects[bar] = nil end
+        end
+    end
+    return p
+end
+
+-- Settings come from the flat, account-wide table of earlier versions: they become the account-wide profile. Flat
+-- settings found beside the profiles (an earlier version run again after this one) are dropped: which profile they
+-- were meant for cannot be told.
+local function Migrate()
+    if type(root.global) == "table" then
+        for k in pairs(DEFAULTS) do root[k] = nil end
+        root.effects = nil
+        return
+    end
+    local global = {}
+    for k in pairs(DEFAULTS) do
+        global[k] = root[k]
+        root[k] = nil
+    end
+    global.effects = root.effects
+    root.effects = nil
+    root.global = global
+end
+
+-- After the settings in use changed all at once (how: "use", a profile put in use, made from the profile from if it is
+-- new; or "copy", one copied over): everything they drive is applied again, as at login, and the editor and the setup
+-- follow.
+local function ApplyAll(wasExternal, how, from)
+    if Core.ready then
+        ApplyBars(true)
+        ns.Bars.ApplyColors()
+        ns.Marker.Apply()
+        ns.HealMarker.Apply()
+        ns.ManaRule.Apply()
+        ApplyEffects()
+    end
+    local external = db.externalBars and true or false
+    if wasExternal ~= nil and wasExternal ~= external then Core.FireExternal("enabled", external) end
+    -- The setup's Skip knows what to put back (Wizard.ProfileChanged).
+    if ns.Wizard and ns.Wizard.ProfileChanged then ns.Wizard.ProfileChanged(how, db, from) end
+    if ns.Editor and ns.Editor.Refresh then ns.Editor.Refresh() end
+end
+
+-- Puts a profile in use; from: the profile it was just made from, if it is new.
+local function Use(p, from)
+    local wasExternal = db and (db.externalBars and true or false)
+    db = Clean(p)
+    Core.db = db
+    if wasExternal ~= nil then
+        Core.Try(nil)
+        ApplyAll(wasExternal, "use", from)
+    end
+end
+
+-- This character's key, as profiles are listed.
+function Core.ProfileKey()
+    return profileKey
+end
+
+-- Whether this character uses the account-wide settings: unless it asked for its own.
+function Core.UsesGlobal()
+    return root ~= nil and root.ownSettings[profileKey] ~= true
+end
+
+-- This character takes the account-wide settings, or its own again: the ones it had before, or a copy of the
+-- account-wide ones if it never had its own.
+function Core.SetUseGlobal(on)
+    on = on and true or false
+    if not root or Core.UsesGlobal() == on then return end
+    root.ownSettings[profileKey] = (not on) or nil
+    if on then
+        Use(root.global)
+    else
+        local from
+        if type(root.profiles[profileKey]) ~= "table" then
+            root.profiles[profileKey], from = CopySettings(root.global), root.global
+        end
+        Use(root.profiles[profileKey], from)
+    end
+end
+
+-- What can be copied onto the settings in use: the account-wide settings and other characters' own, sorted, each
+-- { key, label }. A character sharing the account-wide settings has none of its own to offer. This character's own are
+-- never offered: while it shares, unticking Use Account-Wide Settings brings them back, so copying them would only be
+-- a second way to the same place.
+function Core.CopySources()
+    local out = {}
+    if root.global ~= db then out[1] = { key = GLOBAL, label = "Account-Wide Settings" } end
+    local keys = {}
+    for key, p in pairs(root.profiles) do
+        -- Only real profiles: a saved table edited by hand could hold anything.
+        if type(key) == "string" and type(p) == "table" and p ~= db and key ~= profileKey
+            and root.ownSettings[key] == true then
+            keys[#keys + 1] = key
+        end
+    end
+    table.sort(keys)
+    for _, key in ipairs(keys) do
+        out[#out + 1] = { key = key, label = key }
+    end
+    return out
+end
+
+-- Replaces the settings in use with a copy of another profile's (a character's key, or GLOBAL). False if there is
+-- no such profile.
+function Core.CopyProfile(from)
+    local src = from == GLOBAL and root.global or root.profiles[from]
+    if type(src) ~= "table" or src == db then return false end
+    local wasExternal = db.externalBars and true or false
+    Core.Try(nil)
+    CopySettings(src, db)
+    Clean(db)
+    ApplyAll(wasExternal, "copy")
+    return true
+end
+
+-- At login: the saved table set up, and the settings this character uses put in use.
+local function LoadProfiles()
+    SmoothAnimatedBarsDB = type(SmoothAnimatedBarsDB) == "table" and SmoothAnimatedBarsDB or {}
+    root = SmoothAnimatedBarsDB
+    Migrate()
+    if type(root.profiles) ~= "table" then root.profiles = {} end
+    if type(root.ownSettings) ~= "table" then root.ownSettings = {} end
+    profileKey = CharacterKey()
+    Clean(root.global)
+    Core.account = root
+    if Core.UsesGlobal() then
+        Use(root.global)
+    else
+        -- Its own, made again from the account-wide ones if the saved table lost them.
+        if type(root.profiles[profileKey]) ~= "table" then root.profiles[profileKey] = CopySettings(root.global) end
+        Use(root.profiles[profileKey])
+    end
+end
+
+-- The settings in use, for the game's registered settings (Options.lua): they are bound to one table for good, so
+-- they are given this one, which reads and writes whichever profile is in use.
+local settingsView = setmetatable({}, {
+    __index = function(_, k) return db[k] end,
+    __newindex = function(_, k, v) db[k] = v end,
+})
 
 --------------------------------------------------------------------------------
 -- For other addons
@@ -403,42 +634,10 @@ end
 events:SetScript("OnEvent", function(self, event, arg1, arg2)
     if event == "ADDON_LOADED" then
         if arg1 ~= ADDON_NAME then return end
-        SmoothAnimatedBarsDB = SmoothAnimatedBarsDB or {}
-        db = SmoothAnimatedBarsDB
-        for k, v in pairs(DEFAULTS) do
-            if db[k] == nil then db[k] = v end
-        end
-        if db.healthColor ~= "game" and not ns.Themes.list[db.healthColor] then db.healthColor = "game" end
-        if db.powerColor ~= "game" and not ns.Themes.list[db.powerColor] then db.powerColor = "game" end
-        for frame, keys in pairs(COLOR_KEYS) do
-            if frame ~= "player" then
-                for _, key in pairs(keys) do
-                    -- An unknown choice (a theme from a later version) goes back to the bar's own default.
-                    if db[key] ~= "same" and db[key] ~= "game" and not ns.Themes.list[db[key]] then
-                        db[key] = DEFAULTS[key] or "same"
-                    end
-                end
-            end
-        end
-        if db.mobClassColor ~= "game" and db.mobClassColor ~= "class" and db.mobClassColor ~= "own" then
-            db.mobClassColor = "reaction"
-        end
-        -- Bars' own effects: only known effects, true or false, and only bars with any.
-        if type(db.effects) ~= "table" then db.effects = {} end
-        for bar, own in pairs(db.effects) do
-            if type(bar) ~= "string" or type(own) ~= "table" then
-                db.effects[bar] = nil
-            else
-                for k, v in pairs(own) do
-                    if not IS_EFFECT[k] or type(v) ~= "boolean" then own[k] = nil end
-                end
-                if not next(own) then db.effects[bar] = nil end
-            end
-        end
-        Core.db = db
-        ns.Dots.Load(db)
-        ns.SelfProbe.Load(db)
-        ns.Options.Register(db, DEFAULTS)
+        LoadProfiles()
+        ns.Dots.Load(root)
+        ns.SelfProbe.Load(root)
+        ns.Options.Register(settingsView, DEFAULTS)
         self:UnregisterEvent("ADDON_LOADED")
         AddEarlyBars()
 
@@ -454,7 +653,7 @@ events:SetScript("OnEvent", function(self, event, arg1, arg2)
         -- The settings page's preview, once the bars are set up and before the settings panel can be open.
         ns.Options.BuildPreview()
         -- The setup wizard, once per account, a moment after the first login with the addon.
-        if (isLogin or isReload) and not db.setupDone then C_Timer.After(2, ns.Wizard.OpenWhenReady) end
+        if (isLogin or isReload) and not root.setupDone then C_Timer.After(2, ns.Wizard.OpenWhenReady) end
     end
 end)
 events:RegisterEvent("ADDON_LOADED")
@@ -505,9 +704,9 @@ local function SavePerf(note)
     snap.combat = InCombatLockdown() and true or false
     snap.note = note
     snap.version = C_AddOns and C_AddOns.GetAddOnMetadata and C_AddOns.GetAddOnMetadata(ADDON_NAME, "Version") or nil
-    db.perfLog = db.perfLog or {}
-    table.insert(db.perfLog, snap)
-    while #db.perfLog > PERF_LOG_MAX do table.remove(db.perfLog, 1) end
+    root.perfLog = root.perfLog or {}
+    table.insert(root.perfLog, snap)
+    while #root.perfLog > PERF_LOG_MAX do table.remove(root.perfLog, 1) end
     return true
 end
 
@@ -520,9 +719,9 @@ local function SaveParty(lines, note, key)
     snap.when = date and date("%Y-%m-%d %H:%M:%S") or nil
     snap.zone, snap.instance = Where()
     snap.version = C_AddOns and C_AddOns.GetAddOnMetadata and C_AddOns.GetAddOnMetadata(ADDON_NAME, "Version") or nil
-    db[key] = db[key] or {}
-    table.insert(db[key], snap)
-    while #db[key] > PARTY_LOG_MAX do table.remove(db[key], 1) end
+    root[key] = root[key] or {}
+    table.insert(root[key], snap)
+    while #root[key] > PARTY_LOG_MAX do table.remove(root[key], 1) end
 end
 
 local RAID_TEST = { ["raid test"] = "liquid", ["raid test low"] = "low", ["raid test up"] = "up", ["raid test off"] = "off" }
@@ -582,17 +781,17 @@ SlashCmdList.SMOOTHANIMATEDBARS = function(input)
         for _, line in ipairs(ns.Bars.Perf()) do Core.Print(line) end
         local note = strtrim(input or ""):match("^%S+%s+(.+)$") -- /sab perf <note>: what was going on
         if SavePerf(note) then
-            Core.Print("Saved (" .. #db.perfLog .. " in the log). /reload writes it to disk; then run "
+            Core.Print("Saved (" .. #root.perfLog .. " in the log). /reload writes it to disk; then run "
                 .. "tools/perf_report.py for a text file.")
         end
     elseif cmd == "party clear" then
-        db.partyProbe = nil
+        root.partyProbe = nil
         Core.Print("Saved party reports cleared.")
     elseif cmd == "party" or cmd:match("^party ") then
         local lines = ns.Bars.PartyDebug()
         for _, line in ipairs(lines) do Core.Print(line) end
         SaveParty(lines, strtrim(input or ""):match("^%S+%s+(.+)$"))
-        Core.Print("Saved (" .. #db.partyProbe .. " in the log). /reload writes it to disk.")
+        Core.Print("Saved (" .. #root.partyProbe .. " in the log). /reload writes it to disk.")
     elseif RAID_TEST[cmd] then
         local mode = RAID_TEST[cmd]
         local n = ns.Bars.RaidTest(mode)
@@ -603,18 +802,18 @@ SlashCmdList.SMOOTHANIMATEDBARS = function(input)
                 .. "draws over the liquid there. /sab raid test off to hide them.", n, RAID_TEST_SAYS[mode]))
         end
     elseif cmd == "raid clear" then
-        db.raidProbe = nil
+        root.raidProbe = nil
         Core.Print("Saved raid reports cleared.")
     elseif cmd == "raid" or cmd:match("^raid ") then
         local full, brief = ns.Bars.RaidDebug()
         for _, line in ipairs(brief) do Core.Print(line) end
         SaveParty(full, strtrim(input or ""):match("^%S+%s+(.+)$"), "raidProbe")
-        Core.Print("Saved the full report (" .. #db.raidProbe .. " in the log). /reload writes it to disk.")
+        Core.Print("Saved the full report (" .. #root.raidProbe .. " in the log). /reload writes it to disk.")
     elseif cmd == "perf reset" then
         ns.Bars.PerfReset()
         Core.Print("Timing from now on. /sab perf in a few seconds.")
     elseif cmd == "perf clear" then
-        db.perfLog = nil
+        root.perfLog = nil
         Core.Print("Saved timings cleared.")
     else
         for _, line in ipairs(HELP) do Core.Print(line) end

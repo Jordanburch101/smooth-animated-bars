@@ -260,7 +260,7 @@ function Capture.Start(which)
     grid, bg, mode = grids[which].grid, grids[which].bg, which
     if which == "plates" then
         local geometry = MeasurePlate()
-        ns.Core.db.plateArt = geometry
+        ns.Core.account.plateArt = geometry
         ns.Core.Print(geometry and "Measured your target's nameplate." or "No nameplate on your target to measure: "
             .. "target a mob with its nameplate showing for the exact layout. Capturing the art anyway.")
     end

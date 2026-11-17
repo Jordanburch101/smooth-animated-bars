@@ -21,7 +21,7 @@ for players; `docs/DEVELOPMENT.md` covers the layout and tools; this file holds 
   (`Options.lua`); every setting is still registered with the game (`Settings.RegisterAddOnSetting`, no rows) and
   changed through it (`Core.SetSetting`). Never register initializers into the game's vertical layout lists: on
   Forever that taints the Social page. `tools/harness/editor_shot.py` draws the editor's layout. One exception to
-  registering: a bar's own effects (`SmoothAnimatedBarsDB.effects[barKey][effect]`, `Core.SetEffect`), a nested table
+  registering: a bar's own effects (the profile's `effects[barKey][effect]`, `Core.SetEffect`), a nested table
   the Settings API cannot hold, read by each bar's liquids and markers (`b.opts`, filled by `Bars.FillEffects` whenever an effect changes).
 - **Lua's 200 locals:** `Bars.lua`'s main chunk is at the limit; one more file-level `local` fails to load in game
   ("main function has more than 200 local variables", seen). Put new functions on a table (`Bars.X`) instead.
@@ -438,7 +438,10 @@ Facts found while building this, which the code relies on and which are not obvi
   instead of playing the scene (`Preview.Resting`, in `SetFraction` and `SetPlate`), asked for once raid frames, off by
   default, kept animating their plain fill. The heal scene feeds a heal marker on the example's health
   (`HealMarker.Preview`, named "preview" so real heals and meals never reach it): a Renew, then a bandage; in game the
-  first build's Healing only moved the bar (seen). A colour tile under the mouse is tried on every bar its setting
+  first build's Healing only moved the bar (seen). Its panels (the screen, the inspector, the cards and rows) are Road to
+  Sixty's panes (its `Screens.Pane`, `Editor.lua` `Pane`): `BackdropTemplate` with the tooltip border and ground by
+  file ID (137057, 137056, as AceGUI uses them on Forever; the backdrop hands them to `SetTexture`), grey 0.6, gold on
+  the open card; the screen's is an edge-only frame over its examples. Not yet seen in game. A colour tile under the mouse is tried on every bar its setting
   reaches, real and example, without being saved (`Core.Try`, read by `Core.ColorChoice`), until the mouse leaves or
   the window closes. In game the first drawers were empty: a pane anchored TOPLEFT and RIGHT has its vertical middle
   pinned to its parent's too, which gave it a negative height (the mock does not model that); panes take both top
@@ -467,5 +470,15 @@ Facts found while building this, which the code relies on and which are not obvi
 ## Dev setup
 
 `_forever_\Interface\AddOns\SmoothAnimatedBars` is a junction to this repo's `SmoothAnimatedBars/`, so
-`/reload` loads the working copy. Settings are account-wide in `SmoothAnimatedBarsDB`; `setupDone` marks
+`/reload` loads the working copy. Settings are account-wide in `SmoothAnimatedBarsDB.global` by default (as the user
+asked), or a character's own in `.profiles["Name - Realm"]` ("First Last - Ruleset" on Forever) for a character in
+`.ownSettings`; `Core.db` is the profile in use, and the game's registered settings reach it through a proxy table
+(`settingsView`), so a switch needs no re-registering. Everything else at the root (`Core.account`) is the account's:
+the setup (shown once per account), the changelog, the DoT data, `/sab` logs, the plate art. Earlier versions' flat
+settings become `.global` on load. A character's own settings start as a copy of `.global` and are kept if it goes back
+to sharing. Editor's Profiles tab: Use Account-Wide Settings, a picker with arrows and Copy (`Core.SetUseGlobal`,
+`Core.CopySources`, `Core.CopyProfile`); clicking the picker opens the game's menu (`MenuUtil.CreateContextMenu`), but
+not under the controller interface, for the reason the unit menus are left alone there (`Options.GamepadUI`). A profile change while the setup is open: its Skip puts back every profile it saw in use, as first seen (a
+character's own made then from the shared ones as the shared ones were), but leaves a copy over one as copied
+(`Wizard.ProfileChanged`; a review found switching away and back had lost the Skip). `setupDone` marks
 that the setup wizard has run. The tools need `tools/venv` (`pip install lupa numpy pillow`).
