@@ -117,7 +117,11 @@ local FOLLOWS = { target = "player", pet = "player", focus = "target", tot = "ta
 local trial
 
 function Core.Try(colorKey, choice)
+    local was = trial
     if colorKey then trial = { key = colorKey, choice = choice } else trial = nil end
+    -- Every bar is coloured again only when what is tried changed: leaving a tile, or showing a page, often tries nothing.
+    if not was and not trial then return end
+    if was and trial and was.key == trial.key and was.choice == trial.choice then return end
     ns.Bars.ApplyColors()
 end
 
@@ -225,10 +229,14 @@ function Core.Effect(barKey, effect)
     return db and db[effect]
 end
 
--- The bar's own value for an effect, nil while it follows the global one.
-function Core.EffectOverride(barKey, effect)
-    local own = barKey and db.effects and db.effects[barKey]
-    return own and own[effect]
+-- A bar takes effects of its own, starting from what it shows now.
+function Core.OwnEffects(barKey)
+    local own = {}
+    for _, effect in ipairs(EFFECTS) do own[effect] = Core.Effect(barKey, effect) and true or false end
+    db.effects = db.effects or {}
+    db.effects[barKey] = own
+    ApplyEffects()
+    if ns.Editor and ns.Editor.Refresh then ns.Editor.Refresh() end
 end
 
 -- Sets a bar's own value for an effect; nil follows the global one again.

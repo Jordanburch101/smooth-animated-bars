@@ -531,23 +531,19 @@ local function EffectsPane(drawer, bar)
     local p = CreateFrame("Frame", nil, drawer)
     p.global = Check(p, "Use the global effects", function()
         local key = bar.on
+        -- Both apply the effects once and refresh the editor.
         if ns.Core.db.effects and ns.Core.db.effects[key] then
             ns.Core.ClearEffects(key)
         else
-            -- Its own from now on, starting from what it shows.
-            for _, effect in ipairs(ns.Core.EFFECTS) do
-                ns.Core.SetEffect(key, effect, ns.Core.Effect(key, effect) and true or false)
-            end
+            ns.Core.OwnEffects(key)
         end
-        Refresh()
     end)
     p.global:SetPoint("TOPLEFT", 4, -4)
     p.fx = {}
     for i, effect in ipairs(ns.Core.EFFECTS) do
         local col, line = (i - 1) % 2, math.floor((i - 1) / 2)
         local c = Check(p, EFFECT_LABELS[effect], function()
-            ns.Core.SetEffect(bar.on, effect, not ns.Core.Effect(bar.on, effect))
-            Refresh()
+            ns.Core.SetEffect(bar.on, effect, not ns.Core.Effect(bar.on, effect)) -- refreshes the editor
         end)
         c:SetPoint("TOPLEFT", 4 + col * 140, -(34 + line * 24))
         p.fx[effect] = c

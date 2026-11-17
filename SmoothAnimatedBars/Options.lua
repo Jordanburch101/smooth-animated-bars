@@ -201,14 +201,6 @@ function Options.Set(key, value)
     return true
 end
 
--- Open the game's settings at this page.
-function Options.Open()
-    if category and Settings.OpenToCategory then
-        Settings.OpenToCategory(category:GetID())
-        return true
-    end
-end
-
 -- For the tests: the page frame.
 function Options.Page()
     return canvas

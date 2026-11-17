@@ -22,7 +22,7 @@ for players; `docs/DEVELOPMENT.md` covers the layout and tools; this file holds 
   changed through it (`Core.SetSetting`). Never register initializers into the game's vertical layout lists: on
   Forever that taints the Social page. `tools/harness/editor_shot.py` draws the editor's layout. One exception to
   registering: a bar's own effects (`SmoothAnimatedBarsDB.effects[barKey][effect]`, `Core.SetEffect`), a nested table
-  the Settings API cannot hold, read live by each bar's liquids and markers (`Bars.NewEffectOptions`).
+  the Settings API cannot hold, read by each bar's liquids and markers (`b.opts`, filled by `Bars.FillEffects` whenever an effect changes).
 - **Lua's 200 locals:** `Bars.lua`'s main chunk is at the limit; one more file-level `local` fails to load in game
   ("main function has more than 200 local variables", seen). Put new functions on a table (`Bars.X`) instead.
 - **Tests:** run `tools/venv/Scripts/python tools/harness/test.py SmoothAnimatedBars` before every commit; it

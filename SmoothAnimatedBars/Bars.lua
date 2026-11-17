@@ -332,23 +332,29 @@ local External = { LOOK_EVERY = 0.1, KINDS = { health = true, power = true }, un
                    -- whole frame. The highest level above the bar an addon can ask for.
                    MAX_GROUP = 10, MAX_LEVEL = 20 }
 
--- The effect settings a bar's liquids read, live: the bar's own where it has any (Core.Effect), else the global ones.
--- A bar takes the overrides of its on/off setting's key, the friendly nameplates' for a plate showing a friend (one bar
--- shows mob after mob), none for another addon's bar. A field, not a local: this file's main chunk is at Lua's limit of
--- 200 locals (seen in game: "main function has more than 200 local variables").
-function Bars.NewEffectOptions(b)
-    return setmetatable({}, { __index = function(_, effect)
-        local key
-        if b.spot.external then
-            key = nil
-        elseif b.spot.plate and not b.spot.preview then
-            key = b.side == "friend" and "plateFriendly" or "plateHealth"
-        else
-            key = b.spot.key
-        end
-        return ns.Core.Effect(key, effect)
-    end })
+-- The effect settings a bar's liquids read (b.opts, its markers' liquids too): the bar's own where it has any
+-- (Core.Effect), else the global ones. A bar takes the overrides of its on/off setting's key, the friendly nameplates'
+-- for a plate showing a friend (one bar shows mob after mob), none for another addon's bar. Plain values, read many
+-- times an update, so filled again whenever an effect changes (Bars.ApplyOptions) and when a plate changes side.
+-- Fields, not locals: this file's main chunk is at Lua's limit of 200 locals (seen in game: "main function has more
+-- than 200 local variables").
+function Bars.FillEffects(b)
+    local key
+    if b.spot.external then
+        key = nil
+    elseif b.spot.plate and not b.spot.preview then
+        key = b.side == "friend" and "plateFriendly" or "plateHealth"
+    else
+        key = b.spot.key
+    end
+    b.opts = b.opts or {}
+    for _, effect in ipairs(ns.Core.EFFECTS) do b.opts[effect] = ns.Core.Effect(key, effect) and true or false end
+    return b.opts
 end
+
+-- Each bar's state, by its bar (StateFor): the game's, the previews', the plates' and other addons'. States are never
+-- dropped. A bar given a second state answers with its newest.
+Bars.stateOf = {}
 
 -- Every bar state, the game's, the previews' and the nameplates'.
 local function Each(fn)
@@ -980,7 +986,8 @@ local function NewBar(spot, bar)
     b.mover = mover
 
     b.spill = spill
-    b.opts = Bars.NewEffectOptions(b)
+    b.opts = Bars.FillEffects(b)
+    Bars.stateOf[bar] = b
     b.liquid = ns.Liquid.New(mover, math.max(w, 1) + ROOM, math.max(h, 1), ns.Themes.Get(ns.Themes.default), b.opts)
     -- The bar's mask cuts the liquid to the bar. Motes are left free to fly off the front. A nameplate's bar has no
     -- mask, and its bronze rim has cut corners that a square liquid would cover, so the liquid there takes a mask of
@@ -1778,6 +1785,7 @@ local function AttachPlate(token)
         plates[bar] = b
     end
     b.token, b.unit, b.spot.unit, b.side = token, token, token, side
+    Bars.FillEffects(b) -- a friend's plate takes the friendly plates' effects
     b.spot.frame = side == "friend" and "friend" or "plate" -- whose colour setting it takes
     if b.liquid then b.liquid:ApplyOptions() end -- the other side's effects, should they differ
     b.err, b.colorIn = nil, PLATE_COLOR_EVERY
@@ -2254,7 +2262,9 @@ function Bars.Preview(bar, spec)
     -- A flat preview (a nameplate's, the Personal Resource Display's) is raised over its bar, as the real ones are.
     if spec.flat then RaisePlate(b) end
     previews[#previews + 1] = b
-    Bars.Apply()
+    -- Only the first needs the driver started; the editor builds some forty, in combat too.
+    SetLive(b, ns.Core.Get(b.spot.key) and not b.err and true or false)
+    if b.live and not (driver and driver:IsShown()) then Bars.Apply() end
     return b
 end
 
@@ -2265,13 +2275,7 @@ end
 
 -- The state of the liquid on a bar, the game's or a preview's, if it has one.
 local function StateFor(bar)
-    for _, b in pairs(bars) do
-        if b.bar == bar then return b end
-    end
-    for _, b in ipairs(previews) do
-        if b.bar == bar then return b end
-    end
-    return plates[bar]
+    return Bars.stateOf[bar]
 end
 
 -- Whether a DoT marker lies on a health bar (Marker.lua): its liquid goes a level above the marker, with copies of the
@@ -2670,15 +2674,22 @@ function Bars.ApplyColors()
     Each(function(b) ApplyColor(b, true) end)
 end
 
--- After an effect toggle: clear what was just switched off.
--- The effect settings a bar's liquid reads (its markers' liquids read them too), or the global ones for a bar without.
+-- The effect settings a bar's liquid reads, for its markers' liquids. A bar without a liquid yet (off when the marker
+-- was built) gets a table that reads the global ones until the bar has its own, then the bar's.
 function Bars.EffectOptions(bar)
     local b = StateFor(bar)
-    return b and b.opts or ns.Core.db
+    if b then return b.opts end
+    return setmetatable({}, { __index = function(_, effect)
+        local s = StateFor(bar)
+        if s then return s.opts[effect] end
+        return ns.Core.db[effect]
+    end })
 end
 
+-- After an effect toggle: take the new values and clear what was just switched off.
 function Bars.ApplyOptions()
     Each(function(b)
+        Bars.FillEffects(b)
         b.liquid:ApplyOptions()
         if b.fury then b.fury.liquid:ApplyOptions() end
     end)

@@ -44,8 +44,8 @@ cd tools/harness; ../venv/Scripts/python editor_shot.py ../../SmoothAnimatedBars
 ```
 
 The mock has no art for the game's templates and atlases, so the window, buttons and check buttons are plain
-stand-ins and the examples' art is outlined. It does not apply `SetScale` either, so the raid example (at 85%) draws
-too big. It shows where things sit; how the game's art looks is for the game.
+stand-ins and the examples' art is outlined. It applies `SetScale` and clipping but not texture coordinates, so the
+colour tiles' textures are not drawn as in game. It shows where things sit; how the game's art looks is for the game.
 
 ## The in-game changelog
 
