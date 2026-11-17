@@ -36,11 +36,11 @@ Sections are `### New` and `### Fixed`; skip one that would be empty.
   frames in the editor: on or off, colour and effects. Your pet's bars fit
   its smaller frame too.
 - **Your colours on other addons' bars**: unit frame addons that hand their
-  bars to Smooth Animated Bars keep their own colours, as before. Tick Your
-  Colours on Their Bars under Other Addons in the editor and their bars take
-  the colour you pick for each frame instead: your theme on their player
-  bar, your target's on their target bar. Game Colour there means the
-  game's own: green health, and power in its usual colour.
+  bars to Smooth Animated Bars, such as FlareUI, keep their own colours, as
+  before. Tick Your Colours on Their Bars under Other Addons in the editor
+  and their bars take the colour you pick for each frame instead: your theme
+  on their player bar, your target's on their target bar. Game Colour there
+  means the game's own: green health, and power in its usual colour.
 
 ### Fixed
 - **Faded-out frames**: bars on a frame that another addon has faded out
