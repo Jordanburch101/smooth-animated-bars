@@ -16,8 +16,16 @@ for players; `docs/DEVELOPMENT.md` covers the layout and tools; this file holds 
 - **Forever assets:** game files by path often fail to load there. Use `SetColorTexture` for solid fills and
   the addon's own TGAs in `SmoothAnimatedBars/Media/` (made by `tools/make_media.py`), never `Interface\...`
   game paths. Icons by file ID.
-- **Settings page:** a canvas category built at login (`Options.lua`). Never register initializers into the
-  game's vertical layout lists: on Forever that taints the Social page.
+- **Settings:** every setting is in the editor (`Editor.lua`, `FRAMES` and `TABS`), a window of ours with live examples,
+  opened by `/sab`, the unit frame menus and Open Editor on the settings page. A new setting needs a control there;
+  the tests check every setting has one. The settings page is a landing page, a canvas category built at login
+  (`Options.lua`); every setting is still registered with the game (`Settings.RegisterAddOnSetting`, no rows) and
+  changed through it (`Core.SetSetting`). Never register initializers into the game's vertical layout lists: on
+  Forever that taints the Social page. `tools/harness/editor_shot.py` draws the editor's layout. One exception to
+  registering: a bar's own effects (`SmoothAnimatedBarsDB.effects[barKey][effect]`, `Core.SetEffect`), a nested table
+  the Settings API cannot hold, read by each bar's liquids and markers (`b.opts`, filled by `Bars.FillEffects` whenever an effect changes).
+- **Lua's 200 locals:** `Bars.lua`'s main chunk is at the limit; one more file-level `local` fails to load in game
+  ("main function has more than 200 local variables", seen). Put new functions on a table (`Bars.X`) instead.
 - **Tests:** run `tools/venv/Scripts/python tools/harness/test.py SmoothAnimatedBars` before every commit; it
   exits 1 on any failed check. The mock (`tools/harness/wowmock.lua`) should be as strict as the client:
   when the client rejects something the mock accepted, make the mock reject it too.
@@ -26,11 +34,11 @@ for players; `docs/DEVELOPMENT.md` covers the layout and tools; this file holds 
 - **Gallery:** `branding/gallery/` holds the README's images: animated WebP for each scenario (`hero`,
   `mage`, `rogue`, `warlock` and `rend` with the DoT marker, `priest` with the heal marker, `druid` with both, `eating`, a meal up to its buff, `mana`, the build-up to mana regenerating, `fury`, a warrior's rage building to full and spent back to 40%, `plates`, four Normal-style nameplates drawn from the captured plate art (`gallery.py`, `PLATES`), two with DoTs, and `prd`, a warrior's Personal Resource Display through a fight to furious rage and a bandage, on the same plate art, its bar sizes Edit Mode's defaults as guessed, and `party`, four party members stacked as in game, on the party art with the setup's example party and its class icons for portraits; the power mask and bar are shifted
   1.5 right and 1.9 down there (`gallery.py`, `PARTY_POWER_SHIFT`): at Forever's own offsets they sat over the gold divider in the captured art, though in
-  game the game's fill does not, so the gallery was tuned by eye to sit in the slot) and PNG stills (`frames.png`, `themes.png`), at full quality (`K = 3.0`, 20 fps). No GIFs.
+  game the game's fill does not, so the gallery was tuned by eye to sit in the slot; the example party in the setup and the editor (`Preview.lua`, `PARTY_POWER_SHIFT`) showed the same in game and takes the same shift, the capture keeping the game's offsets), and `raid`, a ten-player raid through a pull in two groups of raid-style frames, on the raid frame art (`gallery.py`, `RAIDERS`), its tank targeted, and PNG stills (`frames.png`, `themes.png`), at full quality (`K = 3.0`, 20 fps). No GIFs.
   A full run takes about a quarter of an hour, so run it in the background.
 - **Frame art:** `branding/art/` is Forever's own unit frame art, captured in game with `/sab capture` and
   cut out by `tools/capture_art.py` (`/sab capture plates` and `--plates` for the nameplates' pieces, `/sab capture
-  party` and `--party` for the party member frame's: its art, bar masks and four class portraits). It is only for the gallery and is never packaged. The layout numbers
+  party` and `--party` for the party member frame's: its art, bar masks and four class portraits, `/sab capture raid` and `--raid` for the raid-style frame's atlases: its background, the power bar's, the target's highlight and a group's border). It is only for the gallery and is never packaged. The layout numbers
   live in `Preview.lua` (`LAYOUT`) and are repeated in `gallery.py`; change both together.
 - **Commits:** stage the files you changed by name, never `git add -A`. Commit messages are plain and
   professional.
@@ -205,6 +213,33 @@ Facts found while building this, which the code relies on and which are not obvi
   party frames (`CompactPartyFrameMember1..5`, CompactUnitFrames) are another matter: no masks, and their colour and
   fill alpha secret even out of combat. The party pets' bars (`PetFrame.HealthBar`, no mask) and the fury on a party
   member's rage are left out for now. Liquid on the party bars not yet seen in game.
+- **Raid frames** (`Bars.lua`, `Bars.raid`, `raidHealth`, off by default; `/sab raid` reports them, saved in
+  `SmoothAnimatedBarsDB.raidProbe`, and `/sab raid test [low|up|off]` lays magenta blocks on their health bars): raid
+  frames, raid-style party frames, pets and main tanks are all `CompactUnitFrameTemplate` (`Blizzard_UnitFrame/Shared`),
+  named `CompactPartyFrameMember1..5`, `CompactRaidGroup1..8Member1..5` (groups kept apart) and `CompactRaidFrame1..N`
+  (combined, made on demand, handed between units). Their settings are CVars (`raidFramesDisplayClassColor`,
+  `raidFramesHealthBarColor` as AARRGGBB hex, `raidFramesHealthText`, power bars, dispel overlay...) and Edit Mode
+  (size 72..144 x 36..72, groups, sort, opacity). Seen in Edit Mode's preview (every frame on `player`): health bar
+  96x42 at 1,1 in a 98x44 button, no mask, at the button's level; colour, fill alpha, frame alpha (range fade) and
+  `UnitInRange` secret, `GetEffectiveAlpha` refused (RequiresScriptObjectAlphaAccess); the name, health text, role icon
+  and aggro border are ARTWORK 0 on the button, heal prediction and shields BORDER 5-6, absorbs ARTWORK 1-2, target
+  highlight OVERLAY 0. With the test blocks: at the same level the client sorts both frames' textures by layer
+  together (an ARTWORK 3 block hid the role icons, one level up hid the names too, a BORDER 1 block hid nothing of the
+  game's); text drew over the ARTWORK block. So the raid liquid is in BORDER (`Liquid:SetLayerMap`, `Bars.raid.LAYERS`),
+  at the bar's level. The first build cut it to the bar with a clip frame (`SetClipsChildren`), and in game in a party
+  with raid-style frames every bar showed black at 100%: the fill hidden, the button's dark background over the liquid.
+  A clipping frame seems to be drawn outside the layer sorting (likely also why a plate's background drew over its
+  liquid at the bar's level). So it is cut by a square mask of our own (`Square.tga`, `Bars.raid.MASK`), motes too (the
+  frames touch), and its clip frame does not clip. Seen in game in a party with raid-style frames: the liquid in class
+  colours, names, health text and the target's highlight over it. Its colour is worked out from those CVars and
+  the class (`Bars.raid.Color`), and only a secret class falls back to the bar's secret colour on a `MOD` tint. Power
+  (`raidPower`, `Bars.raid.KINDS`) is the same on `powerBar`: 8 px under the health (which shrinks by that), a frame of
+  its own at level 5 with its background on it, shown by the game for everyone or healers only; its colour is the power
+  type's. At the party's 20 fps the raid-style party looked steppier than the player frame (seen in game), so the rate
+  follows how many raid liquids show (`Bars.raid.RATES`): up to 10 at 30 fps stirring every 0.4 s, up to 20 at the
+  party's 20, more at 15. Not yet
+  seen in game: the dispel overlay (not among the button's textures), heal prediction and aggro over the liquid, a
+  secret class's tint, a full raid's frames and its cost.
 - **Enemy nameplates** (`Bars.lua`, `plateHealth`, off by default): Forever's plates are `Blizzard_NamePlates`
   (`forever` branch). The game pools the plates' unit frames: `NamePlateBaseMixin:AcquireUnitFrame` sets
   `plate.UnitFrame` and `plate.unitToken` on `NAME_PLATE_UNIT_ADDED` (perhaps after our handler), and the release
@@ -333,16 +368,16 @@ Facts found while building this, which the code relies on and which are not obvi
   (`Liquid:Settle`): a burst in flight when it hid would otherwise finish when it shows. Settled, it counts as quiet,
   so it is drawn at once (`drawNow`): waiting for its next idle update left an empty bar for a few frames. Every class has the
   `AlternatePowerBar`, but on Forever only a druid's is used, so only druids build one.
-- **Breath bar** (`Bars.lua`, `Mirror`, the `breath` spots): Forever's mirror timers are
+- **Breath bar** (`Bars.lua`, `Bars.mirror`, the `breath` spots): Forever's mirror timers are
   `Blizzard_MirrorTimer/Mainline` (forever branch): `MirrorTimerContainer.mirrorTimers`, three pooled
   `MirrorTimerTemplate` frames that each show whichever timer the game hands them, named in the frame's `.timer`
   (`BREATH`, `EXHAUSTION`, `FEIGNDEATH`; nil once cleared). Each frame gets a spot; its liquid shows while it shows
-  `BREATH`, and the others get the game's fill back (`Mirror.Away`, through `SetAway` as an offline party member's).
-  The `StatusBar` (195x13) is lowered to the frame's own level (`LowerFrameLevel`), and the dark
+  `BREATH`, and the others get the game's fill back (`Bars.mirror.Away`, through `SetAway` as an offline party
+  member's). The `StatusBar` (195x13) is lowered to the frame's own level (`LowerFrameLevel`), and the dark
   `ui-castingbar-background`, the text box and the border are textures on the frame itself, so at the bar's level the
   background drew over the liquid and the bar looked empty (seen in game). The liquid is one level above the bar and
-  copies of the frame's texts (the label, under the bar) one more up (`Mirror.Raise`, `Mirror.Setup`). The border
-  (`OVERLAY`, 2 px around the bar) is under the liquid there; the clip frame has no spill (`spot.bare`), so the waves
+  copies of the frame's texts (the label, under the bar) one more up (`Bars.mirror.Raise`, `Bars.mirror.Setup`). The
+  border (`OVERLAY`, 2 px around the bar) is under the liquid there; the clip frame has no spill (`spot.bare`), so the waves
   stay inside the bar. The fill is an atlas (`MirrorTimerAtlas`), so the bar's colour is white: Game Colour is
   `MirrorTimerColors` where a client has it, else blue. The game sets the value every frame from
   `GetMirrorTimerProgress`; whether Forever keeps it secret is not known, so bubbles (`Mirror.UpdateBubbles`, rising
@@ -350,7 +385,7 @@ Facts found while building this, which the code relies on and which are not obvi
   else by `GetMirrorTimerInfo`'s scale below 0 and `paused` (a number) 0. Seen in game: the liquid. Not yet seen in
   game: the bubbles.
 - **Unit frame menus** (`Options.lua`, `AddToUnitMenus`): `Menu.ModifyMenu("MENU_UNIT_" .. which, ...)` adds Open
-  Settings; the frames pass themselves as `contextData.ownerFrame` (Mainline `PlayerFrame.lua`, `TargetFrame.lua`,
+  Editor (Open Settings before the editor), opening it at that frame's section; the frames pass themselves as `contextData.ownerFrame` (Mainline `PlayerFrame.lua`, `TargetFrame.lua`,
   `PetFrame.lua`), which tells them from chat names. The party's member frames are pooled and nameless, so they are
   told by their parent, `PartyFrame` (not yet seen in game). Seen in game, and the menus' protected actions
   (Set Focus, Target Marker Icon) still work with it, in and out of combat. But not in an instance: there a mob's
@@ -390,6 +425,55 @@ Facts found while building this, which the code relies on and which are not obvi
   A target's health bar gets the DoT marker (`Marker.lua`, `BuildExternal`, `RaiseExternal`): seen missing in game (a
   Rend on Frames Forever's target), and working after. Measured against `UnitHealthMax("target")`, at the liquid's level, no kill icon,
   hidden on a bar filling from the right; `Bars.Front` puts a mirrored bar's front back on its fill's left edge.
+  Frames Forever hides the game's player and pet frames with `SetAlpha(0)` (target, focus and party it reparents to a
+  hidden frame), and "immersion" addons fade idle frames out the same way. `IsVisible` does not see alpha, so in
+  Halfdays' `/sab perf` the hidden player frame's liquids still ran (0.12 ms a frame each). So a bar is `shown`,
+  `hidden` (`IsVisible` false) or `faded` (effective alpha under 0.01; `Bars.lua`, `Sight`: `GetEffectiveAlpha`, frames
+  only, `SecretReturnsForAspect` Alpha and `RequiresScriptObjectAlphaAccess`, so under `pcall`, a secret taken as
+  shown). It is found once a frame in `UpdateBar` (`b.sight`) and reused by events, `/sab perf` and the markers
+  (`Bars.Sight`): each check is three widget calls. A faded liquid pauses like a hidden one. A faded marker pauses
+  rather than hides: hidden, it forgot what it had shown, so each fade-in replayed a meal's release and grew the DoTs
+  in from nothing (a review caught it). While faded it drops landings and ticks (`calm`), and a buff reached meanwhile
+  sates the bar quietly (`Bars.Sate`). Not yet seen in game.
+- **The editor** (`Editor.lua`): the game's `ButtonFrameTemplate` window (as the setup's), tabs on the character
+  sheet's title plaque (`UI-Character-Info-Title`, as Road to Sixty's mode switch: the picked one in colour, the others
+  desaturated at 70%; the scene buttons under the screen too), `UICheckButtonTemplate` boxes, `UIPanelButtonTemplate` buttons, and chips of our own. Its colour tiles are stills of each theme's liquid (`PaintTile`):
+  the fill's gradient, the theme's cloud and vein textures in its colours, the front's glow and line, and two of its
+  particles (its ambient ones, else its burst's), all static, so a drawer of 26 costs nothing while open. Nothing in it is protected, so it opens in combat, unlike the game's settings panel.
+  Its first build (a sidebar of sections over one preview) was replaced, on the user's choice of mockups (canvas
+  "SAB Options Redesign", board E), by a screen of every example at once where the game puts them, clicked to edit,
+  and an inspector of bar cards with Colour and Effects drawers. The examples are `Preview.lua`'s: `Create` (the
+  player and target), `CreateSingle` (the target's art standing for the focus, pet or target of target, smaller, each in
+  a place of its own: the first layout swapped them into the target's place, and a bigger window was asked
+  for to show them all; the screen's layout was then measured on a screenshot from the game and agreed on a mockup,
+  canvas board F, which made the window 1180 x 630), `CreateParty` stacked, `CreatePlates`, `CreatePRD` (flat bars raised as the real ones, `Bars.Preview` with `flat`) and `CreateRaid`
+  (ten raid-style frames in solid colours, as the game's raid art is by path; `spot.raidLook` gives them the raid
+  frames' colours from the CVars and each member's class, and no spill: the frames touch, and in game the first build's
+  motes flew over them). All play the scenes (`SetScene`: fight, damage, heal, power; groups take the frames' rows a
+  little apart); the one being edited at full speed and the rest at a third, idling at 10 fps (`Preview.SetActive`,
+  `spot.calm`), as about 40 liquids show at once. A frame whose health and power are both off rests full and still
+  instead of playing the scene (`Preview.Resting`, in `SetFraction` and `SetPlate`), asked for once raid frames, off by
+  default, kept animating their plain fill. The heal scene feeds a heal marker on the example's health
+  (`HealMarker.Preview`, named "preview" so real heals and meals never reach it): a Renew, then a bandage; in game the
+  first build's Healing only moved the bar (seen). A colour tile under the mouse is tried on every bar its setting
+  reaches, real and example, without being saved (`Core.Try`, read by `Core.ColorChoice`), until the mouse leaves or
+  the window closes. In game the first drawers were empty: a pane anchored TOPLEFT and RIGHT has its vertical middle
+  pinned to its parent's too, which gave it a negative height (the mock does not model that); panes take both top
+  corners now. The stage's backdrop is a vertical gradient (`SetGradient`), dusky blue as in the mockup. The settings page's preview is built at `PLAYER_ENTERING_WORLD` (`Options.BuildPreview`), never
+  while the settings panel is open. Not yet seen in game: this layout.
+- **Adaptors** (`SmoothAnimatedBars/Adaptors/`, `agent.md` there says when to write one and how): for a unit frame
+  addon that does not call `AddBar`, a file of ours finds its bars and hands them over (`Bars.AddBar`'s internal `key`:
+  our frame's settings, not `externalBars`). The first is ClassicUI Forever's. Read the other addon's code, never copy
+  it, and ask its author to call `AddBar` too. An adaptor steps aside for a bar that addon hands over itself, removed
+  or not, and for one whose liquid failed (`Bars.HandedBy`, `Adaptors.Hand`): a review found the two would otherwise
+  swap the bar's options every second and undo its `RemoveBar`. A game bar it unmasks (`Bars.Unmask`) is cut by its
+  clip frame at the bar's edges instead (no spill), or the front's glow showed past a smaller bar onto its art. Seen in game: ClassicUI Forever's player health, inside its art.
+  FlareUI (6.10 on, `Modules/UnitFrames.lua` `ns.SAB`) calls `AddBar` itself, with no theme, so its bars kept its
+  colours (a warrior's player bar in class tan whatever the editor said). Your Colours on Their Bars (`externalColors`,
+  off by default; `Bars.lua`, `ChoiceFor`, `GameColor`) gives every handed-over bar the colour picked for the frame it
+  stands for, Game Colour being the game's (green health), not the bar's. A bar's `spot.frame` is set before `NewBar`
+  colours it: set after, a bar handed over with the setting on (after a `/reload`) failed to set up and kept its own
+  fill (seen in game). Seen in game and right on FlareUI's bars after that.
 - **Toc changes** (a new file) need a full game restart; `/reload` does not pick them up.
 - **Capture:** `/sab capture` uses `Screenshot()` and the `screenshotFormat` CVar (TGA, put back after).
   The screenshot is the full render resolution (an ultrawide 3440x1440 here), and the red "?" target

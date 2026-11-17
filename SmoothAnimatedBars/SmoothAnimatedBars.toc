@@ -23,9 +23,12 @@ Heals.lua
 HealMarker.lua
 ManaRule.lua
 SelfProbe.lua
+Adaptors\Adaptors.lua
+Adaptors\ClassicUIForever.lua
 SmoothAnimatedBars.lua
 Options.lua
 Preview.lua
+Editor.lua
 Capture.lua
 Wizard.lua
 WhatsNewData.lua

@@ -25,6 +25,10 @@ local DEFAULTS = {
     -- The Personal Resource Display's bars (the game shows them with its Personal Resource Display option on)
     prdHealth    = true,
     prdPower     = true,
+    -- The raid frames' health, and the raid-style party frames' (Bars.lua, Bars.raid), off until it has been tried in a
+    -- raid
+    raidHealth   = false,
+    raidPower    = false,
     -- The breath bar under water (the game's mirror timer, Bars.lua, Mirror)
     breath       = true,
     -- Bubbles rising off the breath bar's front while breath runs out (read live, with the Bubbles effect)
@@ -35,6 +39,8 @@ local DEFAULTS = {
     plateFriendly = false,
     -- Bars other addons hand us with SmoothAnimatedBars.AddBar (unit frame addons that hide the game's frames)
     externalBars = true,
+    -- Those bars in the colours picked here for the frame each stands for (Bars.lua, ChoiceFor), not the other addon's
+    externalColors = false,
     -- The DoT marker on enemy nameplates (Marker.lua), with plateHealth
     plateDots    = false,
     -- The kill icon beside a nameplate whose mob the player's DoTs will finish, with plateDots
@@ -56,6 +62,9 @@ local DEFAULTS = {
     partyPowerColor   = "same",
     prdHealthColor    = "same",
     prdPowerColor     = "same",
+    -- The raid frames: the game's raid colour (class colours or the colour set in its Raid Frames options) by default
+    raidHealthColor   = "game",
+    raidPowerColor    = "game",
     plateHealthColor  = "same",
     -- The breath bar: the game's blue by default, or "same" for the player's power colour
     breathColor       = "game",
@@ -104,21 +113,42 @@ local COLOR_KEYS = {
     tot    = { health = "totHealthColor", power = "totPowerColor" },
     party  = { health = "partyHealthColor", power = "partyPowerColor" },
     prd    = { health = "prdHealthColor", power = "prdPowerColor" },
+    raid   = { health = "raidHealthColor", power = "raidPowerColor" },
     plate  = { health = "plateHealthColor" },
     friend = { health = "plateFriendlyColor" },
     breath = { breath = "breathColor" },
 }
 local FOLLOWS = { target = "player", pet = "player", focus = "target", tot = "target", party = "player", prd = "player",
-                  plate = "target", friend = "plate", breath = "player" }
+                  raid = "party", plate = "target", friend = "plate", breath = "player" }
+
+-- A colour being tried in the editor (a tile under the mouse): { key = a colour setting, choice }, shown by every bar
+-- that setting reaches, real and example, without being saved. nil when nothing is being tried.
+local trial
+
+function Core.Try(colorKey, choice)
+    local was = trial
+    if colorKey then trial = { key = colorKey, choice = choice } else trial = nil end
+    -- Every bar is coloured again only when what is tried changed: leaving a tile, or showing a page, often tries nothing.
+    if not was and not trial then return end
+    if was and trial and was.key == trial.key and was.choice == trial.choice then return end
+    ns.Bars.ApplyColors()
+end
 
 -- The colour a frame's bar of this kind ("health", "power" or "breath") shows: "game" or a theme key, "same" followed
 -- through. The breath bar's "same" follows the player's power colour.
 function Core.ColorChoice(frame, kind)
-    local choice = Core.Get(COLOR_KEYS[frame][kind])
+    local key = COLOR_KEYS[frame][kind]
+    local choice = (trial and trial.key == key) and trial.choice or Core.Get(key)
     if choice == "same" and FOLLOWS[frame] then
         return Core.ColorChoice(FOLLOWS[frame], kind == "breath" and "power" or kind)
     end
     return choice
+end
+
+-- What a frame's bar would show on "same": the colour of the bar it follows (the editor's swatch for it).
+function Core.SameChoice(frame, kind)
+    local follows = FOLLOWS[frame]
+    return follows and Core.ColorChoice(follows, kind) or nil
 end
 
 -- Whether a bar of the target, the focus or a target of target shows Class Color: only then does what Class Color
@@ -161,6 +191,7 @@ end
 local SETTING_APPLY = {
     healthColor = function() ns.Bars.ApplyColors() end,
     powerColor  = function() ns.Bars.ApplyColors() end,
+    externalColors = function() ns.Bars.ApplyColors() end,
     mobClassColor     = function() ns.Bars.ApplyColors() end,
     dots        = function() ns.Marker.Apply() end,
     dotKillIcon = function() ns.Marker.Apply() end,
@@ -170,6 +201,8 @@ local SETTING_APPLY = {
     plateDots   = function() ns.Marker.Apply() end,
     plateKillIcon = function() ns.Marker.Apply() end,
     plateFriendly = function() ApplyBars(false) end,
+    raidHealth  = function() ApplyBars(false) end,
+    raidPower   = function() ApplyBars(false) end,
     externalBars = function()
         ApplyBars(false)
         ns.HealMarker.Apply()
@@ -186,12 +219,56 @@ for frame, keys in pairs(COLOR_KEYS) do
         for _, key in pairs(keys) do SETTING_APPLY[key] = function() ns.Bars.ApplyColors() end end
     end
 end
-for _, key in ipairs({ "waves", "swirl", "bubbles", "sparkles", "ambient", "lightning" }) do
-    SETTING_APPLY[key] = function()
-        ns.Bars.ApplyOptions()
-        ns.Marker.ApplyOptions()
-        ns.HealMarker.ApplyOptions()
-    end
+local EFFECTS = { "waves", "swirl", "bubbles", "sparkles", "ambient", "lightning" }
+Core.EFFECTS = EFFECTS
+local IS_EFFECT = {}
+local function ApplyEffects()
+    ns.Bars.ApplyOptions()
+    ns.Marker.ApplyOptions()
+    ns.HealMarker.ApplyOptions()
+end
+for _, key in ipairs(EFFECTS) do
+    IS_EFFECT[key] = true
+    SETTING_APPLY[key] = ApplyEffects
+end
+
+-- Effects for one bar: each of a bar's (by its on/off setting's key, "playerHealth"...) can be set apart from the global
+-- one, kept in SmoothAnimatedBarsDB.effects[barKey][effect] = true or false. A nested table cannot be a registered
+-- setting, so these are kept in the saved table directly and applied here. Its liquids (Bars.lua, EffectOptions) and its
+-- markers' read them live.
+function Core.Effect(barKey, effect)
+    local own = barKey and db and db.effects and db.effects[barKey]
+    if own and own[effect] ~= nil then return own[effect] end
+    return db and db[effect]
+end
+
+-- A bar takes effects of its own, starting from what it shows now.
+function Core.OwnEffects(barKey)
+    local own = {}
+    for _, effect in ipairs(EFFECTS) do own[effect] = Core.Effect(barKey, effect) and true or false end
+    db.effects = db.effects or {}
+    db.effects[barKey] = own
+    ApplyEffects()
+    if ns.Editor and ns.Editor.Refresh then ns.Editor.Refresh() end
+end
+
+-- Sets a bar's own value for an effect; nil follows the global one again.
+function Core.SetEffect(barKey, effect, value)
+    if not IS_EFFECT[effect] then return end
+    db.effects = db.effects or {}
+    local own = db.effects[barKey] or {}
+    own[effect] = value
+    db.effects[barKey] = next(own) and own or nil
+    ApplyEffects()
+    if ns.Editor and ns.Editor.Refresh then ns.Editor.Refresh() end
+end
+
+-- Every effect of a bar back to the global ones.
+function Core.ClearEffects(barKey)
+    if not (db.effects and db.effects[barKey]) then return end
+    db.effects[barKey] = nil
+    ApplyEffects()
+    if ns.Editor and ns.Editor.Refresh then ns.Editor.Refresh() end
 end
 
 function Core.OnSettingChanged(key)
@@ -326,21 +403,11 @@ local function AddEarlyBars()
 end
 
 local events = CreateFrame("Frame")
-local openAfterCombat = false
-local openSection
 
--- The settings panel cannot be opened safely in combat, so wait for it to end. section: where to open it ("Pet"...).
-function Core.OpenSettings(section)
-    if InCombatLockdown() then
-        openSection = section
-        if not openAfterCombat then
-            openAfterCombat = true
-            events:RegisterEvent("PLAYER_REGEN_ENABLED")
-            Core.Print("Settings will open after combat.")
-        end
-        return true
-    end
-    return ns.Options.Open(section)
+-- The editor (Editor.lua), at a section ("pet", "party"...) if one is given. It is a window of ours, so unlike the
+-- game's settings panel it opens in combat too.
+function Core.OpenEditor(section)
+    return ns.Editor.Open(section)
 end
 
 events:SetScript("OnEvent", function(self, event, arg1, arg2)
@@ -356,12 +423,27 @@ events:SetScript("OnEvent", function(self, event, arg1, arg2)
         for frame, keys in pairs(COLOR_KEYS) do
             if frame ~= "player" then
                 for _, key in pairs(keys) do
-                    if db[key] ~= "same" and db[key] ~= "game" and not ns.Themes.list[db[key]] then db[key] = "same" end
+                    -- An unknown choice (a theme from a later version) goes back to the bar's own default.
+                    if db[key] ~= "same" and db[key] ~= "game" and not ns.Themes.list[db[key]] then
+                        db[key] = DEFAULTS[key] or "same"
+                    end
                 end
             end
         end
         if db.mobClassColor ~= "game" and db.mobClassColor ~= "class" and db.mobClassColor ~= "own" then
             db.mobClassColor = "reaction"
+        end
+        -- Bars' own effects: only known effects, true or false, and only bars with any.
+        if type(db.effects) ~= "table" then db.effects = {} end
+        for bar, own in pairs(db.effects) do
+            if type(bar) ~= "string" or type(own) ~= "table" then
+                db.effects[bar] = nil
+            else
+                for k, v in pairs(own) do
+                    if not IS_EFFECT[k] or type(v) ~= "boolean" then own[k] = nil end
+                end
+                if not next(own) then db.effects[bar] = nil end
+            end
         end
         Core.db = db
         ns.Dots.Load(db)
@@ -378,16 +460,11 @@ events:SetScript("OnEvent", function(self, event, arg1, arg2)
         ns.Marker.Apply()
         ns.HealMarker.Apply()
         ns.ManaRule.Apply()
+        ns.Adaptors.Start() -- other unit frame addons' own bars, for those that do not hand them over (Adaptors/)
+        -- The settings page's preview, once the bars are set up and before the settings panel can be open.
+        ns.Options.BuildPreview()
         -- The setup wizard, once per account, a moment after the first login with the addon.
         if (isLogin or isReload) and not db.setupDone then C_Timer.After(2, ns.Wizard.OpenWhenReady) end
-
-    elseif event == "PLAYER_REGEN_ENABLED" then
-        self:UnregisterEvent("PLAYER_REGEN_ENABLED")
-        if openAfterCombat then
-            openAfterCombat = false
-            ns.Options.Open(openSection)
-            openSection = nil
-        end
     end
 end)
 events:RegisterEvent("ADDON_LOADED")
@@ -398,8 +475,8 @@ events:RegisterEvent("PLAYER_ENTERING_WORLD")
 --------------------------------------------------------------------------------
 
 local HELP = {
-    "/sab - open settings",
-    "/sab on | off - liquid in all the bars, or none",
+    "/sab - open the editor: every setting beside a live preview",
+    "/sab off - the game's own bars everywhere; /sab on - the liquid back in your frames (raid frames and nameplates stay as they are)",
     "/sab setup - open the setup wizard",
     "/sab changes - what's new in the latest versions",
     "/sab debug - what each bar is doing",
@@ -413,6 +490,8 @@ local HELP = {
         .. "tools/perf_report.py after /reload (perf reset: time afresh, perf clear: forget the saved ones)",
     "/sab party [note] - what the game lets the addon read about the party frames, saved for /reload "
         .. "(party clear: forget the saved ones)",
+    "/sab raid [note] - the same for the raid-style frames (raid clear: forget the saved ones); /sab raid test "
+        .. "[low | up | off] - a magenta block where their liquid would go, to see what the game draws over it",
 }
 
 -- /sab perf keeps each report in the saved variables, which the client writes to disk on /reload or logout (addons
@@ -445,26 +524,38 @@ end
 -- /sab party: the same, its lines kept for reading after /reload, while the party frames have no liquid yet.
 local PARTY_LOG_MAX = 20
 
-local function SaveParty(lines, note)
+local function SaveParty(lines, note, key)
+    key = key or "partyProbe"
     local snap = { lines = lines, note = note, combat = InCombatLockdown() and true or false }
     snap.when = date and date("%Y-%m-%d %H:%M:%S") or nil
     snap.zone, snap.instance = Where()
     snap.version = C_AddOns and C_AddOns.GetAddOnMetadata and C_AddOns.GetAddOnMetadata(ADDON_NAME, "Version") or nil
-    db.partyProbe = db.partyProbe or {}
-    table.insert(db.partyProbe, snap)
-    while #db.partyProbe > PARTY_LOG_MAX do table.remove(db.partyProbe, 1) end
+    db[key] = db[key] or {}
+    table.insert(db[key], snap)
+    while #db[key] > PARTY_LOG_MAX do table.remove(db[key], 1) end
 end
+
+local RAID_TEST = { ["raid test"] = "liquid", ["raid test low"] = "low", ["raid test up"] = "up", ["raid test off"] = "off" }
+local RAID_TEST_SAYS = {
+    liquid = "in the liquid's layer at the bar's level",
+    low = "in the game fill's layer at the bar's level",
+    up = "in the liquid's layer one level above the bar",
+}
 
 SLASH_SMOOTHANIMATEDBARS1 = "/sab"
 SlashCmdList.SMOOTHANIMATEDBARS = function(input)
     local cmd = strlower(strtrim(input or ""))
-    if cmd == "" or cmd == "config" or cmd == "options" then
-        if not Core.OpenSettings() then
-            for _, line in ipairs(HELP) do Core.Print(line) end
-        end
+    if cmd == "" or cmd == "config" or cmd == "options" or cmd == "editor" then
+        Core.OpenEditor()
     elseif cmd == "on" or cmd == "off" then
         for _, key in ipairs(BAR_KEYS) do Core.SetSetting(key, cmd == "on") end
         Core.SetSetting("externalBars", cmd == "on") -- other addons' bars too
+        -- Off is every bar; on leaves the ones that start off (raid frames, nameplates) as they were.
+        if cmd == "off" then
+            for _, key in ipairs({ "raidHealth", "raidPower", "plateHealth", "plateFriendly" }) do
+                Core.SetSetting(key, false)
+            end
+        end
         Core.Print(cmd == "on" and "Liquid in the unit frames' bars." or "The game's own bars again.")
     elseif cmd == "capture" then -- photographs the frame art for the gallery; see Capture.lua
         ns.Capture.Start()
@@ -472,6 +563,8 @@ SlashCmdList.SMOOTHANIMATEDBARS = function(input)
         ns.Capture.Start("plates")
     elseif cmd == "capture party" then -- and a party member frame's
         ns.Capture.Start("party")
+    elseif cmd == "capture raid" then -- and a raid-style frame's
+        ns.Capture.Start("raid")
     elseif cmd == "capture breath" then -- and the breath bar's
         ns.Capture.Start("breath")
     elseif cmd == "setup" then
@@ -512,6 +605,23 @@ SlashCmdList.SMOOTHANIMATEDBARS = function(input)
         for _, line in ipairs(lines) do Core.Print(line) end
         SaveParty(lines, strtrim(input or ""):match("^%S+%s+(.+)$"))
         Core.Print("Saved (" .. #db.partyProbe .. " in the log). /reload writes it to disk.")
+    elseif RAID_TEST[cmd] then
+        local mode = RAID_TEST[cmd]
+        local n = ns.Bars.RaidTest(mode)
+        if mode == "off" then
+            Core.Print("Raid test blocks hidden.")
+        else
+            Core.Print(string.format("Magenta blocks on %d raid-style health bars, %s. Whatever shows over the magenta "
+                .. "draws over the liquid there. /sab raid test off to hide them.", n, RAID_TEST_SAYS[mode]))
+        end
+    elseif cmd == "raid clear" then
+        db.raidProbe = nil
+        Core.Print("Saved raid reports cleared.")
+    elseif cmd == "raid" or cmd:match("^raid ") then
+        local full, brief = ns.Bars.RaidDebug()
+        for _, line in ipairs(brief) do Core.Print(line) end
+        SaveParty(full, strtrim(input or ""):match("^%S+%s+(.+)$"), "raidProbe")
+        Core.Print("Saved the full report (" .. #db.raidProbe .. " in the log). /reload writes it to disk.")
     elseif cmd == "perf reset" then
         ns.Bars.PerfReset()
         Core.Print("Timing from now on. /sab perf in a few seconds.")

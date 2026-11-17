@@ -19,6 +19,8 @@
 -- as the setup's party step shows it: its art, its health and power masks, and the four class portraits the gallery's
 -- party uses, each in a cell the frame's size (120 x 53), on a grid of its own drawn large, for capture_art.py --party.
 --
+-- /sab capture raid does the same for the raid-style frame's atlases (RAID_CELLS below), for capture_art.py --raid.
+--
 -- /sab capture breath does the same for the breath bar (Blizzard_MirrorTimer/Mainline MirrorTimer.xml, forever branch):
 -- its text box, dark background and border, laid around a 195 x 13 bar as the timer frame lays them, in one cell, for
 -- capture_art.py --breath. The game's fill is left out: the liquid hides it.
@@ -79,6 +81,20 @@ local PARTY_CELLS = {
 }
 Capture.PARTY_CELLS = PARTY_CELLS
 
+-- The raid grid (/sab capture raid): the raid-style frame's art (Blizzard_UnitFrame/Shared/CompactUnitFrame.xml and
+-- CompactRaidGroup.xml), all atlases, each at the size it takes on a 98 x 44 frame with its power bar: the frame's
+-- background (tinted as CompactUnitFrame_UpdateHealthColor tints it), the target's highlight, the power bar's
+-- background (96 x 8), and a group's border, which runs from 2 outside its first member to 2 right and 3 below its fifth
+-- (CompactRaidGroup.lua, SetupBorderFrameAnchor). Same cells as PLATE_CELLS; marks 450 apart.
+local RAID_GRID_W, RAID_GRID_H = 470, 280
+local RAID_MARKS = { 8, 458 }
+local RAID_CELLS = {
+    { "raid-bg", 20, 40, 98, 44, atlas = "raidframe-hp-bg-white", tint = "COMPACT_UNIT_FRAME_FRIENDLY_HEALTH_COLOR_BG" },
+    { "raid-selected", 130, 40, 98, 44, atlas = "RaidFrame-TargetFrame" },
+    { "raid-power-bg", 240, 40, 96, 8, atlas = "_RaidFrame-Resource-Background" },
+    { "raid-group", 350, 40, 102, 225, atlas = "options_frame_child" },
+}
+Capture.RAID_CELLS = RAID_CELLS
 -- The breath grid: one cell, from (20, 30), 215 x 37, its bar's top-left at (30, 34); marks as above, 220 apart. The
 -- pieces: atlas, then left, top, width and height from the bar's top-left, layer and sublevel, as MirrorTimer.xml has
 -- them (the text box down to 14 below the bar, the background 1 out and the border 2 out all round).
@@ -143,12 +159,21 @@ local function Piece(cell, which, piece)
 end
 
 local GRID_NAMES = { frames = "SmoothAnimatedBarsCapture", plates = "SmoothAnimatedBarsCapturePlates",
-                     party = "SmoothAnimatedBarsCaptureParty", breath = "SmoothAnimatedBarsCaptureBreath" }
+                     party = "SmoothAnimatedBarsCaptureParty", raid = "SmoothAnimatedBarsCaptureRaid",
+                     breath = "SmoothAnimatedBarsCaptureBreath" }
+
+-- A colour the game keeps in a global (a ColorMixin), as r, g, b; nil when it has none.
+local function GlobalColor(name)
+    local c = rawget(_G, name)
+    if type(c) == "table" and c.GetRGB then return c:GetRGB() end
+end
 
 local function Build(which)
-    local plates, party, breath = which == "plates", which == "party", which == "breath"
-    local gridW = plates and PLATE_GRID_W or party and PARTY_GRID_W or breath and BREATH_GRID_W or GRID_W
-    local gridH = plates and PLATE_GRID_H or party and PARTY_GRID_H or breath and BREATH_GRID_H or GRID_H
+    local plates, party, raid, breath = which == "plates", which == "party", which == "raid", which == "breath"
+    local gridW = plates and PLATE_GRID_W or party and PARTY_GRID_W or raid and RAID_GRID_W or breath and BREATH_GRID_W
+        or GRID_W
+    local gridH = plates and PLATE_GRID_H or party and PARTY_GRID_H or raid and RAID_GRID_H or breath and BREATH_GRID_H
+        or GRID_H
     grid = CreateFrame("Frame", GRID_NAMES[which], UIParent)
     grid:SetFrameStrata("FULLSCREEN_DIALOG")
     grid:EnableMouse(true)
@@ -159,7 +184,8 @@ local function Build(which)
     bg = grid:CreateTexture(nil, "BACKGROUND", nil, -8)
     bg:SetAllPoints()
     grids[which] = { grid = grid, bg = bg }
-    for _, x in ipairs(plates and PLATE_MARKS or party and PARTY_MARKS or breath and BREATH_MARKS or MARKS) do
+    for _, x in ipairs(plates and PLATE_MARKS or party and PARTY_MARKS or raid and RAID_MARKS
+                       or breath and BREATH_MARKS or MARKS) do
         local mark = grid:CreateTexture(nil, "OVERLAY", nil, 7)
         mark:SetColorTexture(1, 0, 0, 1)
         mark:SetSize(6, 6)
@@ -179,11 +205,12 @@ local function Build(which)
             cell:SetPoint("TOPLEFT", 20 + (i - 1) % 4 * PARTY_STEP_X, -(40 + math.floor((i - 1) / 4) * PARTY_STEP_Y))
             PartyPiece(cell, c[2])
         end
-    elseif plates then
-        for _, c in ipairs(PLATE_CELLS) do
+    elseif plates or raid then
+        for _, c in ipairs(plates and PLATE_CELLS or RAID_CELLS) do
             local t = grid:CreateTexture(nil, "ARTWORK")
             if c.atlas then
                 if not t:SetAtlas(c.atlas) then t:Hide() end
+                if c.tint and GlobalColor(c.tint) then t:SetVertexColor(GlobalColor(c.tint)) end
             else
                 t:SetTexture(c.file)
                 t:SetTexCoord(unpack(c.coords or { 0, 1, 0, 1 }))
@@ -288,6 +315,7 @@ function Capture.Finish(problem)
             .. "--plates to cut it out.",
         party = "party frame art: two screenshots, on black and on white. Run tools/capture_art.py --party to cut it "
             .. "out.",
+        raid = "raid frame art: two screenshots, on black and on white. Run tools/capture_art.py --raid to cut it out.",
         breath = "breath bar art: two screenshots, on black and on white. Run tools/capture_art.py --breath to cut it "
             .. "out.",
     }

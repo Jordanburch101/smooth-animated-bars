@@ -458,7 +458,7 @@ local function New(spec)
         d.mover:SetPoint("BOTTOMRIGHT", d.front, i == 1 and "BOTTOMRIGHT" or "BOTTOMLEFT")
         d.mover:SetWidth(w)
         d.liquid = ns.Liquid.New(d.mover, math.max(w, 1) + ROOM, math.max(h, 1), ns.Themes.Get(DEFAULT_THEME),
-            ns.Core.db)
+            ns.Bars.EffectOptions(spec.bar)) -- the bar's own effects, where it has its own
         if spec.mask then
             local free = {}
             for _, mote in ipairs(d.liquid.motes) do free[mote.tex] = true end
@@ -571,13 +571,13 @@ end
 -- Reads the DoTs and sets the bars' ranges and goals. False when there is nothing to show.
 local function Refresh(m)
     local spec = m.spec
-    local landed = m.landed
-    m.landed = false
+    local landed, calm = m.landed, m.calm
+    m.landed, m.calm = false, nil
     if not spec.visible() then return false end
     local max, health, total, list = spec.source()
     if not list or #list == 0 or total <= 0 then return false end
     -- Dots.lua says "applied" only for the target; on a nameplate a DoT landing shows as more damage to come.
-    if spec.plate and not m.fresh and total > m.value + 0.5 then landed = true end
+    if spec.plate and not m.fresh and not calm and total > m.value + 0.5 then landed = true end
 
     local groups = Groups(list)
     local running = 0
@@ -589,8 +589,8 @@ local function Refresh(m)
                 d.themeKey = key
                 d.liquid:SetTheme(DotTheme(key, spec.plate))
             end
-            -- A tick (less to come) ripples its liquid.
-            if not landed and running + g.damage < d.value - 0.5 and d.pool:IsShown() then
+            -- A tick (less to come) ripples its liquid; not the ticks of a fade, all at once when it shows.
+            if not landed and not calm and running + g.damage < d.value - 0.5 and d.pool:IsShown() then
                 d.liquid:Splash(SPLASH_TICK, m.width - 8, m.width)
                 if key == "plague" then EmitSkulls(m, d, SKULL_TICK) end
             end
@@ -646,8 +646,16 @@ local function Refresh(m)
 end
 
 local function Update(m, dt)
-    local visible = m.bar:IsVisible() -- a secret answer is taken as visible
-    if not Secret(visible) and not visible then return Hide(m) end
+    local sight = ns.Bars.Sight(m.bar) -- a secret answer is taken as shown
+    if sight == "hidden" then return Hide(m) end
+    -- Faded out by another addon (an idle fade, or a unit frame addon's hidden game frame), and perhaps soon back: paused
+    -- as it is, not hidden, which would grow the DoTs in again from nothing on every fade-in. Nothing is saved up for
+    -- its return: no landing, and no ticks, all at once when it shows.
+    if sight == "faded" then
+        m.landed, m.calm = false, true
+        m.since = REFRESH_EVERY -- read again the moment it shows
+        return
+    end
     m.feed = m.feed + dt
     if m.feed >= FEED_EVERY then
         m.feed = 0
@@ -1031,7 +1039,7 @@ end
 
 function Marker.Debug()
     if stepAside then return { "DoT marker: off while DoesItDie is loaded" } end
-    if not ns.Core.Get("dots") then return { "DoT marker: off (DoT Marker in the settings)", PlateDebug() } end
+    if not ns.Core.Get("dots") then return { "DoT marker: off (DoT Marker in the editor)", PlateDebug() } end
     if not target then return { "DoT marker: the target frame's health bar was not found", PlateDebug() } end
     local shown = {}
     for _, d in ipairs(target.liquids) do

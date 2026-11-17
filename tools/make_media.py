@@ -566,6 +566,12 @@ def make_plate_mask(path, w=256, h=32):
     write_tga(path, w, h, lambda x, y: (1, 1, 1, coverage(x, y)))
 
 
+def make_square(path, size=8):
+    """Opaque white, for a mask that cuts a liquid to a plain rectangle: a raid frame's bar, where a clip frame would
+    leave the liquid under the frame's own background (Bars.lua, Bars.raid)."""
+    write_tga(path, size, size, lambda x, y: (1, 1, 1, 1))
+
+
 def make_plate_shade(path, w=256, h=32):
     """Black over a nameplate's bar, as opaque as the game's fill is dark there: nothing in the middle, darkening
     toward the top and bottom edges as the fill fades (PLATE_FADE), so the liquids under it take the game's shading
@@ -678,6 +684,7 @@ def main():
     make_skull(os.path.join(out, "Skull.tga"))
     make_plate_mask(os.path.join(out, "PlateMask.tga"))
     make_plate_shade(os.path.join(out, "PlateShade.tga"))
+    make_square(os.path.join(out, "Square.tga"))
     print("wrote", sorted(os.listdir(out)))
 
 

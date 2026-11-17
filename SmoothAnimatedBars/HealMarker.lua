@@ -169,7 +169,7 @@ local function New(spec)
         d.mover:SetPoint("BOTTOMRIGHT", d.fill, "BOTTOMRIGHT")
         d.mover:SetWidth(w)
         d.liquid = ns.Liquid.New(d.mover, math.max(w, 1) + ROOM, math.max(h, 1), ns.Themes.Get(DEFAULT_THEME),
-            ns.Core.db)
+            ns.Bars.EffectOptions(bar)) -- the bar's own effects, where it has its own
         if spec.mask then
             local free = {}
             for _, mote in ipairs(d.liquid.motes) do free[mote.tex] = true end
@@ -363,8 +363,8 @@ end
 -- Reads the heals and sets the bars' ranges and goals. False when there is nothing to show.
 local function Refresh(m)
     local spec = m.spec
-    local landed, burst = m.landed, m.burst
-    m.landed, m.burst = false, nil
+    local landed, burst, calm = m.landed, m.burst, m.calm
+    m.landed, m.burst, m.calm = false, nil, nil
     if not spec.visible() then return false end
     local max, total, list = spec.source()
     local groups = (list and #list > 0 and total > 0) and Groups(list) or {}
@@ -387,8 +387,8 @@ local function Refresh(m)
                 d.themeKey = key
                 d.liquid:SetTheme(HealTheme(key))
             end
-            -- A tick (less to come) ripples its liquid.
-            if not landed and running + g.heal < d.value - 0.5 and d.pool:IsShown() then
+            -- A tick (less to come) ripples its liquid; not the ticks of a fade, all at once when it shows.
+            if not landed and not calm and running + g.heal < d.value - 0.5 and d.pool:IsShown() then
                 d.liquid:Splash(SPLASH_TICK, m.width - 8, m.width)
             end
             running = running + g.heal
@@ -464,8 +464,21 @@ local function Refresh(m)
 end
 
 local function Update(m, dt)
-    local visible = m.bar:IsVisible() -- a secret answer is taken as visible
-    if not Secret(visible) and not visible then return Hide(m) end
+    local sight = ns.Bars.Sight(m.bar) -- a secret answer is taken as shown
+    if sight == "hidden" then return Hide(m) end
+    -- Faded out by another addon (an idle fade, or a unit frame addon's hidden game frame), and perhaps soon back: paused
+    -- as it is, not hidden, which would forget a meal's release and play it again on every fade-in. Nothing is saved up
+    -- for its return: no landing or burst, no ticks, and a buff reached meanwhile counts as let go.
+    if sight == "faded" then
+        m.landed, m.burst, m.calm = false, nil, true
+        m.since = REFRESH_EVERY -- read again the moment it shows
+        local progress, startedAt = ns.Heals.Charge(m.name)
+        if progress and progress >= 1 and not (m.released and m.chargeFor == startedAt) then
+            m.chargeFor, m.released = startedAt, true
+            ns.Bars.Sate(m.bar)
+        end
+        return
+    end
     m.feed = m.feed + dt
     if m.feed >= FEED_EVERY then
         m.feed = 0
@@ -523,6 +536,7 @@ local mana    -- the one on its mana bar (drink)
 local extra = {} -- the Personal Resource Display's, by bar: its health, its power bar and the mana under a form; and
                  -- other addons' player bars
 local retired = {} -- other addons' markers replaced when their bar was added again as the other kind, never shown again
+local previews = {} -- the preview frames' (Preview.lua), fed their example heals
 local MANA = Enum and Enum.PowerType and Enum.PowerType.Mana or 0
 local driver
 
@@ -530,6 +544,7 @@ local function Each(fn)
     if player then fn(player) end
     if mana then fn(mana) end
     for _, m in pairs(extra) do fn(m) end
+    for _, m in ipairs(previews) do fn(m) end
 end
 
 local function PlayerAlive()
@@ -667,12 +682,29 @@ function HealMarker.Apply()
         m.live = live
         if not live then Hide(m) end
     end)
-    local any = live and (player or mana or next(extra)) and true or false
+    local any = live and (player or mana or next(extra) or previews[1]) and true or false
     if any and not driver then
         driver = CreateFrame("Frame")
         driver:SetScript("OnUpdate", OnUpdate)
     end
     if driver then driver:SetShown(any) end
+end
+
+-- A marker on a preview frame's health bar (Preview.lua, the editor's and the setup's), shown while the bar shows and
+-- the heals setting is on. source: function() returning the heals still to come as Heals.Player does (total, list of
+-- { school, heal }), in the bar's own range. Named "preview", so the player's real heals and meals never reach it.
+function HealMarker.Preview(bar, source)
+    local m = BuildOn(bar, "preview", source, function() return bar:IsVisible() end, "preview")
+    if not m then return nil end
+    previews[#previews + 1] = m
+    HealMarker.Apply()
+    return m
+end
+
+-- A heal just started on a preview's bar: its liquids and the health's splash, as a real one does.
+function HealMarker.Landed(m)
+    m.landed = true
+    m.since = REFRESH_EVERY
 end
 
 -- After an effect toggle: clear what was just switched off.
@@ -700,10 +732,11 @@ end
 
 -- For /sab heals.
 function HealMarker.Debug()
-    if not ns.Core.Get("heals") then return { "Heal marker: off (Heal Marker in the settings)" } end
+    if not ns.Core.Get("heals") then return { "Heal marker: off (Heal Marker in the editor)" } end
     local out = {}
     if not player then out[1] = "Heal marker: the player frame's health bar was not found" end
     Each(function(m)
+        if m.name == "preview" then return end
         local shown = {}
         for _, d in ipairs(m.liquids) do
             if d.pool:IsShown() then shown[#shown + 1] = d.themeKey or DEFAULT_THEME end

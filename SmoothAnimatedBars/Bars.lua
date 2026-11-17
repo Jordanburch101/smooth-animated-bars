@@ -24,6 +24,49 @@ local min = math.min
 local Bars = {}
 ns.Bars = Bars
 
+-- The raid-style frames' bars (the raidHealth and raidPower settings) and /sab raid. Their functions are fields here, not file locals:
+-- the file is at Lua's limit of 200.
+--
+-- Raid frames, raid-style party frames and their pets and main tanks are all CompactUnitFrameTemplate buttons
+-- (Blizzard_UnitFrame/Shared/CompactUnitFrame.xml, forever branch): CompactPartyFrameMember1..5,
+-- CompactRaidGroup1..8Member1..5 (a raid's groups kept apart in Edit Mode) and CompactRaidFrame1..N (groups combined,
+-- made on demand and handed from unit to unit as the raid and its sort change). The health bar (healthBar) is a flat
+-- 96x42 at Edit Mode's default size, no mask, at its button's level, with the name, health text, role icon, aggro
+-- border, heal prediction and absorbs drawn as textures on the button at that same level. Seen in Edit Mode's preview
+-- with /sab raid test: the client sorts the textures of both frames at that level by draw layer together. A block in
+-- the liquid's own layer (ARTWORK 3) hid the role icons, one level up it hid the names too, and in the fill's layer
+-- (BORDER 1) everything of the game's showed over it. So the liquid there is drawn in BORDER (Liquid:SetLayerMap),
+-- above the fill it replaces (BORDER 0, transparent while the liquid shows) and under the heal prediction (BORDER 5).
+-- Text drew over the ARTWORK block too: text at a level seems to come after its textures.
+Bars.raid = {
+    blocks = {},                     -- /sab raid test's blocks, by health bar
+    built = {},                      -- health bar -> true, once it has its liquid
+    LOOK_EVERY = 1,                  -- seconds between looks for raid frames the game has made since
+    lookIn = 0,
+    -- The liquid's ARTWORK 3..7 to BORDER -4..0, its bubbles and motes (OVERLAY 3, 4) to BORDER 2, 3; the tint of a
+    -- secret colour is BORDER 4. All under the game's heal prediction and shields (BORDER 5, 6).
+    LAYERS = { ARTWORK = { "BORDER", -7 }, OVERLAY = { "BORDER", -1 } },
+    TINT_LAYER = { "BORDER", 4 },
+    -- A clip frame is drawn outside that sorting: seen in game in a party with raid-style frames, the liquid inside one
+    -- lay under the button's dark background (BACKGROUND), the bars black at 100%. So it is cut to the bar by a plain
+    -- square mask (Square.tga, make_media.py), motes too, and the clip frame does not clip.
+    MASK = "Interface\\AddOns\\SmoothAnimatedBars\\Media\\Square",
+    -- How often a raid liquid updates, by how many show (counted each frame in OnUpdate): { up to this many, fps, at most
+    -- one stir in this many seconds }. At the party's 20 fps a raid-style party looked steppier than the player frame
+    -- beside it (seen in game), so up to ten (a party's health and power) take the player's idle rate and stir as often;
+    -- a raid's dozens keep to the party's rate and below, as their cost grows with their number.
+    RATES = { { 10, 30, 0.4 }, { 20, 20, 1.2 }, { math.huge, 15, 1.2 } },
+    shown = 0,                       -- raid liquids showing, as last counted
+}
+
+-- The update rate and stir interval for raid liquids now.
+function Bars.raid.Rate()
+    local n = Bars.raid.shown
+    for _, rate in ipairs(Bars.raid.RATES) do
+        if n <= rate[1] then return rate[2], rate[3] end
+    end
+end
+
 local IDLE_FPS = 30
 local FEED_EVERY = 0.05  -- seconds between handing the game bar's value to our hidden bar
 local STIR_EVERY = 0.4   -- at most one stir this often per bar
@@ -167,22 +210,22 @@ local PRD_TEXTS = { "TextString", "LeftText", "RightText" }
 -- The breath bar: the game's mirror timers, a small pool of bars (MirrorTimerContainer.mirrorTimers on the retail
 -- branch, MirrorTimer1..3 with MirrorTimerNStatusBar on the classic one) that each show whichever timer the game hands
 -- them: BREATH, EXHAUSTION (fatigue) or FEIGNDEATH, named in the timer frame's .timer. Each frame gets a spot, and its
--- liquid shows only while that frame shows breath; the others keep the game's own fill (Mirror.Away). In one table, as
--- the file is near Lua's limit of 200 locals.
-local Mirror = { TIMER = "BREATH", COUNT = 3, COLOR = { 0, 0.5, 1 } }
+-- liquid shows only while that frame shows breath; the others keep the game's own fill (Bars.mirror.Away). On Bars, as
+-- the file is at Lua's limit of 200 locals.
+Bars.mirror = { TIMER = "BREATH", COUNT = 3, COLOR = { 0, 0.5, 1 } }
 
-function Mirror.IsBar(bar)
+function Bars.mirror.IsBar(bar)
     return type(bar) == "table" and bar.GetStatusBarTexture and bar.GetValue and true or false
 end
 
 -- The i-th mirror timer frame, or nil.
-function Mirror.Frame(i)
+function Bars.mirror.Frame(i)
     local c = rawget(_G, "MirrorTimerContainer")
     local f = Path(c, "mirrorTimers", i)
     if type(f) ~= "table" and type(c) == "table" and c.GetChildren then
         local n = 0
         for _, child in ipairs({ c:GetChildren() }) do
-            if Mirror.IsBar(Path(child, "StatusBar")) then
+            if Bars.mirror.IsBar(Path(child, "StatusBar")) then
                 n = n + 1
                 if n == i then f = child break end
             end
@@ -193,31 +236,31 @@ function Mirror.Frame(i)
 end
 
 -- Its status bar: .StatusBar, or the classic named one.
-function Mirror.Bar(i)
-    local f = Mirror.Frame(i)
+function Bars.mirror.Bar(i)
+    local f = Bars.mirror.Frame(i)
     if not f then return nil end
     local bar = Path(f, "StatusBar")
-    if not Mirror.IsBar(bar) then
+    if not Bars.mirror.IsBar(bar) then
         local name = f.GetName and f:GetName()
         bar = name and rawget(_G, name .. "StatusBar")
     end
-    return Mirror.IsBar(bar) and bar or nil
+    return Bars.mirror.IsBar(bar) and bar or nil
 end
 
 -- Whether a mirror bar shows some other timer than breath now. A frame that does not say is taken as breath.
-function Mirror.Away(b)
+function Bars.mirror.Away(b)
     local f = b.bar:GetParent()
     local t = type(f) == "table" and f.timer
     if type(t) ~= "string" or Secret(t) then return false end
-    return t ~= Mirror.TIMER
+    return t ~= Bars.mirror.TIMER
 end
 
 -- The game's breath colour: MirrorTimerColors where the client has it, else its blue. The retail branch draws the
 -- timers with coloured atlases instead, and leaves the bar's colour white.
-function Mirror.Color()
-    local c = type(MirrorTimerColors) == "table" and MirrorTimerColors[Mirror.TIMER]
+function Bars.mirror.Color()
+    local c = type(MirrorTimerColors) == "table" and MirrorTimerColors[Bars.mirror.TIMER]
     if type(c) == "table" and type(c.r) == "number" and not Secret(c.r, c.g, c.b) then return { c.r, c.g, c.b } end
-    return Mirror.COLOR
+    return Bars.mirror.COLOR
 end
 
 -- UnitFrame_Initialize stores each unit frame's bars as .healthbar and .manabar; the paths are where
@@ -291,11 +334,11 @@ local SPOTS = {
         return Path(rawget(_G, "PersonalResourceDisplayFrame"), "AlternatePowerBar")
     end },
 }
--- The breath bar, one spot per mirror timer frame (Mirror above). bare: no mask and no spill, so the liquid stays
+-- The breath bar, one spot per mirror timer frame (Bars.mirror above). bare: no mask and no spill, so the liquid stays
 -- inside the bar's rectangle under its border.
-for i = 1, Mirror.COUNT do
+for i = 1, Bars.mirror.COUNT do
     SPOTS[#SPOTS + 1] = { key = "breath", frame = "breath", optional = true, bare = true, mirror = i, unit = "player",
-                          kind = "breath", label = "breath bar " .. i, find = function() return Mirror.Bar(i) end }
+                          kind = "breath", label = "breath bar " .. i, find = function() return Bars.mirror.Bar(i) end }
 end
 
 -- The party frames (Blizzard_UnitFrame/Shared/PartyFrame.lua): a pool of four member buttons, named MemberFrame1..4 by
@@ -350,6 +393,30 @@ local External = { LOOK_EVERY = 0.1, KINDS = { health = true, power = true }, un
                    -- each is a liquid of its own, and a raid frame's forty members would cost more than the game's
                    -- whole frame. The highest level above the bar an addon can ask for.
                    MAX_GROUP = 10, MAX_LEVEL = 20 }
+
+-- The effect settings a bar's liquids read (b.opts, its markers' liquids too): the bar's own where it has any
+-- (Core.Effect), else the global ones. A bar takes the overrides of its on/off setting's key, the friendly nameplates'
+-- for a plate showing a friend (one bar shows mob after mob), none for another addon's bar. Plain values, read many
+-- times an update, so filled again whenever an effect changes (Bars.ApplyOptions) and when a plate changes side.
+-- Fields, not locals: this file's main chunk is at Lua's limit of 200 locals (seen in game: "main function has more
+-- than 200 local variables").
+function Bars.FillEffects(b)
+    local key
+    if b.spot.external and not b.spot.adapter then
+        key = nil
+    elseif b.spot.plate and not b.spot.preview then
+        key = b.side == "friend" and "plateFriendly" or "plateHealth"
+    else
+        key = b.spot.key
+    end
+    b.opts = b.opts or {}
+    for _, effect in ipairs(ns.Core.EFFECTS) do b.opts[effect] = ns.Core.Effect(key, effect) and true or false end
+    return b.opts
+end
+
+-- Each bar's state, by its bar (StateFor): the game's, the previews', the plates' and other addons'. States are never
+-- dropped. A bar given a second state answers with its newest.
+Bars.stateOf = {}
 
 -- Every bar state, the game's, the previews' and the nameplates'.
 local function Each(fn)
@@ -425,7 +492,15 @@ end
 -- The bar's own colour: health green (a flat bar's its own, unless unflat), or the game's colour for the unit's power
 -- type (a preview bar, and the Personal Resource Display's mana under a druid's form, name their power type).
 GameColor = function(b, unflat)
-    if b.kind == "breath" then return Mirror.Color(), "BREATH" end
+    if b.kind == "breath" then return Bars.mirror.Color(), "BREATH" end
+    -- A raid frame's power takes its power type's colour, as the game's does (CompactUnitFrame_UpdatePowerColor).
+    if (b.spot.raid or b.spot.raidLook) and b.kind == "health" and not unflat then return Bars.raid.Color(b), "HEALTH" end
+    -- Another addon's bar with Your Colours on Their Bars (externalColors): Game Colour is the game's, as on its own
+    -- frames, not the bar's (FlareUI's player bar in its class colour stayed tan under Game Colour, seen in game).
+    if b.spot.external and not unflat and ns.Core.Get("externalColors") then
+        b.plateSecret = nil
+        return GameColor(b, true)
+    end
     if (b.spot.flat or b.spot.external) and not unflat then return PlateColor(b), "HEALTH" end
     if b.kind == "health" then return HEALTH_COLOR, "HEALTH" end
     local index, token
@@ -440,6 +515,48 @@ GameColor = function(b, unflat)
     local c = PowerBarColor and (PowerBarColor[token] or PowerBarColor[index])
     if c and c.r then return { c.r, c.g, c.b }, token end
     return POWER_COLORS[token] or POWER_COLORS.MANA, token or "MANA"
+end
+
+-- A colour from a CVar's hex string, "AARRGGBB" as the game's colour swatch writes raidFramesHealthBarColor.
+function Bars.raid.Hex(s)
+    if type(s) ~= "string" or Secret(s) then return nil end
+    local r, g, bl = s:match("^%x%x(%x%x)(%x%x)(%x%x)$")
+    if not r then r, g, bl = s:match("^(%x%x)(%x%x)(%x%x)$") end
+    if not r then return nil end
+    return { tonumber(r, 16) / 255, tonumber(g, 16) / 255, tonumber(bl, 16) / 255 }
+end
+
+-- The colour the game gives a raid frame's health (CompactUnitFrame_UpdateHealthColor), worked out from its settings, as
+-- the bar's own colour is secret (seen with /sab raid, out of combat too): a player's class with raidFramesDisplayClassColor
+-- on, else raidFramesHealthBarColor. Where the class is kept secret, the bar's colour goes onto a tint over a white
+-- liquid (b.plateSecret, as on battleground plates). The game's grey for an offline member is its own bar (SetAway).
+function Bars.raid.Color(b)
+    b.plateSecret = nil
+    local getCVar = (C_CVar and C_CVar.GetCVar) or rawget(_G, "GetCVar")
+    local okClass, byClass = pcall(getCVar, "raidFramesDisplayClassColor")
+    if okClass and byClass == "1" then
+        -- The editor's example raid (Preview.CreateRaid, spot.raidLook): each member's class is its own.
+        if b.spot.preview then
+            local c = b.spot.class and ns.Themes.UnitColor(nil, true, b.spot.class)
+            if c then return c end
+        end
+        local ok, isPlayer = pcall(UnitIsPlayer, b.unit)
+        if not b.spot.preview and ok and not Secret(isPlayer) and isPlayer then
+            local c = ns.Themes.UnitColor(b.unit)
+            if c then return c end
+        end
+    else
+        local ok, hex = pcall(getCVar, "raidFramesHealthBarColor")
+        local c = ok and Bars.raid.Hex(hex)
+        if c then return c end
+    end
+    local ok, r, g, bl = pcall(b.bar.GetStatusBarColor, b.bar)
+    if ok and Secret(r, g, bl) then
+        b.plateSecret = { r, g, bl }
+        return WHITE
+    end
+    if ok and type(r) == "number" then return { r, g, bl } end
+    return HEALTH_COLOR
 end
 
 -- A theme's movement scaled down for bars a dozen pixels high.
@@ -524,10 +641,14 @@ end
 -- A bar's colour choice: its frame's, which can be to follow the player's (target, pet) or the target's (focus,
 -- targets of target). A preview's bars are the player's or the target's.
 local function ChoiceFor(b)
-    -- Another addon's bar keeps the colour that addon gives it, unless it asked for one of ours (AddBar's theme).
+    -- Another addon's bar keeps the colour that addon gives it, unless it asked for one of ours (AddBar's theme) or the
+    -- player wants ours on every such bar (externalColors): then the colour picked for the frame it stands for, where
+    -- Game Colour is the game's (GameColor).
     local ext = b.spot.external
     if ext then
-        if ext.theme == "settings" then return ns.Core.ColorChoice(b.spot.frame, b.kind) end
+        if ext.theme == "settings" or ns.Core.Get("externalColors") then
+            return ns.Core.ColorChoice(b.spot.frame, b.kind)
+        end
         return ext.theme or "game"
     end
     return ns.Core.ColorChoice(b.spot.frame or (b.unit == "target" and "target" or "player"), b.kind)
@@ -539,7 +660,7 @@ local function ApplyColor(b, force)
     -- Power colours change with the power type only when the bar takes the game's colour, and Class Color with the
     -- unit's colour, falling back on the game's. A nameplate's own colour changes with the unit (tapped, hostile).
     local key = choice
-    if b.spot.flat or b.spot.external then
+    if b.spot.flat or b.spot.external or b.spot.raid or b.spot.raidLook then
         token = b.plateSecret and "secret" or string.format("%.3f,%.3f,%.3f", own[1], own[2], own[3])
     end
     if choice == "game" then
@@ -585,11 +706,24 @@ local function AlphaTo(region, alpha)
     if Secret(now) or now ~= alpha then region:SetAlpha(alpha) end
 end
 
--- Whether a region is visible; IsVisible can answer with a secret (SecretReturnsForAspect Shown), taken as visible.
-local function Visible(region)
+-- How a bar can be seen: "shown", "hidden" (IsVisible says no) or "faded" (shown, but its effective alpha under 0.01).
+-- It is the main chunk's 200th local: the file is now at Lua's limit, with no room for another. Addons hide frames with SetAlpha(0) too (Frames Forever hides the player frame so, and "immersion"
+-- addons fade idle frames out), which IsVisible does not see, and a liquid there would run for nothing. IsVisible and
+-- GetEffectiveAlpha can answer with secrets (SecretReturnsForAspect Shown, Alpha), taken as shown. GetEffectiveAlpha
+-- is under pcall: Forever's docs mark it RequiresScriptObjectAlphaAccess, which may refuse some frames.
+local function Sight(region)
     local v = region:IsVisible()
-    if Secret(v) then return true end
-    return v and true or false
+    if Secret(v) then return "shown" end
+    if not v then return "hidden" end
+    local ok, a = pcall(region.GetEffectiveAlpha, region)
+    if not ok or Secret(a) or type(a) ~= "number" then return "shown" end
+    return a < 0.01 and "faded" or "shown"
+end
+
+-- Whether one of our bars can be seen, as UpdateBar found it this frame (b.sight): asked again on every event and by
+-- the markers, it would cost the same widget calls again.
+local function Seen(b)
+    return (b.sight or Sight(b.bar)) == "shown"
 end
 
 -- What the game draws in the bar that the liquid replaces: the fill, and on the player's health bar
@@ -610,12 +744,13 @@ local FuryOff -- the rage bar's fury going (below)
 local function SetLive(b, live)
     if live == b.live then return end
     b.live = live
+    b.sight = nil -- found again on its next update, not kept from before
     b.clip:SetShown(live and not b.away)
     if b.texts then b.texts.frame:SetShown(live) end
     if b.mirrorTexts then b.mirrorTexts.frame:SetShown(live and not b.away) end
     if b.breathBubbles then
         b.breathBubbles.frame:SetShown(live and not b.away)
-        if not live then Mirror.ClearBubbles(b) end
+        if not live then Bars.mirror.ClearBubbles(b) end
     end
     if b.shadeFrame then b.shadeFrame:SetShown(live) end
     HideGameFill(b.bar, (live and not b.away) and 0 or 1, b.spot.external)
@@ -893,7 +1028,7 @@ end
 -- liquid at the bar's level: the game's fill hidden and nothing seen, the bar looking empty. So its liquid goes a level
 -- above the bar, and every text on the bar or its timer frame (the "Breath" label) is copied a level above that, as
 -- the plates' are, drawn exactly over the game's own.
-function Mirror.Raise(b)
+function Bars.mirror.Raise(b)
     local ok, level = pcall(b.bar.GetFrameLevel, b.bar)
     if not ok or type(level) ~= "number" or Secret(level) then return end
     if level == b.raisedOn then return end
@@ -909,18 +1044,19 @@ end
 -- they fly free of the bar's edges, and are placed from the hidden bar's fill edge: the front, which the client moves,
 -- so the addon need not know how full the bar is. Whether breath is running out: the bar's value going down where it
 -- can be read, else the breath timer's scale (GetMirrorTimerInfo: below 0 while draining) and not paused.
-Mirror.BUBBLE = { count = 20, rate = 7, hold = 0.3, rise = { 14, 28 }, life = { 1.3, 2.4 }, size = { 3, 6.5 },
-                  alpha = 0.8, pop = 0.15, white = 0.55, texture = "Interface\\AddOns\\SmoothAnimatedBars\\Media\\Bubble" }
+Bars.mirror.BUBBLE = { count = 20, rate = 7, hold = 0.3, rise = { 14, 28 }, life = { 1.3, 2.4 }, size = { 3, 6.5 },
+                        alpha = 0.8, pop = 0.15, white = 0.55,
+                        texture = "Interface\\AddOns\\SmoothAnimatedBars\\Media\\Bubble" }
 
-function Mirror.Rand(r) return r[1] + (r[2] - r[1]) * math.random() end
+function Bars.mirror.Rand(r) return r[1] + (r[2] - r[1]) * math.random() end
 
-function Mirror.NewBubbles(b)
+function Bars.mirror.NewBubbles(b)
     local frame = CreateFrame("Frame", nil, b.bar)
     frame:SetAllPoints(b.bar)
     local pool = {}
-    for i = 1, Mirror.BUBBLE.count do
+    for i = 1, Bars.mirror.BUBBLE.count do
         local t = frame:CreateTexture(nil, "OVERLAY")
-        t:SetTexture(Mirror.BUBBLE.texture)
+        t:SetTexture(Bars.mirror.BUBBLE.texture)
         t:Hide()
         pool[i] = { tex = t, active = false }
     end
@@ -929,11 +1065,11 @@ function Mirror.NewBubbles(b)
 end
 
 -- The breath timer's own say: draining (scale below 0) and not paused. False when the client will not tell.
-function Mirror.TimerDraining()
+function Bars.mirror.TimerDraining()
     if not GetMirrorTimerInfo then return false end
-    for i = 1, Mirror.COUNT do
+    for i = 1, Bars.mirror.COUNT do
         local ok, timer, _, _, scale, paused = pcall(GetMirrorTimerInfo, i)
-        if ok and type(timer) == "string" and not Secret(timer, scale, paused) and timer == Mirror.TIMER then
+        if ok and type(timer) == "string" and not Secret(timer, scale, paused) and timer == Bars.mirror.TIMER then
             return type(scale) == "number" and scale < 0 and (paused == nil or paused == false or paused == 0)
         end
     end
@@ -941,30 +1077,30 @@ function Mirror.TimerDraining()
 end
 
 -- Whether breath is running out now, held a moment so a frame with no change between two reads does not cut it off.
-function Mirror.Draining(b, dt)
+function Bars.mirror.Draining(b, dt)
     local bb = b.breathBubbles
     local ok, v = pcall(b.bar.GetValue, b.bar)
     if ok and type(v) == "number" and not Secret(v) then
-        if bb.last and v < bb.last then bb.hold = Mirror.BUBBLE.hold end
+        if bb.last and v < bb.last then bb.hold = Bars.mirror.BUBBLE.hold end
         bb.last = v
     else
         bb.last = nil
-        if Mirror.TimerDraining() then bb.hold = Mirror.BUBBLE.hold end
+        if Bars.mirror.TimerDraining() then bb.hold = Bars.mirror.BUBBLE.hold end
     end
     bb.hold = bb.hold - dt
     return bb.hold > 0
 end
 
 -- One bubble from the front: somewhere up its height, just behind it, in the liquid's own tip colour paled.
-function Mirror.Emit(b, bb)
-    local B = Mirror.BUBBLE
+function Bars.mirror.Emit(b, bb)
+    local B, Rand = Bars.mirror.BUBBLE, Bars.mirror.Rand
     for _, p in ipairs(bb.pool) do
         if not p.active then
             local h = b.height
-            p.x, p.y = Mirror.Rand({ -4, 1 }), Mirror.Rand({ -h / 2 + 2, h / 2 - 2 })
-            p.vx, p.vy = Mirror.Rand({ -5, 3 }), Mirror.Rand(B.rise)
-            p.life, p.size, p.age = Mirror.Rand(B.life), Mirror.Rand(B.size), 0
-            p.phase, p.freq, p.sway = Mirror.Rand({ 0, 6.28 }), Mirror.Rand({ 2.5, 5 }), Mirror.Rand({ 1, 2.5 })
+            p.x, p.y = Rand({ -4, 1 }), Rand({ -h / 2 + 2, h / 2 - 2 })
+            p.vx, p.vy = Rand({ -5, 3 }), Rand(B.rise)
+            p.life, p.size, p.age = Rand(B.life), Rand(B.size), 0
+            p.phase, p.freq, p.sway = Rand({ 0, 6.28 }), Rand({ 2.5, 5 }), Rand({ 1, 2.5 })
             local c = (b.liquid.theme and b.liquid.theme.tip) or WHITE
             local k = B.white
             p.tex:SetVertexColor(c[1] + (1 - c[1]) * k, c[2] + (1 - c[2]) * k, c[3] + (1 - c[3]) * k)
@@ -975,7 +1111,7 @@ function Mirror.Emit(b, bb)
     end
 end
 
-function Mirror.ClearBubbles(b)
+function Bars.mirror.ClearBubbles(b)
     local bb = b.breathBubbles
     if not bb then return end
     bb.acc, bb.hold, bb.last = 0, 0, nil
@@ -989,16 +1125,16 @@ end
 
 -- Each frame: new bubbles while breath runs out (with the Bubbles effect and the breath bubbles setting on), and the
 -- ones out there rising, swaying, growing a little and popping at the end of their life.
-function Mirror.UpdateBubbles(b, dt)
+function Bars.mirror.UpdateBubbles(b, dt)
     local bb = b.breathBubbles
     if not bb then return end
-    local B = Mirror.BUBBLE
+    local B = Bars.mirror.BUBBLE
     local on = ns.Core.Get("breathBubbles") and ns.Core.Get("bubbles")
-    if on and Mirror.Draining(b, dt) then
+    if on and Bars.mirror.Draining(b, dt) then
         bb.acc = bb.acc + dt * B.rate
         while bb.acc >= 1 do
             bb.acc = bb.acc - 1
-            Mirror.Emit(b, bb)
+            Bars.mirror.Emit(b, bb)
         end
     else
         bb.acc = 0
@@ -1031,7 +1167,7 @@ function Mirror.UpdateBubbles(b, dt)
     end
 end
 
-function Mirror.Setup(b)
+function Bars.mirror.Setup(b)
     if not b.mirrorTexts then
         local theirs = {}
         for _, owner in ipairs({ b.bar, b.bar:GetParent() }) do
@@ -1051,13 +1187,13 @@ function Mirror.Setup(b)
         frame:SetShown(b.live and not b.away)
         b.mirrorTexts = t
     end
-    if not b.breathBubbles then Mirror.NewBubbles(b) end
+    if not b.breathBubbles then Bars.mirror.NewBubbles(b) end
     b.raisedOn = nil
-    Mirror.Raise(b)
-    Mirror.SyncTexts(b)
+    Bars.mirror.Raise(b)
+    Bars.mirror.SyncTexts(b)
 end
 
-function Mirror.SyncTexts(b)
+function Bars.mirror.SyncTexts(b)
     local t = b.mirrorTexts
     if not t then return end
     for i, theirs in ipairs(t.theirs) do
@@ -1089,10 +1225,13 @@ local function NewBar(spot, bar)
     -- A nameplate's bar has no mask, so the clip frame is the bar itself: it cuts the waves at the bar's end, and the
     -- motes too, which would only clutter a crowd of plates. The Personal Resource Display is one frame, the player's
     -- own, so its motes fly free as on the unit frames; its plate mask cuts the waves.
-    local spill = (spot.plate or spot.bare or (spot.external and not spot.external.spill)) and 0 or SPILL
+    -- A raid frame's neighbours touch it, so its motes stay inside its bar too.
+    -- A game bar another addon has taken the mask off (Bars.Unmask) is cut by its clip frame instead, so it keeps none.
+    local spill = (spot.plate or spot.bare or spot.raid or spot.raidLook or (spot.external and not spot.external.spill)
+                   or Bars.unmasked[bar]) and 0 or SPILL
     clip:SetPoint("TOPLEFT", bar, "TOPLEFT", 0, spill)
     clip:SetPoint("BOTTOMRIGHT", bar, "BOTTOMRIGHT", spill, -spill)
-    clip:SetClipsChildren(true)
+    clip:SetClipsChildren(not spot.raid) -- a raid bar's liquid is cut by a mask (Bars.raid.MASK)
     clip:Hide()
     b.clip = clip
 
@@ -1106,7 +1245,9 @@ local function NewBar(spot, bar)
     b.mover = mover
 
     b.spill = spill
-    b.liquid = ns.Liquid.New(mover, math.max(w, 1) + ROOM, math.max(h, 1), ns.Themes.Get(ns.Themes.default), ns.Core.db)
+    b.opts = Bars.FillEffects(b)
+    Bars.stateOf[bar] = b
+    b.liquid = ns.Liquid.New(mover, math.max(w, 1) + ROOM, math.max(h, 1), ns.Themes.Get(ns.Themes.default), b.opts)
     -- The bar's mask cuts the liquid to the bar. Motes are left free to fly off the front. A nameplate's bar has no
     -- mask, and its bronze rim has cut corners that a square liquid would cover, so the liquid there takes a mask of
     -- the addon's own in the shape of the game's fill (PlateMask.tga, make_media.py). So do the Personal Resource
@@ -1148,12 +1289,30 @@ local function NewBar(spot, bar)
         if b.mask then tint:AddMaskTexture(b.mask) end
         tint:Hide()
         b.plateTint = tint
-    else
+    elseif spot.raid then
+        -- A raid frame's bar: square, cut by a mask of ours (its clip frame does not clip), drawn under what the game puts over its fill (Bars.raid),
+        -- with a tint for a colour the game keeps secret, over the liquid and still under the heal prediction.
+        b.liquid:SetLayerMap(Bars.raid.LAYERS)
+        b.mask = clip:CreateMaskTexture()
+        b.mask:SetTexture(Bars.raid.MASK, "CLAMPTOBLACKADDITIVE", "CLAMPTOBLACKADDITIVE")
+        b.mask:SetAllPoints(bar)
+        local tint = mover:CreateTexture(nil, Bars.raid.TINT_LAYER[1], nil, Bars.raid.TINT_LAYER[2])
+        tint:SetColorTexture(1, 1, 1, 1)
+        tint:SetBlendMode("MOD")
+        tint:SetPoint("TOPLEFT", bar, "TOPLEFT")
+        tint:SetPoint("BOTTOMRIGHT", fill, "BOTTOMRIGHT", TINT_PAST, 0) -- a little past the front, as on plates
+        tint:AddMaskTexture(b.mask)
+        tint:Hide()
+        b.plateTint = tint
+    elseif not Bars.unmasked[bar] then
         b.mask = BarMask(bar, spot.kind)
     end
     if b.mask then
         local free = {}
-        for _, m in ipairs(b.liquid.motes) do free[m.tex] = true end
+        -- Motes fly free of the mask, but on a raid bar the mask is all that keeps them inside.
+        if not spot.raid then
+            for _, m in ipairs(b.liquid.motes) do free[m.tex] = true end
+        end
         for _, t in ipairs(b.liquid.textures) do
             if not free[t] then t:AddMaskTexture(b.mask) end
         end
@@ -1166,7 +1325,9 @@ end
 local function Stir(b)
     local now = GetTime()
     if now < b.stirAt then return end
-    b.stirAt = now + ((b.spot.party or b.spot.slow) and PARTY_STIR_EVERY or STIR_EVERY)
+    local every = (b.spot.party or b.spot.slow or b.spot.calm) and PARTY_STIR_EVERY or STIR_EVERY
+    if b.spot.raid then every = select(2, Bars.raid.Rate()) end
+    b.stirAt = now + every
     b.liquid:Splash(STIR, b.width - 8, b.width)
 end
 
@@ -1338,7 +1499,7 @@ local function NewFury(b)
     f.ready:SetAlpha(0)
     -- As many slices as the bar's liquid, whose front it follows slice by slice.
     f.liquid = ns.Liquid.New(f.inner, math.max(b.width, 1) + ROOM, math.max(b.height, 1), FuryTheme(b.liquid.theme),
-        ns.Core.db, b.liquid.n)
+        b.opts, b.liquid.n)
     f.liquid:Follow(b.liquid, FURY_TREMBLE)
     -- The full bar's throb: a glow on the front at the bar's end and the whole liquid lighting up with it.
     f.wash = f.ready:CreateTexture(nil, "ARTWORK", nil, 6)
@@ -1565,32 +1726,57 @@ local function PartyFollow(b, dt)
     if not b.away then ApplyColor(b) end
 end
 
+-- A raid frame's bar follows the unit its button shows (displayedUnit: the vehicle in one, "player" on every frame of
+-- Edit Mode's preview), and the game's grey bar comes back while the member (the button's unit) is offline, as on
+-- the party frames.
+function Bars.raid.Follow(b, dt)
+    local frame = b.spot.member
+    local unit = frame.displayedUnit or frame.unit
+    if type(unit) == "string" and not Secret(unit) and unit ~= b.unit then
+        b.unit, b.checkIn = unit, 0
+        ApplyColor(b)
+        Feed(b, false)
+    end
+    b.checkIn = (b.checkIn or 0) - dt
+    if b.checkIn > 0 then return end
+    b.checkIn = PARTY_CHECK_EVERY
+    local who = frame.unit
+    if type(who) ~= "string" or Secret(who) then who = b.unit end
+    local ok, connected = pcall(UnitIsConnected, who)
+    SetAway(b, ok and not Secret(connected) and connected == false)
+    if not b.away then ApplyColor(b) end
+end
+
 local function UpdateBar(b, dt)
     local bar = b.bar
-    if not Visible(bar) then
+    b.sight = Sight(bar)
+    if b.sight ~= "shown" then
         b.unseen = true
         return
     end
     if b.spot.party then
         PartyFollow(b, dt)
         if b.away then return end
+    elseif b.spot.raid then
+        Bars.raid.Follow(b, dt)
+        if b.away then return end
     end
     -- A mirror timer frame showing fatigue or feign death rather than breath keeps the game's own fill.
     if b.spot.mirror then
-        SetAway(b, Mirror.Away(b))
+        SetAway(b, Bars.mirror.Away(b))
         if b.mirrorTexts then b.mirrorTexts.frame:SetShown(not b.away) end
         if b.breathBubbles then b.breathBubbles.frame:SetShown(not b.away) end
         if b.away then
-            Mirror.ClearBubbles(b)
+            Bars.mirror.ClearBubbles(b)
             return
         end
-        Mirror.UpdateBubbles(b, dt)
+        Bars.mirror.UpdateBubbles(b, dt)
         -- The game can move the bar's level; the text copies follow the game's text.
         b.textIn = (b.textIn or 0) - dt
         if b.textIn <= 0 then
             b.textIn = TEXT_EVERY
-            Mirror.Raise(b)
-            Mirror.SyncTexts(b)
+            Bars.mirror.Raise(b)
+            Bars.mirror.SyncTexts(b)
         end
     end
     -- The game can swap or reset its fill textures; keep them hidden under the liquid.
@@ -1659,8 +1845,11 @@ local function UpdateBar(b, dt)
         end
     end
     if b.spot.party or b.spot.slow then idleFps = PARTY_FPS end
+    -- An example in the editor that is not being edited (Preview.SetActive) idles slower still.
+    if b.spot.calm then idleFps = 10 end
+    if b.spot.raid then idleFps = Bars.raid.Rate() end
     if b.spot.plate then
-        idleFps = PLATE_IDLE_FPS
+        idleFps = b.spot.calm and 10 or PLATE_IDLE_FPS
     else
         Inflow(b, dt, w, h)
         BuildUp(b, dt, w, h)
@@ -1873,7 +2062,9 @@ local function AttachPlate(token)
         plates[bar] = b
     end
     b.token, b.unit, b.spot.unit, b.side = token, token, token, side
+    Bars.FillEffects(b) -- a friend's plate takes the friendly plates' effects
     b.spot.frame = side == "friend" and "friend" or "plate" -- whose colour setting it takes
+    if b.liquid then b.liquid:ApplyOptions() end -- the other side's effects, should they differ
     b.err, b.colorIn = nil, PLATE_COLOR_EVERY
     RaisePlate(b)
     b.unitFrame = unitFrame
@@ -1934,11 +2125,12 @@ local perf = { done = {}, groups = {} }
 
 -- The unit frames' share is split again by group (PerfGroup), each with its own count of liquids showing: the
 -- Personal Resource Display and the party frames apart from the rest.
-local PERF_GROUPS = { "prd", "party", "addon" }
+local PERF_GROUPS = { "prd", "party", "raid", "addon" }
 
 local function PerfGroup(b)
     if b.spot.external then return "addon" end
     if b.spot.party then return "party" end
+    if b.spot.raid then return "raid" end
     if b.spot.flat and not b.spot.plate and not b.spot.preview then return "prd" end
 end
 
@@ -1991,7 +2183,7 @@ local function RunBar(b, dt)
         if b.token then plateOf[b.token] = nil end
     end
     -- Counted for /sab perf only while it shows: a hidden frame's bar (no focus, no pet) costs next to nothing.
-    return ok and Visible(b.bar)
+    return ok and Seen(b)
 end
 
 -- An error in one bar is kept for /sab debug and reported once, and that bar goes back to the
@@ -2026,14 +2218,17 @@ local function OnUpdate(_, elapsed)
     if dt <= 0 then return end
     local clock = debugprofilestop
     local t0 = clock and clock()
-    local units, live = 0, 0
+    local units, live, raid = 0, 0, 0
     local groups = perf.groups
     for _, g in ipairs(PERF_GROUPS) do groups[g .. "Ms"], groups[g] = 0, 0 end
     for _, b in pairs(bars) do
         local g = clock and PerfGroup(b)
         local tb = clock and clock()
         local shows = RunBar(b, dt)
-        if shows then units = units + 1 end
+        if shows then
+            units = units + 1
+            if b.spot.raid then raid = raid + 1 end
+        end
         if tb then
             local ms = clock() - tb
             b.perfMs = (b.perfMs or 0) + ms
@@ -2043,11 +2238,22 @@ local function OnUpdate(_, elapsed)
             end
         end
     end
-    for _, b in ipairs(previews) do if RunBar(b, dt) then units = units + 1 end end
+    Bars.raid.shown = raid -- the rate for the next frame (Bars.raid.Rate)
+    -- A hidden preview (the editor or the setup closed) is looked at five times a second, not every frame: the editor's
+    -- forty, built once, would otherwise each cost a visibility check every frame for the rest of the session.
+    for _, b in ipairs(previews) do
+        if (b.wait or 0) > 0 then
+            b.wait = b.wait - dt
+        else
+            if RunBar(b, dt) then units = units + 1 end
+            b.wait = b.sight == "hidden" and 0.2 or 0
+        end
+    end
     local t1 = clock and clock()
     if next(pending) then TryPending() end
     for _, b in pairs(plates) do if RunBar(b, dt) then live = live + 1 end end
     if partyWaiting then LookForParty(dt) end
+    if Bars.raid.watch then Bars.raid.Look(dt) end
     if clock then
         PerfAdd(t1 - t0, clock() - t1, units, live, groups)
         PerfBars(perf.cur)
@@ -2088,7 +2294,7 @@ local function OnEvent(_, event, unit, ...)
         local spent
         for _, b in pairs(bars) do
             -- Not on a hidden bar (the display out of combat): its burst would wait there until the bar shows.
-            if b.live and b.unit == "player" and b.fury and b.fury.on and Visible(b.bar) then
+            if b.live and b.unit == "player" and b.fury and b.fury.on and Seen(b) then
                 if spent == nil then spent = CostsRage(spellID) end
                 if spent then Release(b) end
             end
@@ -2134,7 +2340,7 @@ local function OnEvent(_, event, unit, ...)
                     if b.kind == "power" then
                         if b.spot.flat then b.colorIn = 0 else ApplyColor(b) end
                     end
-                elseif STIR_EVENTS[event] == b.kind and Visible(b.bar) then
+                elseif STIR_EVENTS[event] == b.kind and Seen(b) then
                     -- A bar of one power (the Personal Resource Display's mana under a form) stirs only with it. A
                     -- hidden bar is not stirred: a hidden party bar can still have the player on it from Edit Mode.
                     local token = ...
@@ -2153,12 +2359,12 @@ local EVENTS = { "PLAYER_TARGET_CHANGED", "UNIT_DISPLAYPOWER", "UNIT_HEALTH", "U
 local PLATE_EVENTS = { "NAME_PLATE_UNIT_ADDED", "NAME_PLATE_UNIT_REMOVED", "UNIT_FACTION" }
 local BOTH = { UNIT_HEALTH = true, UNIT_MAXHEALTH = true } -- the frames' events that the plates use too
 
--- The mirror timers' events. A timer frame the game makes only on first use is built on once it is there (a frame later,
--- after the game's own handler has set it up), and a breath bar stirs as its timer starts, turns or pauses.
-Mirror.events = CreateFrame("Frame")
-Mirror.events:SetScript("OnEvent", function(_, event, timer)
+-- The mirror timers' events. A timer frame the game makes only on first use is built on once it is there (a frame
+-- later, after the game's own handler has set it up), and a breath bar stirs as its timer starts, turns or pauses.
+Bars.mirror.events = CreateFrame("Frame")
+Bars.mirror.events:SetScript("OnEvent", function(_, event, timer)
     if not ns.Core.Get("breath") then return end
-    if type(timer) == "string" and not Secret(timer) and timer ~= Mirror.TIMER then return end
+    if type(timer) == "string" and not Secret(timer) and timer ~= Bars.mirror.TIMER then return end
     local missing = false
     for _, spot in ipairs(SPOTS) do
         if spot.mirror and not bars[spot] then missing = true end
@@ -2179,7 +2385,7 @@ Mirror.events:SetScript("OnEvent", function(_, event, timer)
     end
 end)
 for _, event in ipairs({ "MIRROR_TIMER_START", "MIRROR_TIMER_PAUSE", "MIRROR_TIMER_STOP" }) do
-    pcall(Mirror.events.RegisterEvent, Mirror.events, event)
+    pcall(Bars.mirror.events.RegisterEvent, Bars.mirror.events, event)
 end
 
 --------------------------------------------------------------------------------
@@ -2236,11 +2442,66 @@ local function AddPartySpots()
     return missing
 end
 
+-- A spot for each raid-style health and power bar wanted and not yet built (Bars.raid.Frames, below). Pooled and made on
+-- demand, they are looked for again each LOOK_EVERY while raidHealth or raidPower is on (Bars.raid.Look).
+-- Each kind's setting and the button's key for its bar. The power bar (8 px under the health, shown as the game's
+-- Raid Frames options say: for everyone or healers only) is on a frame of its own at level 5, its background on it in
+-- BACKGROUND, so its liquid takes the same layers and mask as the health's.
+Bars.raid.KINDS = { { kind = "health", key = "raidHealth", field = "healthBar" },
+                    { kind = "power", key = "raidPower", field = "powerBar" } }
+
+function Bars.raid.AddSpots()
+    local r = Bars.raid
+    for _, k in ipairs(r.KINDS) do
+        if ns.Core.Get(k.key) then
+            for _, e in ipairs(r.Frames()) do
+                local bar = e.frame[k.field]
+                if IsBar(bar) and not r.built[bar] then
+                    r.built[bar] = true
+                    local unit = e.frame.displayedUnit or e.frame.unit
+                    if type(unit) ~= "string" or Secret(unit) then unit = "player" end
+                    local spot = { key = k.key, frame = "raid", optional = true, raid = true, slow = true, unit = unit,
+                                   kind = k.kind, label = e.name .. " " .. k.kind, member = e.frame,
+                                   find = function() return bar end }
+                    SPOTS[#SPOTS + 1] = spot
+                    bars[spot] = NewBar(spot, bar)
+                end
+            end
+        end
+    end
+end
+
+-- Whether the game has made a raid-style frame we have not built on, of a kind that is switched on.
+function Bars.raid.New()
+    local r = Bars.raid
+    for _, k in ipairs(r.KINDS) do
+        if ns.Core.Get(k.key) then
+            for _, e in ipairs(r.Frames()) do
+                local bar = e.frame[k.field]
+                if IsBar(bar) and not r.built[bar] then return true end
+            end
+        end
+    end
+    return false
+end
+
+-- Out of combat, as at login (Bars.Apply builds there).
+function Bars.raid.Look(dt)
+    local r = Bars.raid
+    r.lookIn = r.lookIn - dt
+    if r.lookIn > 0 then return end
+    r.lookIn = r.LOOK_EVERY
+    if not InCombatLockdown() and r.New() then Bars.Apply() end
+end
+
 -- Show the liquid on the bars that are switched on, building each the first time it is wanted.
 -- Returns how many of the game's bars are showing it and how many were wanted but not found.
 function Bars.Apply()
     local live, missing = 0, 0
     local waiting = AddPartySpots()
+    Bars.raid.AddSpots()
+    -- Raid-style frames come and go with the group: looked for while the setting is on.
+    Bars.raid.watch = (ns.Core.Get("raidHealth") or ns.Core.Get("raidPower")) and true or false
     for _, spot in ipairs(SPOTS) do
         local want = Wanted(spot)
         local b = bars[spot]
@@ -2254,7 +2515,7 @@ function Bars.Apply()
                     PlateTexts(b)
                     RaisePlate(b)
                 elseif spot.mirror then
-                    Mirror.Setup(b)
+                    Bars.mirror.Setup(b)
                 elseif Over.bars[bar] then
                     Over.Apply(b) -- the DoT marker was there first
                 end
@@ -2267,11 +2528,10 @@ function Bars.Apply()
             if b.live then live = live + 1 end
         end
     end
-    -- Other addons' bars (AddBar), on with their own setting.
-    local allowed = ns.Core.Get("externalBars") and true or false
+    -- Other addons' bars (AddBar), on with their own setting; an adapter's (Adaptors/) with the frame's.
     for _, spot in pairs(externals) do
         local b = bars[spot]
-        SetLive(b, allowed and not spot.removed and not b.err)
+        SetLive(b, ns.Core.Get(spot.key) and not spot.removed and not b.err and true or false)
         if b.live then live = live + 1 end
     end
     partyWaiting = waiting
@@ -2282,14 +2542,15 @@ function Bars.Apply()
         if b.live then any = any + 1 end
     end
     local platesOn = PlatesWanted()
-    if (any > 0 or platesOn or waiting) and not driver then
+    local looking = waiting or Bars.raid.watch
+    if (any > 0 or platesOn or looking) and not driver then
         driver = CreateFrame("Frame")
         driver:SetScript("OnUpdate", OnUpdate)
         driver:SetScript("OnEvent", OnEvent)
     end
     External.unitEvents = live > 0
     if driver then
-        driver:SetShown(any > 0 or platesOn or waiting)
+        driver:SetShown(any > 0 or platesOn or looking)
         for _, event in ipairs(EVENTS) do
             if live > 0 or (platesOn and BOTH[event]) or (waiting and event == "GROUP_ROSTER_UPDATE") then
                 driver:RegisterEvent(event)
@@ -2314,10 +2575,19 @@ function Bars.Preview(bar, spec)
     spec.preview = true
     if spec.plate then spec.flat = true end
     local b = NewBar(spec, bar)
-    if spec.plate then RaisePlate(b) end
+    -- A flat preview (a nameplate's, the Personal Resource Display's) is raised over its bar, as the real ones are.
+    if spec.flat then RaisePlate(b) end
     previews[#previews + 1] = b
-    Bars.Apply()
+    -- Only the first needs the driver started; the editor builds some forty, in combat too.
+    SetLive(b, ns.Core.Get(b.spot.key) and not b.err and true or false)
+    if b.live and not (driver and driver:IsShown()) then Bars.Apply() end
     return b
+end
+
+-- A window of previews was shown (the editor, the setup): each is looked at again on the next frame, rather than when
+-- its wait while hidden runs out, so the examples move at once and their heal markers find them shown.
+function Bars.WakePreviews()
+    for _, b in ipairs(previews) do b.wait, b.sight = 0, nil end
 end
 
 -- A preview bar's value changed.
@@ -2327,13 +2597,7 @@ end
 
 -- The state of the liquid on a bar, the game's or a preview's, if it has one.
 local function StateFor(bar)
-    for _, b in pairs(bars) do
-        if b.bar == bar then return b end
-    end
-    for _, b in ipairs(previews) do
-        if b.bar == bar then return b end
-    end
-    return plates[bar]
+    return Bars.stateOf[bar]
 end
 
 -- Whether a DoT marker lies on a health bar (Marker.lua): its liquid goes a level above the marker, with copies of the
@@ -2424,7 +2688,7 @@ end
 -- colour, and slow stars keep rising until the meal ends.
 function Bars.Release(bar)
     local b = StateFor(bar)
-    if not b or not b.live or not b.inflow or not Visible(b.bar) then return end
+    if not b or not b.live or not b.inflow or not Seen(b) then return end
     b.charge, b.sated, b.flash = nil, true, 1
     local theme, w, h = b.inflow.theme, b.width, b.height
     for _ = 1, RELEASE_STARS do
@@ -2432,6 +2696,12 @@ function Bars.Release(bar)
             theme.tip, theme.splashTo, STAR)
     end
     b.liquid:Splash(0.8, 0, w)
+end
+
+-- The buff was reached while the bar was faded out: no release to see, only the slow stars when it shows again.
+function Bars.Sate(bar)
+    local b = StateFor(bar)
+    if b then b.charge, b.sated = nil, true end
 end
 
 -- The wait before mana regenerates: progress 0..1, or nil when it is called off.
@@ -2449,7 +2719,7 @@ function Bars.WaitOver(bar)
     b.waitProgress = nil
     -- Not into a hidden bar (the mana under a druid's form in caster form, the display out of combat): the stars would
     -- wait there and burst out when it shows.
-    if not b.live or b.inflow or not OnMana(b) or not Visible(b.bar) then return end
+    if not b.live or b.inflow or not OnMana(b) or not Seen(b) then return end
     local w, h, liquid = b.width, b.height, b.liquid
     local theme = liquid.theme
     b.buildFlash, b.buildPhase, b.buildAcc = 1, 0, 0
@@ -2552,11 +2822,15 @@ end
 -- True when the bar is taken (it shows the liquid, or will once the player allows other addons' bars), false when it
 -- is declined: vertical, one of this addon's own, a nameplate's, or past the cap on group members' bars. Calling it
 -- again with the same arguments does nothing, so an addon can call it whenever it updates its frame.
-function Bars.AddBar(bar, unit, kind, options)
+-- key is ours, never the public API's: an adapter for an addon that does not call AddBar (Adaptors/) hands its bars
+-- over with the on/off setting of the frame they stand for ("playerHealth"), which they then follow, with that bar's
+-- effects, instead of the Other Addons' Bars setting.
+function Bars.AddBar(bar, unit, kind, options, key)
     local bad = Bars.CheckAddBar(bar, unit, kind, options)
     if bad then error(bad, 2) end
     options = options or {}
     unit = unit:lower()
+    key = key or "externalBars"
     if OwnBar(bar) then return false end
     local spot = externals[bar]
     local added = spot and not spot.removed
@@ -2576,20 +2850,28 @@ function Bars.AddBar(bar, unit, kind, options)
 
     local ext = spot and spot.external
     if added and spot.unit == unit and spot.kind == kind and ext.theme == theme and ext.level == level
-        and ext.spill == spill and ext.name == name and not bars[spot].err then
+        and ext.spill == spill and ext.name == name and spot.key == key and not bars[spot].err then
         return true
     end
 
     local b
     local new = not spot
     if new then
-        spot = { key = "externalBars", optional = true, external = { mask = options.mask }, unit = unit, kind = kind }
+        -- Its frame before NewBar, which colours it: with externalColors on that asks for the frame's colour (a bar
+        -- handed over with it on failed to set up, and kept its own fill, seen in game after a /reload).
+        spot = { key = key, optional = true, external = { mask = options.mask }, unit = unit, kind = kind,
+                 adapter = key ~= "externalBars" or nil, frame = External.FrameOf(unit) }
         b = NewBar(spot, bar)
         bars[spot] = b
         externals[bar] = spot
         ext = spot.external
     else
         b = bars[spot]
+        if spot.key ~= key then
+            spot.key, spot.adapter = key, key ~= "externalBars" or nil
+            Bars.FillEffects(b)
+            b.liquid:ApplyOptions()
+        end
     end
     local unitChanged = new or not added or spot.unit ~= unit or spot.kind ~= kind
     local themeChanged = new or ext.theme ~= theme
@@ -2616,7 +2898,10 @@ function Bars.AddBar(bar, unit, kind, options)
     -- marker.
     if unit == "player" and unitChanged and ns.HealMarker then ns.HealMarker.Apply() end
     if unit == "target" and kind == "health" and unitChanged and ns.Marker then ns.Marker.Apply() end
-    if not ns.Core.Get("externalBars") then return true end
+    if not ns.Core.Get(key) then
+        SetLive(b, false)
+        return true
+    end
     External.Wake()
     SetLive(b, true)
     if b.live and unitChanged then
@@ -2687,8 +2972,59 @@ function Bars.HasBar(bar)
     return spot ~= nil and not spot.removed
 end
 
+-- Who last handed a bar over, for the adaptors (Adaptors.Hand): "adaptor" (with a frame's key), "addon" (the public
+-- AddBar, whether or not the addon has since removed it), "failed" (its liquid errored and it is back to its own fill),
+-- or nil (never handed over).
+function Bars.HandedBy(bar)
+    local spot = externals[bar]
+    if not spot then return nil end
+    if bars[spot] and bars[spot].err then return "failed" end
+    return spot.adapter and "adaptor" or "addon"
+end
+
+-- Game bars another addon has moved and resized and taken the game's mask off (ClassicUI Forever's pet frame): bar ->
+-- true. The mask, still laid out for the game's art, would cut the liquid short of the new bar's ends, so the liquid
+-- there goes without it, cut by its clip frame as another addon's plain bar is. For good: the other addon puts the bar
+-- back only on a reload.
+Bars.unmasked = {}
+function Bars.Unmask(bar)
+    if Bars.unmasked[bar] then return end
+    Bars.unmasked[bar] = true
+    for spot, b in pairs(bars) do
+        local mask = b.mask
+        if b.bar == bar and mask and not (spot.external or spot.flat or spot.raid) then
+            b.mask = nil
+            -- Its clip frame cuts it now, so it reaches no further than the bar (it had room for motes past it, which
+            -- the mask cut): the front's glow and its waves past a full bar would show over the other addon's art.
+            b.spill = 0
+            External.SetMirror(b, false, true)
+            local liquids = { b.liquid }
+            if b.fury then liquids[2] = b.fury.liquid end
+            for _, liquid in ipairs(liquids) do
+                local free = {}
+                for _, m in ipairs(liquid.motes) do free[m.tex] = true end
+                for _, t in ipairs(liquid.textures) do
+                    if not free[t] then t:RemoveMaskTexture(mask) end
+                end
+            end
+            if b.fury then
+                b.fury.wash:RemoveMaskTexture(mask)
+                b.fury.glow:RemoveMaskTexture(mask)
+            end
+        end
+    end
+end
+
 -- A region's width and height, or the fallbacks while the client keeps them secret (for the markers).
 Bars.Size = Size
+
+-- How a bar can be seen ("shown", "hidden" or "faded"; see Sight), for the markers: as UpdateBar found it this frame
+-- when the bar has a live liquid, else asked now.
+function Bars.Sight(bar)
+    local b = StateFor(bar)
+    if b and b.live and b.sight then return b.sight end
+    return Sight(bar)
+end
 
 -- The Liquid on a bar, if it has one (the heal marker's seam follows its front; also for the tests).
 function Bars.Liquid(bar)
@@ -2718,9 +3054,22 @@ function Bars.ApplyColors()
     Each(function(b) ApplyColor(b, true) end)
 end
 
--- After an effect toggle: clear what was just switched off.
+-- The effect settings a bar's liquid reads, for its markers' liquids. A bar without a liquid yet (off when the marker
+-- was built) gets a table that reads the global ones until the bar has its own, then the bar's.
+function Bars.EffectOptions(bar)
+    local b = StateFor(bar)
+    if b then return b.opts end
+    return setmetatable({}, { __index = function(_, effect)
+        local s = StateFor(bar)
+        if s then return s.opts[effect] end
+        return ns.Core.db[effect]
+    end })
+end
+
+-- After an effect toggle: take the new values and clear what was just switched off.
 function Bars.ApplyOptions()
     Each(function(b)
+        Bars.FillEffects(b)
         b.liquid:ApplyOptions()
         if b.fury then b.fury.liquid:ApplyOptions() end
     end)
@@ -2747,7 +3096,9 @@ function Bars.Debug()
             local name = bar.GetDebugName and bar:GetDebugName() or "?"
             out[#out + 1] = string.format("%s (%s, %dx%d): visible %s, value secret %s, mask %s, live %s, "
                 .. "game fill alpha %s, liquid textures shown %d/%d%s",
-                label, name, math.floor(b.width + 0.5), math.floor(b.height + 0.5), YesNo(Visible(bar)),
+                label, name, math.floor(b.width + 0.5), math.floor(b.height + 0.5),
+                -- Hidden and faded out told apart: a frame hidden by the game or reparented, or one another addon faded.
+                ({ shown = "yes", hidden = "no", faded = "no (faded out)" })[Sight(bar)],
                 YesNo(Secret(bar:GetValue())), YesNo(b.mask), YesNo(b.live),
                 fill and (Secret(fill:GetAlpha()) and "secret" or tostring(fill:GetAlpha())) or "none", shown, #b.liquid.textures,
                 b.err and (", error: " .. b.err) or "")
@@ -2773,7 +3124,8 @@ function Bars.Debug()
                 end
             end
             out[#out + 1] = string.format("%s: timer %s, away %s, bar level %s, liquid level %s, %d text copies; %s",
-                spot.label, (type(f) == "table" and Secret(f.timer)) and "secret" or tostring(type(f) == "table" and f.timer),
+                spot.label,
+                (type(f) == "table" and Secret(f.timer)) and "secret" or tostring(type(f) == "table" and f.timer),
                 YesNo(b.away), Level(b.bar), Level(b.clip),
                 b.mirrorTexts and #b.mirrorTexts.theirs or 0, table.concat(regions, " "))
         end
@@ -2923,6 +3275,252 @@ function Bars.PartyDebug()
     return out
 end
 
+--------------------------------------------------------------------------------
+-- Raid frames (/sab raid)
+--------------------------------------------------------------------------------
+
+-- /sab raid reports what the game lets the addon read about the raid-style frames, before any liquid goes on them.
+-- They are all CompactUnitFrameTemplate buttons (Blizzard_UnitFrame/Shared/CompactUnitFrame.xml, forever branch):
+-- CompactPartyFrameMember1..5 (raid-style party frames), CompactRaidGroup1..8Member1..5 (a raid's groups kept apart)
+-- and CompactRaidFrame1..N (groups combined, and pets and main tanks: made on demand and handed from unit to unit as
+-- the raid and its sort change). Each has healthBar (at the button's level, its fill in BORDER) and powerBar, and
+-- draws its name, status text, role icon, heal prediction, absorbs and aggro border as textures on the button itself,
+-- at the bar's level. Edit Mode's "Raid Frames" preview shows them without a group. Only widgets, CVars and unit
+-- functions are asked; nothing of the game's own Lua is called. Its state is in Bars.raid, not file locals (the file
+-- is at Lua's 200).
+-- /sab raid test lays a flat magenta block over each raid health bar, where a liquid would be, to see in game what the
+-- game draws above it: "low" in the fill's own layer (BORDER 1), the default in the liquid's (ARTWORK 3), both at the
+-- bar's level, and "up" in the liquid's layer one level up. (Bars.raid is at the top of the file.)
+
+-- The settings on the game's Raid Frames page that change what the liquid would have to do (CompactUnitFrameProfiles).
+Bars.raid.CVARS = {
+    "raidFramesDisplayClassColor", "raidFramesHealthBarColor", "raidFramesHealthBarColorBG", "raidFramesDisplayPowerBars",
+    "raidFramesDisplayOnlyHealerPowerBars", "raidFramesHealthText", "raidFramesDisplayIncomingHeals",
+    "raidFramesDisplayAggroHighlight", "raidOptionDisplayPets", "raidOptionDisplayMainTankAndAssist",
+    "raidFramesDispelIndicatorType", "raidFramesDispelIndicatorOverlay", "raidFramesDispelIndicatorOverlayAnimation",
+    "raidFramesDispelIndicatorAnimatedBorder", "raidFramesDisplayBuffs", "raidFramesDisplayDebuffs",
+    "raidFramesCenterBigDefensive", "raidOptionIsShown", "pvpFramesDisplayClassColor", "pvpFramesDisplayPowerBars",
+    "pvpFramesHealthText",
+}
+
+-- Every raid-style frame there is, shown or not: { name, frame, family = "party", "group" or "flow" }.
+function Bars.raid.Frames()
+    local list = {}
+    local function Add(name, family)
+        local f = rawget(_G, name)
+        if type(f) == "table" and type(f.healthBar) == "table" then
+            list[#list + 1] = { name = name, frame = f, family = family }
+        end
+    end
+    for i = 1, 5 do Add("CompactPartyFrameMember" .. i, "party") end
+    for g = 1, 8 do
+        for i = 1, 5 do Add(string.format("CompactRaidGroup%dMember%d", g, i), "group") end
+    end
+    for i = 1, 200 do -- numbered as the container makes them, with no gaps
+        if rawget(_G, "CompactRaidFrame" .. i) == nil then break end
+        Add("CompactRaidFrame" .. i, "flow")
+    end
+    return list
+end
+
+-- Counts the unit events for raid and party units from the first /sab raid on.
+function Bars.raid.Listen()
+    local r = Bars.raid
+    if r.listener or not CreateFrame then return end
+    r.events, r.since = {}, GetTime and GetTime() or 0
+    r.listener = CreateFrame("Frame")
+    for _, event in ipairs({ "UNIT_HEALTH", "UNIT_MAXHEALTH", "UNIT_POWER_UPDATE", "UNIT_POWER_FREQUENT", "UNIT_MAXPOWER",
+                             "UNIT_DISPLAYPOWER", "UNIT_CONNECTION", "UNIT_PET", "GROUP_ROSTER_UPDATE" }) do
+        pcall(r.listener.RegisterEvent, r.listener, event)
+    end
+    r.listener:SetScript("OnEvent", function(_, event, unit)
+        if event == "GROUP_ROSTER_UPDATE" or (type(unit) == "string" and not Secret(unit)
+            and (unit:match("^raid") or unit:match("^party"))) then
+            r.events[event] = (r.events[event] or 0) + 1
+        end
+    end)
+end
+
+-- The report: full (every line, saved) and brief (for the chat window: the first shown frame of each kind in detail,
+-- then a line for each of the first few shown frames).
+function Bars.RaidDebug()
+    local r = Bars.raid
+    r.Listen()
+    local full, brief = {}, {}
+    local function Both(line) full[#full + 1] = line; brief[#brief + 1] = line end
+
+    local function Layer(region)
+        if type(region) ~= "table" or not region.GetDrawLayer then return "none" end
+        return Ask(region.GetDrawLayer, region)
+    end
+    local function Bar(label, bar, frame)
+        if type(bar) ~= "table" or not bar.GetValue then return label .. ": none" end
+        local ok, fill = pcall(bar.GetStatusBarTexture, bar)
+        if not ok then fill = nil end
+        return string.format("%s (%s): liquid %s, shown %s, size %s x %s, at %s, value %s, range %s, colour %s, level %s, "
+            .. "parent level %s, fill alpha %s, fill layer %s, fill colour %s, fill atlas %s", label,
+            Call(bar, "GetDebugName"), YesNo(Bars.IsLive(bar)), Call(bar, "IsShown"), Call(bar, "GetWidth"),
+            Call(bar, "GetHeight"),
+            Placed(bar, frame), Call(bar, "GetValue"), Call(bar, "GetMinMaxValues"), Call(bar, "GetStatusBarColor"),
+            Call(bar, "GetFrameLevel"), Call(bar, "IsUsingParentLevel"), Call(fill, "GetAlpha"), Layer(fill),
+            Call(fill, "GetVertexColor"), Call(fill, "GetAtlas"))
+    end
+    local function Frame(out, e)
+        local f = e.frame
+        local okSight, sight = pcall(Sight, f)
+        out[#out + 1] = string.format("%s: shown %s, visible %s, sight %s, alpha %s, effective alpha %s, level %s, "
+            .. "strata %s, size %s x %s, unit %s, displayedUnit %s, pet frame %s, groupType %s, outOfRange %s", e.name,
+            Call(f, "IsShown"), Call(f, "IsVisible"), okSight and sight or "error", Call(f, "GetAlpha"),
+            Call(f, "GetEffectiveAlpha"), Call(f, "GetFrameLevel"), Call(f, "GetFrameStrata"), Call(f, "GetWidth"),
+            Call(f, "GetHeight"), Show(f.unit), Show(f.displayedUnit),
+            YesNo(f.optionTable ~= nil and f.optionTable == rawget(_G, "DefaultCompactMiniFrameOptions")),
+            Show(f.groupType), Show(f.outOfRange))
+        local unit = f.displayedUnit or f.unit
+        if type(unit) == "string" and not Secret(unit) then
+            out[#out + 1] = string.format("  %s: %s, role %s, in range %s, dead %s", unit, UnitReport(unit),
+                Ask(rawget(_G, "UnitGroupRolesAssigned"), unit), Ask(rawget(_G, "UnitInRange"), unit),
+                Ask(rawget(_G, "UnitIsDeadOrGhost"), unit))
+        end
+        out[#out + 1] = "  " .. Bar("health", f.healthBar, f)
+        out[#out + 1] = "  " .. Bar("power", f.powerBar, f)
+    end
+    -- What the button and its health bar draw, and where: the layers the liquid would have to sit among.
+    local function Parts(out, e)
+        local f = e.frame
+        for _, owner in ipairs({ f, f.healthBar }) do
+            local okR, regions = pcall(function() return { owner:GetRegions() } end)
+            for _, region in ipairs(okR and regions or {}) do
+                out[#out + 1] = string.format("    region %s: %s, layer %s, shown %s, at %s", Call(region, "GetDebugName"),
+                    Call(region, "GetObjectType"), Layer(region), Call(region, "IsShown"), Placed(region, f))
+            end
+            local okC, children = pcall(function() return { owner:GetChildren() } end)
+            for _, child in ipairs(okC and children or {}) do
+                out[#out + 1] = string.format("    child %s: %s, level %s, strata %s, shown %s, at %s",
+                    Call(child, "GetDebugName"), Call(child, "GetObjectType"), Call(child, "GetFrameLevel"),
+                    Call(child, "GetFrameStrata"), Call(child, "IsShown"), Placed(child, f))
+            end
+        end
+    end
+
+    Both(string.format("in group %s, in raid %s, members %s, in combat %s, edit mode %s, %s s since the first /sab raid",
+        Ask(rawget(_G, "IsInGroup")), Ask(rawget(_G, "IsInRaid")), Ask(rawget(_G, "GetNumGroupMembers")),
+        Ask(rawget(_G, "InCombatLockdown")), Call(rawget(_G, "EditModeManagerFrame"), "IsShown"),
+        GetTime and string.format("%.0f", GetTime() - r.since) or "?"))
+    for _, name in ipairs({ "CompactRaidFrameContainer", "CompactPartyFrame", "CompactRaidFrameManager", "PartyFrame" }) do
+        local c = rawget(_G, name)
+        Both(name .. ": " .. (type(c) ~= "table" and "none" or string.format("shown %s, visible %s, alpha %s, effective "
+            .. "alpha %s, scale %s, level %s, strata %s", Call(c, "IsShown"), Call(c, "IsVisible"), Call(c, "GetAlpha"),
+            Call(c, "GetEffectiveAlpha"), Call(c, "GetScale"), Call(c, "GetFrameLevel"), Call(c, "GetFrameStrata"))))
+    end
+    local getCVar = (C_CVar and C_CVar.GetCVar) or rawget(_G, "GetCVar")
+    local cvars = {}
+    for _, name in ipairs(r.CVARS) do cvars[#cvars + 1] = name .. " " .. Ask(getCVar, name) end
+    Both("settings: " .. table.concat(cvars, ", "))
+
+    local frames = r.Frames()
+    local counts, firsts, shown, units = { party = { 0, 0 }, group = { 0, 0 }, flow = { 0, 0 } }, {}, {}, {}
+    for _, e in ipairs(frames) do
+        local c = counts[e.family]
+        c[1] = c[1] + 1
+        local v = e.frame.IsShown and e.frame:IsShown()
+        if Secret(v) or v then
+            c[2] = c[2] + 1
+            shown[#shown + 1] = e
+            if not firsts[e.family] then firsts[e.family] = e end
+            local unit = e.frame.displayedUnit
+            if type(unit) == "string" and not Secret(unit) then
+                units[unit] = units[unit] or {}
+                table.insert(units[unit], e.name)
+            end
+        end
+    end
+    Both(string.format("frames (found, shown): raid-style party %d %d, raid groups %d %d, raid combined %d %d",
+        counts.party[1], counts.party[2], counts.group[1], counts.group[2], counts.flow[1], counts.flow[2]))
+    local twice = {}
+    for unit, names in pairs(units) do
+        if #names > 1 then twice[#twice + 1] = unit .. " (" .. table.concat(names, ", ") .. ")" end
+    end
+    table.sort(twice)
+    Both("units on more than one shown frame: " .. (#twice > 0 and table.concat(twice, "; ") or "none"))
+    local seen = {}
+    for event, n in pairs(r.events or {}) do seen[#seen + 1] = event .. " " .. n end
+    table.sort(seen)
+    Both("events for raid and party units since the first /sab raid: " .. (#seen > 0 and table.concat(seen, ", ") or "none"))
+
+    for _, family in ipairs({ "party", "group", "flow" }) do
+        local e = firsts[family]
+        if e then
+            Frame(full, e); Frame(brief, e)
+            full[#full + 1] = "  its parts:"; brief[#brief + 1] = "  its parts:"
+            Parts(full, e); Parts(brief, e)
+        end
+    end
+    local listed = 0
+    for _, e in ipairs(shown) do
+        if firsts[e.family] ~= e then
+            Frame(full, e)
+            if listed < 8 then
+                local f = e.frame
+                brief[#brief + 1] = string.format("%s: unit %s, health %s x %s, power shown %s", e.name,
+                    Show(f.displayedUnit), Call(f.healthBar, "GetWidth"), Call(f.healthBar, "GetHeight"),
+                    Call(f.powerBar, "IsShown"))
+            end
+            listed = listed + 1
+        end
+    end
+    if listed > 8 then brief[#brief + 1] = string.format("... and %d more shown frames in the saved report", listed - 8) end
+    local hidden = {}
+    for _, e in ipairs(frames) do
+        local v = e.frame.IsShown and e.frame:IsShown()
+        if not Secret(v) and not v then hidden[#hidden + 1] = e.name end
+    end
+    full[#full + 1] = "hidden frames: " .. (#hidden > 0 and table.concat(hidden, ", ") or "none")
+    local test = r.mode and ("on (" .. r.mode .. ")") or "off"
+    Both("test blocks: " .. test)
+    return full, brief
+end
+
+-- /sab raid test: a magenta block over every raid-style health bar, looked for again each second so frames made
+-- later get one too. mode: "low", "liquid" or "up" (above); "off" hides them. Returns how many bars have one.
+function Bars.RaidTest(mode)
+    local r = Bars.raid
+    if mode == "off" then
+        if r.ticker then r.ticker:Cancel(); r.ticker = nil end
+        for _, block in pairs(r.blocks) do block:Hide() end
+        r.mode = nil
+        return 0
+    end
+    r.mode = mode
+    local function Apply()
+        local n = 0
+        for _, e in ipairs(r.Frames()) do
+            local bar = e.frame.healthBar
+            local block = r.blocks[bar]
+            if not block then
+                block = CreateFrame("Frame", nil, bar)
+                block:SetAllPoints(bar)
+                block.tex = block:CreateTexture(nil, "ARTWORK", nil, 3)
+                block.tex:SetAllPoints(block)
+                block.tex:SetColorTexture(1, 0, 1, 1)
+                r.blocks[bar] = block
+            end
+            if r.mode == "low" then block.tex:SetDrawLayer("BORDER", 1) else block.tex:SetDrawLayer("ARTWORK", 3) end
+            if r.mode == "up" then
+                local ok, level = pcall(bar.GetFrameLevel, bar)
+                if block.SetUsingParentLevel then block:SetUsingParentLevel(false) end
+                if ok and type(level) == "number" and not Secret(level) then block:SetFrameLevel(level + 1) end
+            else
+                AtParentLevel(block, bar)
+            end
+            block:Show()
+            n = n + 1
+        end
+        return n
+    end
+    if not r.ticker and C_Timer and C_Timer.NewTicker then r.ticker = C_Timer.NewTicker(1, Apply) end
+    return Apply()
+end
+
 local function Memory()
     local update = rawget(_G, "UpdateAddOnMemoryUsage") or (C_AddOns and C_AddOns.UpdateAddOnMemoryUsage)
     local get = rawget(_G, "GetAddOnMemoryUsage") or (C_AddOns and C_AddOns.GetAddOnMemoryUsage)
@@ -2953,7 +3551,7 @@ function Bars.Perf()
     out[#out + 1] = Line("unit frames", unitMs, units)
     -- Of which: the display's and the party's, where there were any.
     for _, group in ipairs({ { "prd", "  of which the Personal Resource Display" }, { "party", "  of which the party" },
-                          { "addon", "  of which other addons' bars" } }) do
+                          { "raid", "  of which the raid frames" }, { "addon", "  of which other addons' bars" } }) do
         local g, label = group[1], group[2]
         local ms, n = 0, 0
         for _, s in ipairs(perf.done) do ms, n = ms + (s[g .. "Ms"] or 0), math.max(n, s[g] or 0) end
@@ -2998,7 +3596,7 @@ function Bars.PerfSnapshot()
     for i, s in ipairs(perf.done) do
         seconds[i] = { frames = s.frames, unitMs = s.unitMs, plateMs = s.plateMs, peak = s.peak, units = s.units,
                        plates = s.plates, prdMs = s.prdMs, prd = s.prd, partyMs = s.partyMs, party = s.party,
-                       addonMs = s.addonMs, addon = s.addon, bars = s.bars }
+                       raidMs = s.raidMs, raid = s.raid, addonMs = s.addonMs, addon = s.addon, bars = s.bars }
     end
     local textures = 0
     Each(function(b) if b.live then textures = textures + #b.liquid.textures end end)

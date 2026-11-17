@@ -35,6 +35,16 @@ HELPERS = """
                 if f.SetValue then proxy = proxy or f elseif f.clipsChildren then clip = clip or f end
             end
         end
+        -- A raid bar's does not clip (its liquid is cut by a mask): the first frame of ours on the bar with a frame in it.
+        if not clip and proxy then
+            for _, f in ipairs(__frames) do
+                if f.parent == bar and not f.SetValue and not clip then
+                    for _, c in ipairs(__frames) do
+                        if c.parent == f then clip = f; break end
+                    end
+                end
+            end
+        end
         for _, f in ipairs(__frames) do
             if clip and f.parent == clip then mover = f end
         end
@@ -177,7 +187,8 @@ bad = lua.eval("""(function()
     local bad = {}
     for _, r in ipairs(__regions) do
         local f = r.file
-        if r.kind == "Texture" and f and f ~= "SOLID" and not f:find("^Interface\\\\AddOns\\\\SmoothAnimatedBars\\\\Media\\\\") then
+        -- Icons by file ID are fine (the previews' portraits); game files by path are not.
+        if r.kind == "Texture" and type(f) == "string" and f ~= "SOLID" and not f:find("^Interface\\\\AddOns\\\\SmoothAnimatedBars\\\\Media\\\\") then
             bad[#bad + 1] = f
         end
     end
@@ -188,7 +199,7 @@ media = os.path.join(ADDON, "Media")
 missing = lua.eval("""(function()
     local seen = {}
     for _, r in ipairs(__regions) do
-        if r.file and r.file ~= "SOLID" then seen[r.file:match("([^\\\\]+)$")] = true end
+        if type(r.file) == "string" and r.file ~= "SOLID" then seen[r.file:match("([^\\\\]+)$")] = true end
     end
     local out = {}
     for name in pairs(seen) do out[#out + 1] = name end
@@ -218,26 +229,289 @@ check(lua.eval("#SmoothAnimatedBarsDB.partyProbe") == 1 and lua.eval("SmoothAnim
 check("liquid yes" in health[0], "and whether each has the liquid")
 lua.execute("SlashCmdList.SMOOTHANIMATEDBARS('party clear'); PartyFrame.MemberFrame1:Hide()")
 check(lua.eval("SmoothAnimatedBarsDB.partyProbe") is None, "/sab party clear forgets them")
+# /sab raid: the raid-style frames (CompactUnitFrameTemplate), two raid frames on one unit as a main tank's would be,
+# their colour and fill alpha secret as Forever's are even out of combat.
+lua.execute("""
+    for i = 1, 2 do
+        local f = CreateFrame("Button", "CompactRaidFrame" .. i, UIParent)
+        f.w, f.h, f.unit, f.displayedUnit = 96, 42, "raid1", "raid1"
+        f.healthBar = CreateFrame("StatusBar", "CompactRaidFrame" .. i .. "HealthBar", f)
+        f.healthBar.w, f.healthBar.h = 94, 32
+        f.healthBar:SetMinMaxValues(0, __secret()); f.healthBar:SetValue(__secret())
+        f.healthBar:GetStatusBarTexture():SetAlpha(__secret())
+        f.powerBar = CreateFrame("StatusBar", "CompactRaidFrame" .. i .. "PowerBar", f)
+        f.name = f:CreateFontString(nil, "ARTWORK")
+        f:Show()
+    end
+    __fire('UNIT_HEALTH', 'raid1')
+    SlashCmdList.SMOOTHANIMATEDBARS('raid')
+    __fire('UNIT_HEALTH', 'raid1'); __fire('UNIT_HEALTH', 'target')
+    SlashCmdList.SMOOTHANIMATEDBARS('raid edit mode')""")
+raid = chat(lua)
+check(any("raid combined 2 2" in m for m in raid) and any("raid1 (CompactRaidFrame1, CompactRaidFrame2)" in m for m in raid)
+      and any("CompactRaidFrame1: shown true" in m and "unit raid1" in m for m in raid)
+      and any("health (" in m and "value secret" in m and "fill alpha secret" in m for m in raid)
+      and any("region " in m and "layer ARTWORK 0" in m for m in raid)
+      and any("raidFramesDisplayClassColor" in m for m in raid)
+      and any("events for raid and party units since the first /sab raid: UNIT_HEALTH 1" in m for m in raid),
+      "/sab raid reports the raid-style frames, their parts' layers, units on two frames, settings and raid units' events")
+check(lua.eval("#SmoothAnimatedBarsDB.raidProbe") == 2 and lua.eval("SmoothAnimatedBarsDB.raidProbe[2].note") == "edit mode",
+      "and saves the full report for /reload, with its note")
+lua.execute("SlashCmdList.SMOOTHANIMATEDBARS('raid test')")
+check(lua.eval("""(function()
+    local bar = CompactRaidFrame2.healthBar
+    for _, f in ipairs(__frames) do
+        if f.parent == bar and f.shown and f.useParentLevel then
+            for _, r in ipairs(__regions) do
+                if r.parent == f and r.layer == "ARTWORK" and r.sub == 3 and r.file == "SOLID" then return true end
+            end
+        end
+    end
+end)()"""), "/sab raid test lays a solid block in the liquid's layer at each raid health bar's level")
+check(lua.eval("issecretvalue(CompactRaidFrame1.healthBar:GetStatusBarTexture():GetAlpha())"),
+      "without touching the game's bar (its fill keeps the game's secret alpha)")
+lua.execute("""local f = CreateFrame("Button", "CompactRaidFrame3", UIParent)
+    f.healthBar = CreateFrame("StatusBar", nil, f); f:Show()""")
+run(lua, 1.1)
+check(lua.eval("""(function()
+    for _, f in ipairs(__frames) do if f.parent == CompactRaidFrame3.healthBar and f.shown then return true end end
+end)()"""), "and on frames the game makes later")
+lua.execute("SlashCmdList.SMOOTHANIMATEDBARS('raid test up')")
+up = lua.eval("""(function()
+    for _, f in ipairs(__frames) do
+        if f.parent == CompactRaidFrame1.healthBar and f.shown then
+            return not f.useParentLevel and f:GetFrameLevel() == CompactRaidFrame1.healthBar:GetFrameLevel() + 1
+        end
+    end
+end)()""")
+lua.execute("SlashCmdList.SMOOTHANIMATEDBARS('raid test off')")
+gone = lua.eval("""(function()
+    for _, f in ipairs(__frames) do if f.parent == CompactRaidFrame1.healthBar and f.shown then return false end end
+    return true
+end)()""")
+check(up and gone, "raid test up raises the blocks a level, raid test off hides them")
+lua.execute("""SlashCmdList.SMOOTHANIMATEDBARS('raid clear')
+    for i = 1, 3 do _G["CompactRaidFrame" .. i]:Hide() end""")
+check(lua.eval("SmoothAnimatedBarsDB.raidProbe") is None, "/sab raid clear forgets them")
 check(not any("Error in" in m for m in chat(lua)), "no errors")
 
 print("== settings")
-rows = lua.eval("__settingsRows()")
-rows = [rows[i] for i in range(1, len(rows) + 1)]
-keys = [r.key for r in rows if r.key]
-check(keys == ["playerHealth", "healthColor", "playerPower", "powerColor", "targetHealth", "targetHealthColor",
+OPTION_KEYS = ["playerHealth", "healthColor", "playerPower", "powerColor", "targetHealth", "targetHealthColor",
                "targetPower", "targetPowerColor", "mobClassColor", "petHealth", "petHealthColor", "petPower",
                "petPowerColor", "focusHealth", "focusHealthColor", "focusPower", "focusPowerColor", "totHealth",
                "totHealthColor", "totPower", "totPowerColor", "partyHealth", "partyHealthColor", "partyPower",
-               "partyPowerColor", "prdHealth", "prdHealthColor", "prdPower", "prdPowerColor", "breath", "breathColor",
-               "breathBubbles", "plateHealth",
-               "plateHealthColor", "plateDots", "plateKillIcon", "plateFriendly", "plateFriendlyColor", "mobClassColor",
-               "externalBars", "waves", "swirl", "bubbles", "sparkles", "ambient", "lightning", "dots", "dotKillIcon", "heals", "manaBuild", "rageFury"],
-      f"settings page rows: {keys}")
+               "partyPowerColor", "raidHealth", "raidHealthColor", "raidPower", "raidPowerColor", "prdHealth",
+               "prdHealthColor", "prdPower", "prdPowerColor", "plateHealth", "plateHealthColor", "plateFriendly",
+               "plateFriendlyColor", "plateDots", "plateKillIcon", "breath", "breathColor", "breathBubbles", "waves",
+               "swirl", "bubbles", "sparkles", "ambient", "lightning", "dots", "dotKillIcon", "heals", "manaBuild",
+               "rageFury", "externalBars", "externalColors"]
+keys = list(lua.eval("__ns.Editor.Keys()").values())
+check(sorted(keys) == sorted(OPTION_KEYS), f"the editor has a control for every setting ({sorted(set(keys) ^ set(OPTION_KEYS))})")
 check(not lua.eval("__sharedListTainted"), "nothing added to the game's shared settings list (Forever: Social blocked)")
-options = [o for o in rows if o.key == "healthColor"][0].options
-labels = [options[i].label for i in range(1, len(options) + 1)]
-check(labels[0] == "Game Colour" and "Class Color" in labels and "Item Quality" not in labels and len(labels) == 26,
-      f"colour choices: game colour then the themes, without Item Quality ({len(labels)})")
+page = "__ns.Options.Page()"
+check(lua.eval(page + ".open.text") == "Open Editor" and lua.eval(page + ".setup.text") == "Run Setup"
+      and lua.eval(page + ".preview ~= nil") and lua.eval(page + ".preview.player ~= nil"),
+      "the page: Open Editor, Run Setup and a preview of the frames, built once in the world")
+lua.execute(page + ".open.scripts.OnClick(" + page + ".open)")
+check(lua.eval("SmoothAnimatedBarsEditor.shown") and lua.eval("__ns.Editor.State().section") == "player",
+      "Open Editor opens the editor, at Player")
+ED = "__ns.Editor.State().ui"
+lua.execute(f"""function __click(b) b.scripts.OnClick(b) end
+    function __page(id) return {ED}.pages[id or __ns.Editor.State().section] end
+    function __card(i) return __page().cards[i] end""")
+check(lua.eval(ED + ".tabs.frames.picked") and lua.eval(ED + ".hots.player.edges[1].shown")
+      and not lua.eval(ED + ".hots.target.edges[1].shown"),
+      "it opens on the Frames tab, the player frame outlined in gold on the screen and only it")
+check(lua.eval(ED + ".tabs.frames.bg.atlas") == "UI-Character-Info-Title" and not lua.eval(ED + ".tabs.frames.bg.desaturated")
+      and lua.eval(ED + ".tabs.effects.bg.desaturated") and lua.eval(ED + ".tabs.effects.bg.alpha") == 0.7,
+      "the tabs are the character sheet's title plaque, as Road to Sixty's: the picked one in colour, the others faded grey")
+check(lua.eval(ED + ".hots.target.dashes[1].shown") and not lua.eval(ED + ".hots.player.dashes[1].shown")
+      and lua.eval("#" + ED + ".hots.raid.dashes") > 50,
+      "the others have a dashed outline, as in the mockup, all the way round")
+check(all(lua.eval(f"{ED}.examples.{k}.shown") for k in ("frames", "party", "plates", "prd", "raid")),
+      "the screen shows every example at once: the frames, the party, nameplates, the display and raid frames")
+check(lua.eval(ED + ".examples.frames.speed") == 1 and lua.eval(ED + ".examples.party.speed") < 1
+      and lua.eval(ED + ".examples.party.members[1].health.state.spot.calm"),
+      "only the example being edited plays at full speed; the others slowly, idling at a lower rate")
+check(lua.eval(ED + ".hots.raid.off") and not lua.eval(ED + ".hots.party.off"),
+      "frames whose liquid is off (raid frames, to begin with) are dimmed")
+labels = lua.eval("""(function()
+    local out = {}
+    for key, t in pairs(__card(1).colour.tiles) do out[#out + 1] = t.name end
+    return table.concat(out, '|')
+end)()""").split("|")
+check("Game Colour" in labels and "Class Color" in labels and "Item Quality" not in labels and len(labels) == 26
+      and not lua.eval("__card(1).colour.follow"),
+      f"Player's Health: a tile for the game colour and every theme, and nothing to follow ({len(labels)})")
+check(lua.eval("__card(1).drawer.shown and __card(1).colour.shown") and not lua.eval("__card(2).drawer.shown"),
+      "Health's card is open on its Colour tab to begin with, Power's closed")
+lua.execute("__card(1).colour.tiles.frost.scripts.OnEnter()")
+run(lua, 0.2)
+r, g, b = lua.eval("__tint(PlayerFrame.healthbar)")
+check(b > 0.7 and lua.eval("SmoothAnimatedBarsDB.healthColor") == "game"
+      and "Trying Frost" in lua.eval("__card(1).colour.trying.text"),
+      f"hovering Frost tries it on your real health bar, without saving it ({r:.2f}, {g:.2f}, {b:.2f})")
+lua.execute("__card(1).colour.tiles.frost.scripts.OnLeave()")
+run(lua, 0.2)
+r, g, b = lua.eval("__tint(PlayerFrame.healthbar)")
+check(g > 0.5 and b < 0.5, f"and leaving it puts the green back ({r:.2f}, {g:.2f}, {b:.2f})")
+lua.execute("__click(__card(1).colour.tiles.fire)")
+check(lua.eval("SmoothAnimatedBarsDB.healthColor") == "fire" and lua.eval("__card(1).colour.tiles.fire.picked")
+      and lua.eval("__card(1).summary.text").startswith("Fire"),
+      "clicking Fire keeps it: the tile picked, the card's summary says so")
+lua.execute("__click(__card(2).header)")
+check(lua.eval("__card(2).drawer.shown") and not lua.eval("__card(1).drawer.shown"),
+      "opening Power's card closes Health's: one drawer at a time")
+lua.execute("__click(__card(2).header)")
+check(not lua.eval("__card(2).drawer.shown"), "and clicking it again closes it")
+lua.execute("__click(__card(1).check)")
+check(lua.eval("SmoothAnimatedBarsDB.playerHealth") is False and not lua.eval("__card(1).check.checked")
+      and lua.eval("__card(1).summary.text").startswith("Off") and not lua.eval(ED + ".hots.player.off"),
+      "Health's box turns it off, the card says so, the player frame not dimmed while Power is on")
+lua.execute("__click(__card(2).check)")
+check(lua.eval(ED + ".hots.player.off"), "with both off the player frame is dimmed")
+lua.execute("__click(__card(1).check); __click(__card(2).check); __settings.healthColor:SetValue('game')")
+check(lua.eval("SmoothAnimatedBarsDB.playerHealth") and not lua.eval(ED + ".hots.player.off")
+      and lua.eval("__card(1).summary.text").startswith("Game Colour"),
+      "on again; a change made elsewhere shows in the editor too")
+sections = list(lua.eval("__ns.Editor.Sections()").values())
+for sid in sections:
+    lua.execute(f"__ns.Editor.Show('{sid}')")
+check(lua.eval("__ns.Editor.State().section") == sections[-1] and not any("Error" in m for m in chat(lua)),
+      f"every frame and tab opens: {', '.join(sections)}")
+lua.execute(f"__click({ED}.hots.target)")
+check(lua.eval("__ns.Editor.State().section") == "target" and lua.eval("__card(1).colour.follow.checked"),
+      "clicking the target on the screen edits it; its colour follows yours to begin with")
+check(lua.eval("__card(1).colour.tileFrame.alpha") < 1, "the tiles faded while it follows")
+lua.execute("__settings.healthColor:SetValue('arcane'); __click(__card(1).colour.follow)")
+check(lua.eval("SmoothAnimatedBarsDB.targetHealthColor") == "arcane" and lua.eval("__card(1).colour.tileFrame.alpha") == 1,
+      "unticking Follow keeps what it showed (your Arcane), now its own, and the tiles come back")
+lua.execute("__click(__card(1).colour.follow); __settings.healthColor:SetValue('game')")
+check(lua.eval("SmoothAnimatedBarsDB.targetHealthColor") == "same", "ticking it follows you again")
+lua.execute(f"__click({ED}.scenes.damage)")
+check(all(lua.eval(f"{ED}.examples.{k}.scene") == "damage" for k in ("frames", "party", "plates", "prd", "raid"))
+      and lua.eval(ED + ".scenes.damage.picked"), "Damage plays on every example at once")
+check(lua.eval(ED + ".scenes.damage.bg.atlas") == "UI-Character-Info-Title" and not lua.eval(ED + ".scenes.damage.bg.desaturated")
+      and lua.eval(ED + ".scenes.fight.bg.desaturated"), "the scene buttons are the tabs' plaque too, the playing one in colour")
+lua.execute(f"__click({ED}.scenes.heal)")
+run(lua, 1.5)
+HEALER = ED + ".examples.frames.healer"
+check(lua.eval(HEALER + ".clip.shown") and lua.eval(HEALER + ".liquids[1].pool.shown")
+      and lua.eval(HEALER + ".liquids[1].themeKey") == "holy",
+      "Healing shows the heal marker: a Renew's Holy liquid ahead of the example's health")
+run(lua, 2.5)
+check(lua.eval(HEALER + ".liquids[2].pool.shown") and lua.eval(HEALER + ".liquids[2].themeKey") == "bandage",
+      "then a bandage's green joins it")
+lua.execute("__settings.heals:SetValue(false)")
+run(lua, 0.3)
+check(not lua.eval(HEALER + ".clip.shown"), "and none with the heal marker off")
+lua.execute(f"__settings.heals:SetValue(true); __click({ED}.scenes.fight)")
+run(lua, 1.5)
+check(not lua.eval(HEALER + ".clip.shown"), "nor in the fight")
+lua.execute(f"__click({ED}.hots.party)")
+check(lua.eval(ED + ".examples.party.speed") == 1 and lua.eval(ED + ".examples.frames.speed") < 1,
+      "clicking the party edits it, now the one at full speed")
+lua.execute(f"__click({ED}.hots.raid)")
+RM = ED + ".examples.raid.members"
+check(lua.eval("#" + RM) == 10 and not lua.eval(f"__ns.Bars.IsLive({RM}[1].health)"),
+      "Raid: ten example raid frames, the game's own fill while raid frames are off")
+RESTING = f"""(function()
+    for _, m in ipairs({RM}) do
+        for _, bar in ipairs({{ m.health, m.power }}) do
+            if bar.shownValue ~= bar.max then return false end
+        end
+    end
+    return true
+end)()"""
+run(lua, 2.0)
+check(lua.eval(RESTING), "and with them off, every example rests full and still rather than playing the scene")
+lua.execute("__click(__card(1).check); __click(__card(2).check)")
+run(lua, 2.0)
+check(not lua.eval(RESTING), "turned on, they play the scene again")
+check(lua.eval(f"__ns.Bars.IsLive({RM}[1].health)") and lua.eval(f"__ns.Bars.IsLive({RM}[1].power)")
+      and not lua.eval(ED + ".hots.raid.off"), "turned on, they take the liquid, health and power, and light up")
+check(lua.eval(f"""(function()
+    local clip = {RM}[1].health.state.clip
+    local tl, br = clip.points.TOPLEFT, clip.points.BOTTOMRIGHT
+    return clip.clipsChildren and tl.y == 0 and br.x == 0 and br.y == 0
+end)()"""), "cut to their bars, motes too, as the raid frames touch (seen in game: the liquid spilling over them)")
+lua.execute("__cvars.raidFramesDisplayClassColor = '1'; __ns.Bars.ApplyColors()")
+run(lua, 0.3)
+r, g, b = lua.eval(f"unpack(__ns.Bars.Liquid({RM}[3].health).theme.fillB)")
+check(b > 0.6 and r < 0.6, f"in the raid frames' class colours: the mage blue ({r:.2f}, {g:.2f}, {b:.2f})")
+lua.execute("__click(__card(1).check); __click(__card(2).check)")
+check(all(lua.eval(f"{ED}.examples.{k}.shown") and lua.eval(f"{ED}.hots.{k}.shown") for k in ("focus", "pet", "tot")),
+      "the focus, pet and target of target have places of their own on the screen")
+lua.execute(f"__click({ED}.hots.focus)")
+check(lua.eval("__ns.Editor.State().section") == "focus" and lua.eval(ED + ".examples.focus.speed") == 1
+      and lua.eval(ED + ".examples.focus.target.health.state.spot.key") == "focusHealth"
+      and lua.eval(ED + ".hots.focus.name.text") == "Focus",
+      "clicking the focus edits it, its example following the focus's settings")
+check(lua.eval(ED + ".examples.pet.target.health.state.spot.key") == "petHealth"
+      and lua.eval(ED + ".examples.tot.target.health.state.spot.key") == "totHealth",
+      "and the pet's and target of target's theirs")
+check(lua.eval("""(function()
+    local c = __ns.Editor.State().ui.pages.focus.cards[1]
+    local p = c.colour.points
+    return p.TOPLEFT and p.TOPRIGHT and not p.RIGHT and c.drawer.h > 0
+end)()"""), "a drawer's panes are anchored by their top corners and the drawer has a height (seen in game: an empty "
+            "drawer, its pane's RIGHT anchor pinning its middle)")
+lua.execute(f"__click({ED}.hots.prd)")
+check(lua.eval(ED + ".examples.prd.health.state.spot.flat")
+      and lua.eval(ED + ".examples.prd.health.state.spot.key") == "prdHealth",
+      "the Personal Resource Display's example: flat bars on its settings")
+lua.execute(f"__click({ED}.tabs.effects); __click(__page().rows.bubbles.check)")
+check(lua.eval("__ns.Editor.State().tab") == "effects" and lua.eval("SmoothAnimatedBarsDB.bubbles") is False,
+      "the Effects tab: the global effects, a box turns one off")
+lua.execute(f"__click({ED}.defaults)")
+check(lua.eval("SmoothAnimatedBarsDB.bubbles") is True, "Defaults puts the tab back")
+lua.execute(f"__click({ED}.tabs.frames)")
+check(lua.eval("__ns.Editor.State().section") == "prd", "Frames goes back to the frame last edited")
+lua.execute(f"__click({ED}.hots.player); __click(__card(1).header); __click(__card(1).tabs.effects)")
+FX = "__card({}).effects"
+check(lua.eval(FX.format(1) + ".shown") and lua.eval(FX.format(1) + ".global.checked")
+      and not lua.eval(FX.format(1) + ".fx.bubbles:IsEnabled()"),
+      "Health's Effects tab: Use the global effects, the six greyed out")
+lua.execute(f"__click({FX.format(1)}.global)")
+check(not lua.eval(FX.format(1) + ".global.checked") and lua.eval(FX.format(1) + ".fx.bubbles:IsEnabled()")
+      and lua.eval("SmoothAnimatedBarsDB.effects.playerHealth.bubbles") is True,
+      "unticked, the bar has its own, starting from the global ones")
+lua.execute(f"__click({FX.format(1)}.fx.bubbles)")
+check(lua.eval("SmoothAnimatedBarsDB.effects.playerHealth.bubbles") is False
+      and lua.eval("__ns.Bars.Liquid(PlayerFrame.healthbar).opts.bubbles") is False
+      and lua.eval("__ns.Bars.Liquid(PlayerFrame.manabar).opts.bubbles") is True
+      and "no bubbles" in lua.eval("__card(1).summary.text"),
+      "Bubbles off on your health bar alone, and its card says so")
+check(lua.eval(f"{ED}.examples.frames.player.health.state.opts.bubbles") is False,
+      "and on the example's health bar too")
+lua.execute("__settings.bubbles:SetValue(false); __settings.lightning:SetValue(false)")
+check(lua.eval("__ns.Bars.Liquid(PlayerFrame.healthbar).opts.lightning") is True
+      and lua.eval("__ns.Bars.Liquid(PlayerFrame.manabar).opts.bubbles") is False,
+      "the global effects no longer reach a bar with its own; they still reach the others")
+lua.execute("__settings.bubbles:SetValue(true); __settings.lightning:SetValue(true)")
+lua.execute(f"__click({FX.format(1)}.global)")
+check(lua.eval("SmoothAnimatedBarsDB.effects.playerHealth") is None
+      and lua.eval("__ns.Bars.Liquid(PlayerFrame.healthbar).opts.bubbles") is True,
+      "ticking Use the global effects gives the bar back to them")
+lua.execute(f"__click({FX.format(1)}.global); __click({ED}.defaults)")
+check(lua.eval("SmoothAnimatedBarsDB.effects.playerHealth") is None, "and so does the frame's Defaults")
+lua.execute(f"__click({ED}.hots.plates)")
+check(not lua.eval("__page().rows.plateDots.shown"), "Nameplates: Your DoTs on Nameplates hidden while they are off")
+lua.execute("__click(__card(1).check)")
+check(lua.eval("SmoothAnimatedBarsDB.plateHealth") and lua.eval("__page().rows.plateDots.shown")
+      and not lua.eval("__page().rows.plateKillIcon.shown"), "and shown once on, its kill icon once the DoTs are")
+lua.execute("__click(__card(1).check); __card(1).colour.tiles.frost.scripts.OnEnter(); __click(" + ED + ".close)")
+check(not lua.eval("SmoothAnimatedBarsEditor.shown") and lua.eval("SmoothAnimatedBarsDB.plateHealthColor") == "same",
+      "Close closes it, and a colour being tried goes with it")
+run(lua, 0.3)
+st = ED + ".examples.frames.bars[1].state"
+check(lua.eval(st + ".wait") > 0,
+      f"its examples, hidden, are looked at a few times a second, not every frame "
+      f"({lua.eval(st + '.wait')}, {lua.eval(st + '.sight')}, {lua.eval(st + '.live')})")
+lua.execute("__ns.Editor.Open()")
+check(lua.eval(st + ".wait") == 0, "opened again, they are looked at on the very next frame")
+lua.execute("__ns.Editor.Close()")
+check(not any("Error" in m for m in chat(lua)), "no errors")
 lua.execute("__settings.playerHealth:SetValue(false)")
 run(lua, 0.2)
 check(lua.eval("(select(2, __liquid(PlayerFrame.healthbar)))") == 0 and lua.eval("PlayerFrame.healthbar.fill.alpha") == 1
@@ -266,19 +540,24 @@ check(lua.eval("""(function()
     end
     return true
 end)()"""), "effects switched off: no bubbles")
+lua.execute("__settings.raidHealth:SetValue(true); __settings.plateHealth:SetValue(true)")
 lua.execute("SlashCmdList.SMOOTHANIMATEDBARS('off')")
 run(lua, 0.2)
 check(all(lua.eval(f"__bars()[{i}].fill.alpha") == 1 for i in range(1, 5))
       and lua.eval("SmoothAnimatedBarsDB.targetPower") is False, "/sab off: all four bars back to the game's, saved")
+check(lua.eval("SmoothAnimatedBarsDB.raidHealth") is False and lua.eval("SmoothAnimatedBarsDB.plateHealth") is False,
+      "and the raid frames and nameplates too: off is every bar")
 lua.execute("SlashCmdList.SMOOTHANIMATEDBARS('on')")
 run(lua, 0.2)
+check(lua.eval("SmoothAnimatedBarsDB.raidHealth") is False and lua.eval("SmoothAnimatedBarsDB.plateHealth") is False,
+      "/sab on leaves the bars that start off (raid frames, nameplates) as they were")
 check(all(lua.eval(f"(select(2, __liquid(__bars()[{i}])))") > 0 for i in range(1, 5)), "/sab on: liquid again")
 lua.execute("SlashCmdList.SMOOTHANIMATEDBARS('')")
-check(lua.eval("__openedCategory") == "Smooth Animated Bars", "/sab opens the settings page")
-lua.execute("__closeSettings(); __combat = true; __openedCategory = nil; SlashCmdList.SMOOTHANIMATEDBARS('')")
-check(lua.eval("__openedCategory") is None, "not opened in combat")
-lua.execute("__combat = false; __fire('PLAYER_REGEN_ENABLED')")
-check(lua.eval("__openedCategory") == "Smooth Animated Bars", "opened once combat ends")
+check(lua.eval("SmoothAnimatedBarsEditor.shown") and lua.eval("__ns.Editor.State().section") == "plates"
+      and lua.eval("__openedCategory") is None, "/sab opens the editor where it was left, not the game's settings")
+lua.execute("SmoothAnimatedBarsEditor:Hide(); __combat = true; SlashCmdList.SMOOTHANIMATEDBARS('')")
+check(lua.eval("SmoothAnimatedBarsEditor.shown"), "in combat too: it is a window of ours")
+lua.execute("__combat = false; SmoothAnimatedBarsEditor:Hide()")
 
 print("== target colours")
 tc = session()
@@ -292,12 +571,15 @@ check(tc.eval("SmoothAnimatedBarsDB.targetHealthColor") == "same" and tc.eval("S
       "the target follows the player's choice by default, and mobs show their reaction")
 
 
-def mob_row(lua):
-    rows = lua.eval("__settingsRows()")
-    return [rows[i] for i in range(1, len(rows) + 1) if rows[i].key == "mobClassColor"][0]
+def mob_shown(lua, section):
+    lua.execute(f"__ns.Editor.Open('{section}')")
+    return lua.eval(f"__ns.Editor.State().ui.pages.{section}.mob.shown")
 
 
-check(mob_row(tc).frame.shown and mob_row(tc).indent, "Class Color on Mobs shows, indented, while the target follows Class Color")
+check(mob_shown(tc, "target"), "the editor's Class Color on Mobs shows under Target while the target follows Class Color")
+tc.execute("__ns.Editor.State().ui.pages.target.mob.chips.own.scripts.OnClick()")
+check(tc.eval("SmoothAnimatedBarsDB.mobClassColor") == "own", "and sets what mobs show")
+tc.execute("__settings.mobClassColor:SetValue('reaction'); __ns.Editor.Close()")
 tc.execute("__aim({ guid = 'Player-1', name = 'Friend', isOtherPlayer = true, class = 'MAGE' })")
 run(tc, 0.2)
 r, g, b = tc.eval("__tint(TargetFrame.healthbar)")
@@ -338,21 +620,33 @@ run(tc, 0.2)
 r, g, b = tc.eval("__tint(TargetFrame.healthbar)")
 pr, pg, pb = tc.eval("__tint(PlayerFrame.healthbar)")
 check(r > 0.8 and b < 0.3 and pb > 0.5, f"the target's health has its own choice, without touching the player's ({r:.2f}, {g:.2f}, {b:.2f})")
-check(not mob_row(tc).frame.shown, "with no Class Color on the target, Class Color on Mobs is hidden")
+check(not mob_shown(tc, "target"), "with no Class Color on the target, Class Color on Mobs is hidden")
+tc.execute("__ns.Editor.Close()")
 tc.execute("__player.power = 0; __fire('UNIT_DISPLAYPOWER', 'target')")
 run(tc, 0.2)
 mr_, mg_, mb_ = tc.eval("__tint(TargetFrame.manabar)")
 check(mb_ > 0.5, "and its power keeps its own")
 tc.execute("__settings.targetHealthColor:SetValue('class'); __settings.mobClassColor:SetValue('reaction')")
-check(mob_row(tc).frame.shown, "and back with it")
+check(mob_shown(tc, "target"), "and back with it")
+tc.execute("__ns.Editor.Close()")
 tc.execute("__aim({ guid = 'Player-3', name = 'Hidden', isOtherPlayer = true, class = __secret() })")
 run(tc, 0.2)
 r, g, b = tc.eval("__tint(TargetFrame.healthbar)")
 check(g > 0.7 and r < 0.4 and not any("Error" in m for m in chat(tc)),
       f"a class kept secret: the game's colour, no error ({r:.2f}, {g:.2f}, {b:.2f})")
-lua5 = session("{ setupDone = true, targetHealthColor = 'gone', mobClassColor = 'gone' }")
+lua6 = session("{ setupDone = true, effects = { playerHealth = { bubbles = false, gone = true, waves = 'no' }, "
+               "targetPower = 'bad', focusHealth = {} } }")
+check(lua6.eval("SmoothAnimatedBarsDB.effects.playerHealth.bubbles") is False
+      and lua6.eval("SmoothAnimatedBarsDB.effects.playerHealth.gone") is None
+      and lua6.eval("SmoothAnimatedBarsDB.effects.playerHealth.waves") is None
+      and lua6.eval("SmoothAnimatedBarsDB.effects.targetPower") is None
+      and lua6.eval("SmoothAnimatedBarsDB.effects.focusHealth") is None,
+      "saved effects for a bar: only known effects, true or false, kept")
+lua5 = session("{ setupDone = true, targetHealthColor = 'gone', mobClassColor = 'gone', raidHealthColor = 'gone' }")
 check(lua5.eval("SmoothAnimatedBarsDB.targetHealthColor") == "same" and lua5.eval("SmoothAnimatedBarsDB.mobClassColor") == "reaction",
       "unknown saved choices fall back")
+check(lua5.eval("SmoothAnimatedBarsDB.raidHealthColor") == "game" and lua5.eval("SmoothAnimatedBarsDB.raidPowerColor") == "game",
+      "each to its own default: the raid frames' to the game's raid colours, not to following the party")
 
 print("== pet, focus and target of target")
 sf = session()
@@ -374,19 +668,18 @@ check(sf.eval("__ns.Bars.Find('playerHealth') == PlayerFrame.healthbar")
       and sf.eval("__ns.Bars.Find('targetPower') == TargetFrame.manabar"), "the player's and target's bars are still the ones found")
 
 
-def row(lua, key):
-    rows = lua.eval("__settingsRows()")
-    return [rows[i] for i in range(1, len(rows) + 1) if rows[i].key == key][0]
+def colour_on(lua, section, i):
+    lua.execute(f"__ns.Editor.Open('{section}')")
+    return lua.eval(f"__ns.Editor.State().ui.pages.{section}.cards[{i}].swatch.alpha") == 1
 
 
-check(row(sf, "petHealthColor").frame.shown and row(sf, "petHealthColor").indent,
-      "settings: each bar's colour shows indented under it while the bar is on")
+check(colour_on(sf, "pet", 1) and colour_on(sf, "pet", 2), "editor: each bar's colour can be picked while the bar is on")
 sf.execute("__settings.petHealth:SetValue(false)")
 run(sf, 0.2)
 check(sf.eval("(select(2, __liquid(PetFrameHealthBar)))") == 0 and sf.eval("PetFrameHealthBar.fill.alpha") == 1
       and sf.eval("(select(2, __liquid(PetFrameManaBar)))") > 0 and sf.eval("(select(2, __liquid(PlayerFrame.healthbar)))") > 0,
       "Pet Health off: the pet's health bar is the game's again, its power and yours stay")
-check(not row(sf, "petHealthColor").frame.shown and row(sf, "petPowerColor").frame.shown, "and its colour option goes")
+check(not colour_on(sf, "pet", 1) and colour_on(sf, "pet", 2), "and its colour greys out")
 sf.execute("__settings.petHealth:SetValue(true); __settings.totPower:SetValue(false)")
 run(sf, 0.2)
 check(sf.eval("(select(2, __liquid(TargetFrameToT.ManaBar)))") == 0 and sf.eval("(select(2, __liquid(FocusFrameToT.ManaBar)))") == 0
@@ -489,7 +782,8 @@ pf.execute("__settings.partyPower:SetValue(false)")
 run(pf, 0.2)
 check(pf.eval(f"(select(2, __liquid({PARTY_POWER.format(1)})))") == 0 and pf.eval(f"{PARTY_POWER.format(1)}.fill.alpha") == 1
       and pf.eval(f"(select(2, __liquid({PARTY_HEALTH.format(1)})))") > 0, "Party Power off: the game's power bars, health stays")
-check(row(pf, "partyHealthColor").frame.shown and not row(pf, "partyPowerColor").frame.shown, "and its colour option goes")
+check(colour_on(pf, "party", 1) and not colour_on(pf, "party", 2), "and its colour greys out")
+pf.execute("__ns.Editor.Close()")
 pf.execute("SlashCmdList.SMOOTHANIMATEDBARS('debug')")
 check(any("party1 health" in m and "live yes" in m for m in chat(pf)), "/sab debug lists the party bars by their unit")
 check(not any("Error" in m for m in chat(pf)), "no errors")
@@ -589,6 +883,187 @@ check(pf.eval(f"{PARTY_HEALTH.format(1)}.fill.alpha") == 1 and pf.eval(f"(select
       "Party Health off and on while a member is offline: their bar stays the game's grey one, not an empty bar")
 pf.execute("__units.party1.offline = nil")
 
+print("== raid frames")
+# Raid-style frames (CompactUnitFrameTemplate) as /sab raid saw them in Edit Mode: a 96x42 health bar at its button's
+# level, no mask, its value and colour secret. Two members of a raid, one whose class the client keeps secret.
+rf = session()
+rf.execute("""
+    __cvars.raidFramesDisplayClassColor = '1'
+    __cvars.raidFramesHealthBarColor = 'FF2B9305'
+    __units.raid1 = { isOtherPlayer = true, class = 'MAGE', power = 0 }
+    __units.raid2 = { isOtherPlayer = true, class = __secret(), power = 1 }
+    -- The power bar 8 px under the health (shown for everyone here), on a frame of its own at level 5.
+    function __raidFrame(name, unit)
+        local f = CreateFrame("Button", name, UIParent)
+        f.w, f.h, f.unit, f.displayedUnit = 98, 44, unit, unit
+        f.healthBar = CreateFrame("StatusBar", name .. "HealthBar", f)
+        f.healthBar.w, f.healthBar.h = 96, 34
+        f.healthBar:SetMinMaxValues(0, __secret()); f.healthBar:SetValue(__secret())
+        f.healthBar:SetStatusBarColor(__secret(), __secret(), __secret())
+        f.powerBar = CreateFrame("StatusBar", name .. "PowerBar", f)
+        f.powerBar.w, f.powerBar.h = 96, 8
+        f.powerBar:SetFrameLevel(5)
+        f.powerBar:SetMinMaxValues(0, __secret()); f.powerBar:SetValue(__secret())
+        f:Show()
+        return f
+    end
+    __raidFrame("CompactRaidFrame1", "raid1")
+    __raidFrame("CompactRaidFrame2", "raid2")
+""")
+run(rf, 0.3)
+check(rf.eval("(select(2, __liquid(CompactRaidFrame1.healthBar)))") == 0
+      and rf.eval("CompactRaidFrame1.healthBar.fill.alpha") == 1, "off to start with: the raid frames keep the game's bars")
+rf.execute("__settings.raidHealth:SetValue(true)")
+run(rf, 0.3)
+RAID = ["CompactRaidFrame1.healthBar", "CompactRaidFrame2.healthBar"]
+check(all(rf.eval(f"(select(2, __liquid({b})))") > 0 and rf.eval(f"{b}.fill.alpha") == 0 for b in RAID),
+      "Raid Frames Health on: liquid in each raid frame's health bar on its secret value, the game's fill hidden")
+check(rf.eval("""(function()
+    local _, clip, mover = __ours(CompactRaidFrame1.healthBar)
+    local n = 0
+    for _, r in ipairs(__regions) do
+        if r.parent == mover and r.kind == "Texture" then
+            if r.layer ~= "BORDER" or r.sub > 4 then return false end
+            n = n + 1
+        end
+    end
+    return n > 0 and clip.useParentLevel and mover.useParentLevel
+end)()"""), "drawn in BORDER at the bar's level, under the game's heal prediction (BORDER 5) and everything over it")
+check(rf.eval("""(function()
+    local _, clip, mover = __ours(CompactRaidFrame1.healthBar)
+    local tl, br = clip.points.TOPLEFT, clip.points.BOTTOMRIGHT
+    if not (tl.x == 0 and tl.y == 0 and br.x == 0 and br.y == 0) or clip.clipsChildren then return false end
+    local mask
+    for _, r in ipairs(__regions) do
+        if r.parent == mover and r.kind == "Texture" then
+            if not (r.masks and r.masks[1]) then return false end
+            mask = mask or r.masks[1]
+            if r.masks[1] ~= mask then return false end
+        end
+    end
+    return mask ~= nil and mask.file:find("Square$") and mask.points.TOPLEFT.rel == CompactRaidFrame1.healthBar
+end)()"""), "cut to the bar by a square mask, motes and all (the frames touch), not by a clip frame: in game the "
+      "frame's background drew over a liquid in one")
+r, g, b = rf.eval("__tint(CompactRaidFrame1.healthBar)")
+check(b > 0.8 and r < 0.5, f"Game Colour with the game's class colours on: a mage blue ({r:.2f}, {g:.2f}, {b:.2f})")
+TINTED = """(function(bar)
+    local _, _, mover = __ours(bar)
+    for _, r in ipairs(__regions) do
+        if r.parent == mover and r.blend == "MOD" then return r.shown and issecretvalue(r.vc[1]) end
+    end
+    return false
+end)"""
+check(rf.eval(f"{TINTED}(CompactRaidFrame2.healthBar)") and not rf.eval(f"{TINTED}(CompactRaidFrame1.healthBar)"),
+      "a class kept secret: the bar's secret colour tints the liquid, which the readable class does not need")
+rf.execute("__cvars.raidFramesDisplayClassColor = '0'")
+run(rf, 0.6)
+r, g, b = rf.eval("__tint(CompactRaidFrame1.healthBar)")
+check(g > r and g > b and not rf.eval(f"{TINTED}(CompactRaidFrame2.healthBar)"),
+      f"class colours off in the game: the colour set in its Raid Frames options, green ({r:.2f}, {g:.2f}, {b:.2f})")
+rf.execute("__settings.raidHealthColor:SetValue('class')")
+run(rf, 0.1)
+r, g, b = rf.eval("__tint(CompactRaidFrame1.healthBar)")
+check(b > 0.8 and r < 0.5, f"Class Color: the member's class ({r:.2f}, {g:.2f}, {b:.2f})")
+rf.execute("__settings.raidHealthColor:SetValue('game')")
+# Motes there are in BORDER 3 (OVERLAY 4 moved down), not where __motes looks.
+RAID_MOTES = """(function(bar)
+    local _, _, mover = __ours(bar)
+    local n = 0
+    for _, r in ipairs(__regions) do
+        if r.parent == mover and r.shown and r.layer == "BORDER" and r.sub == 3 then n = n + 1 end
+    end
+    return n
+end)"""
+before = rf.eval(f"{RAID_MOTES}(CompactRaidFrame1.healthBar)")
+rf.execute("CompactRaidFrame1.displayedUnit = 'raid2'; CompactRaidFrame1.unit = 'raid2'")
+run(rf, 0.1)
+rf.execute("__fire('UNIT_HEALTH', 'raid2')")
+run(rf, 0.05)
+check(rf.eval(f"{RAID_MOTES}(CompactRaidFrame1.healthBar)") > before,
+      "a frame handed to another member follows them: their health change stirs it")
+rf.execute("CompactRaidFrame1.displayedUnit = 'raid1'; CompactRaidFrame1.unit = 'raid1'; __units.raid1.offline = true")
+run(rf, 0.7)
+check(rf.eval("CompactRaidFrame1.healthBar.fill.alpha") == 1 and rf.eval("(select(2, __liquid(CompactRaidFrame1.healthBar)))") == 0
+      and rf.eval("(select(2, __liquid(CompactRaidFrame2.healthBar)))") > 0,
+      "a member offline: the game's grey bar back for them, the others keep the liquid")
+rf.execute("__units.raid1.offline = nil")
+run(rf, 0.7)
+check(rf.eval("(select(2, __liquid(CompactRaidFrame1.healthBar)))") > 0, "and the liquid again once they are back")
+rf.execute("__units.raid3 = { isOtherPlayer = true, class = 'WARRIOR' }; __raidFrame('CompactRaidGroup1Member1', 'raid3')")
+run(rf, 1.2)
+check(rf.eval("(select(2, __liquid(CompactRaidGroup1Member1.healthBar)))") > 0,
+      "a frame the game makes later (someone joining, groups kept apart) gets the liquid within a second")
+rf.execute("CompactRaidFrame2:Hide()")
+run(rf, 0.1)
+check(rf.eval("(select(2, __liquid(CompactRaidFrame1.healthBar)))") > 0, "a hidden frame leaves the others alone")
+rf.execute("CompactRaidFrame2:Show()")
+check(colour_on(rf, "raid", 1), "its colour can be picked while it is on")
+rf.execute("__ns.Editor.Close()")
+POWER = ["CompactRaidFrame1.powerBar", "CompactRaidFrame2.powerBar"]
+check(all(rf.eval(f"(select(2, __liquid({b})))") == 0 and rf.eval(f"{b}.fill.alpha") == 1 for b in POWER)
+      and not colour_on(rf, "raid", 2), "power is a setting of its own, off to start with")
+rf.execute("__ns.Editor.Close()")
+rf.execute("__settings.raidPower:SetValue(true)")
+run(rf, 0.3)
+check(all(rf.eval(f"(select(2, __liquid({b})))") > 0 and rf.eval(f"{b}.fill.alpha") == 0 for b in POWER),
+      "Raid Frames Power on: liquid in each member's power bar, the game's fill hidden")
+check(rf.eval("""(function()
+    local _, clip, mover = __ours(CompactRaidFrame1.powerBar)
+    for _, r in ipairs(__regions) do
+        if r.parent == mover and r.kind == "Texture" then
+            if r.layer ~= "BORDER" or r.sub > 4 or not (r.masks and r.masks[1]) then return false end
+        end
+    end
+    return clip.useParentLevel and not clip.clipsChildren and clip:GetFrameLevel() == 5
+end)()"""), "drawn as the health's: BORDER, cut by a mask, at the power bar's own level")
+r, g, b = rf.eval("__tint(CompactRaidFrame1.powerBar)")
+pr, pg, pb = rf.eval("__tint(CompactRaidFrame2.powerBar)")
+check(b > 0.6 and r < 0.4 and pr > 0.6 and pb < 0.3,
+      f"Same as Party: each member's power type, mana blue and rage red, the class kept secret or not "
+      f"({r:.2f}, {g:.2f}, {b:.2f} / {pr:.2f}, {pg:.2f}, {pb:.2f})")
+rf.execute("CompactRaidFrame1.powerBar:Hide()")  # healers only: the game hides the others' power bars
+run(rf, 0.2)
+check(rf.eval("(select(2, __liquid(CompactRaidFrame1.healthBar)))") > 0 and not any("Error" in m for m in chat(rf)),
+      "a power bar the game hides (healers only) leaves the health alone")
+rf.execute("CompactRaidFrame1.powerBar:Show()")
+# How often a raid liquid updates: the player's idle rate for a party's worth, slower for a raid's dozens.
+rf.execute("""(function()
+    local l = __ns.Bars.Liquid(CompactRaidFrame1.healthBar)
+    local update = l.Update
+    l.Update = function(self, ...) __updates = __updates + 1; return update(self, ...) end
+end)()""")
+COUNT_UPDATES = "__updates = 0"
+rf.execute(COUNT_UPDATES)
+run(rf, 1)
+few = rf.eval("__updates")
+rf.execute("""for i = 1, 12 do
+        __units['raid' .. (10 + i)] = { isOtherPlayer = true, class = 'PRIEST', power = 0 }
+        __raidFrame('CompactRaidGroup' .. (2 + math.floor((i - 1) / 5)) .. 'Member' .. ((i - 1) % 5 + 1), 'raid' .. (10 + i))
+    end""")
+run(rf, 1.2)
+rf.execute(COUNT_UPDATES)
+run(rf, 1)
+many = rf.eval("__updates")
+check(27 <= few <= 31 and 13 <= many <= 16,
+      f"a raid liquid updates 30 times a second with a party's worth showing, 15 with a raid's ({few}, {many})")
+rf.execute("""for i = 1, 12 do
+        _G['CompactRaidGroup' .. (2 + math.floor((i - 1) / 5)) .. 'Member' .. ((i - 1) % 5 + 1)]:Hide()
+    end""")
+rf.execute("SlashCmdList.SMOOTHANIMATEDBARS('raid')")
+check(any("CompactRaidFrame1HealthBar): liquid yes" in m for m in chat(rf)), "/sab raid says which bars have the liquid")
+rf.execute("__settings.raidHealth:SetValue(false)")
+run(rf, 0.2)
+check(all(rf.eval(f"(select(2, __liquid({b})))") == 0 and rf.eval(f"{b}.fill.alpha") == 1
+          for b in RAID + ["CompactRaidGroup1Member1.healthBar"]), "off again: every raid frame has the game's bar back")
+check(rf.eval("(select(2, __liquid(CompactRaidFrame2.powerBar)))") > 0
+      and rf.eval("(select(2, __liquid(CompactRaidGroup1Member1.powerBar)))") > 0,
+      "and power keeps its liquid with health off, on frames made later too")
+rf.execute("__settings.raidPower:SetValue(false)")
+run(rf, 0.2)
+check(all(rf.eval(f"(select(2, __liquid({b})))") == 0 and rf.eval(f"{b}.fill.alpha") == 1 for b in POWER),
+      "Power off: the game's power bars back")
+check(not any("Error" in m for m in chat(rf)), "no errors")
+
 print("== a bar whose size is kept secret")
 ss = session("{ setupDone = true, dots = true }")
 ss.execute("__target = { guid = 'Creature-0-1-2-3-299-0001', name = 'Mottled Boar' }; __fire('PLAYER_TARGET_CHANGED')")
@@ -611,16 +1086,15 @@ check(um.eval("__menuCallbacks['MENU_UNIT_SELF'] ~= nil and __menuCallbacks['MEN
       "added to the player, target, pet and focus frames' menus through Menu.ModifyMenu")
 items = um.eval("__openUnitMenu('SELF', { ownerFrame = PlayerFrame, unit = 'player', fromPlayerFrame = true })")
 kinds = [(items[i].kind, items[i].text) for i in range(1, len(items) + 1)]
-check(kinds == [("divider", None), ("title", "Smooth Animated Bars"), ("button", "Open Settings")],
-      f"right-clicking your frame: a divider, the addon's name and Open Settings ({kinds})")
-um.execute("__closeSettings(); __openedCategory = nil")
+check(kinds == [("divider", None), ("title", "Smooth Animated Bars"), ("button", "Open Editor")],
+      f"right-clicking your frame: a divider, the addon's name and Open Editor ({kinds})")
 items[3].onClick()
-check(um.eval("__openedCategory") == "Smooth Animated Bars", "which opens the settings")
-um.execute("__closeSettings(); __openedCategory = nil; __combat = true")
+check(um.eval("SmoothAnimatedBarsEditor.shown") and um.eval("__ns.Editor.State().section") == "player",
+      "which opens the editor at Player")
+um.execute("SmoothAnimatedBarsEditor:Hide(); __combat = true")
 items[3].onClick()
-check(um.eval("__openedCategory") is None, "in combat it waits")
-um.execute("__combat = false; __fire('PLAYER_REGEN_ENABLED')")
-check(um.eval("__openedCategory") == "Smooth Animated Bars", "and opens once combat ends")
+check(um.eval("SmoothAnimatedBarsEditor.shown"), "in combat too")
+um.execute("__combat = false; SmoothAnimatedBarsEditor:Hide()")
 for which, frame in (("TARGET", "TargetFrame"), ("ENEMY_PLAYER", "TargetFrame"), ("PET", "PetFrame"), ("FOCUS", "FocusFrame")):
     got = um.eval(f"#__openUnitMenu('{which}', {{ ownerFrame = {frame}, unit = 'target' }})")
     check(got == 3, f"{which} menu from {frame}: added")
@@ -638,41 +1112,21 @@ check(um.eval("#__openUnitMenu('TARGET', { ownerFrame = TargetFrame, unit = 'tar
 check(um.eval("#__openUnitMenu('PLAYER', { name = 'Somebody' })") == 0
       and um.eval("#__openUnitMenu('PARTY', { ownerFrame = UIParent, unit = 'party1' })") == 0,
       "a player's menu from a chat name or a party frame: left alone")
-um.execute("""
-    __closeSettings()
-    for _, f in ipairs(__frames) do
-        if f.scrollChild and f.parent == __settingsCategory.frame then __page = f end
-    end
-    __page.h = 300
-    function __headerY(title)
-        for _, r in ipairs(__regions) do
-            local init = r.initializer
-            if r.rowTemplate and init and init.kind == 'header' and init.data.name == title then
-                for _, p in pairs(r.points) do return -p.y end
-            end
-        end
-    end
-""")
 check(um.eval("#__openUnitMenu('PARTY', { ownerFrame = PartyFrame.MemberFrame2, unit = 'party2' })") == 3,
       "PARTY menu from a party member's frame (pooled, without a name): added")
-for which, frame, section in (("PET", "PetFrame", "Pet"), ("FOCUS", "FocusFrame", "Focus"), ("SELF", "PlayerFrame", "Player"),
-                              ("PARTY", "PartyFrame.MemberFrame1", "Party")):
-    um.execute(f"__closeSettings(); local items = __openUnitMenu('{which}', {{ ownerFrame = {frame} }}); items[3].onClick(items[3])")
-    run(um, 0.1)
-    got, want = um.eval("__page:GetVerticalScroll()"), um.eval(f"__headerY('{section}')") - 10
-    check(abs(got - max(0, want)) < 0.5, f"from the {frame} menu the settings open at {section} (scrolled to {got}, header at {want})")
-um.execute("__closeSettings(); __combat = true; local items = __openUnitMenu('TARGET', { ownerFrame = TargetFrame }); items[3].onClick(items[3])")
-um.execute("__combat = false; __fire('PLAYER_REGEN_ENABLED')")
-run(um, 0.1)
-got, want = um.eval("__page:GetVerticalScroll()"), um.eval("__headerY('Target')") - 10
-check(abs(got - want) < 0.5, f"and from the target's in combat, at Target once combat ends ({got}, {want})")
+for which, frame, section in (("PET", "PetFrame", "pet"), ("FOCUS", "FocusFrame", "focus"), ("SELF", "PlayerFrame", "player"),
+                              ("PARTY", "PartyFrame.MemberFrame1", "party"), ("TARGET", "TargetFrame", "target")):
+    um.execute(f"local items = __openUnitMenu('{which}', {{ ownerFrame = {frame} }}); items[3].onClick(items[3])")
+    got = um.eval("__ns.Editor.State().section")
+    check(got == section, f"from the {frame} menu the editor opens at {section} ({got})")
 check(not any("Error" in m for m in chat(um)), "no errors")
 
 print("== every theme")
 lua2 = session()
-rows2 = lua2.eval("__settingsRows()")
-options = [rows2[i] for i in range(1, len(rows2) + 1) if rows2[i].key == "powerColor"][0].options
-keys = [options[i].value for i in range(1, len(options) + 1)]
+lua2.execute("__ns.Editor.Open('player')")
+tiles = lua2.eval("__ns.Editor.State().ui.pages.player.cards[1].colour.tiles")
+keys = list(tiles.keys())
+check(len(keys) == 26, f"the editor has a tile for the game colour and every theme ({len(keys)})")
 broken = []
 for key in keys:
     lua2.execute(f"__settings.healthColor:SetValue('{key}'); __settings.powerColor:SetValue('{key}')")
@@ -834,12 +1288,12 @@ check(not wz.eval("SmoothAnimatedBarsSetup.shown") and wz.eval("SmoothAnimatedBa
       "/sab setup, then Finish keeps the choices")
 wz.execute("SlashCmdList.SMOOTHANIMATEDBARS('setup'); __pick('effects', 'full'); SmoothAnimatedBarsSetup:Hide()")
 check(wz.eval("SmoothAnimatedBarsDB.bubbles") is False, "closing the window (Escape) is Skip")
-rows_wz = wz.eval("__settingsRows()")
-button = [rows_wz[i] for i in range(1, len(rows_wz) + 1) if rows_wz[i].name == "Setup Wizard"]
-check(bool(button), "Setup Wizard button on the settings page")
-if button:
-    button[0].onClick()
+check(wz.eval("__ns.Options.Page().setup.text") == "Run Setup", "Run Setup button on the settings page")
+wz.execute("local b = __ns.Options.Page().setup; b.scripts.OnClick(b)")
 check(wz.eval("SmoothAnimatedBarsSetup.shown"), "which opens it")
+wz.execute("SmoothAnimatedBarsSetup:Hide(); __ns.Editor.Open(); local b = __ns.Editor.State().ui.setup; b.scripts.OnClick(b)")
+check(wz.eval("SmoothAnimatedBarsSetup.shown") and not wz.eval("SmoothAnimatedBarsEditor.shown"),
+      "and the editor's Run Setup, closing the editor")
 check(not any("Error in" in m for m in chat(wz)), "no errors")
 
 print("== wizard previews")
@@ -2038,6 +2492,34 @@ check(cq.eval("__screenshots") == 2 and not cq.eval(f"{grid}.shown") and cq.eval
       "two screenshots, on black and white, then it hides, puts the format back and says what next")
 check(not any("Error in" in m for m in chat(cq)), "no errors")
 
+print("== /sab capture raid (raid frame art)")
+cr = session(setup="COMPACT_UNIT_FRAME_FRIENDLY_HEALTH_COLOR_BG = { GetRGB = function() return 0.1, 0.1, 0.1 end }")
+cr.execute("SlashCmdList.SMOOTHANIMATEDBARS('capture raid')")
+grid = "SmoothAnimatedBarsCaptureRaid"
+pieces = cr.eval(f"""(function()
+    local out = {{}}
+    for _, r in ipairs(__regions) do
+        if r.parent == {grid} and r.kind == "Texture" and r.atlas then
+            local p = r.points.TOPLEFT
+            out[#out + 1] = r.atlas .. " " .. p.x .. "," .. p.y .. " " .. r.w .. "x" .. r.h
+                .. (r.vc and r.vc[1] ~= 1 and (" " .. r.vc[1]) or "")
+        end
+    end
+    return table.concat(out, "; ")
+end)()""")
+check(pieces == "raidframe-hp-bg-white 20,-40 98x44 0.1; RaidFrame-TargetFrame 130,-40 98x44; "
+      "_RaidFrame-Resource-Background 240,-40 96x8; options_frame_child 350,-40 102x225",
+      f"a grid of its own: the frame's background tinted as the game tints it, the target's highlight, the power bar's "
+      f"background and a group's border, at a 98 x 44 frame's sizes: {pieces}")
+run(cr, 0.6)
+cr.execute("__fire('SCREENSHOT_SUCCEEDED')")
+run(cr, 4.1)
+cr.execute("__fire('SCREENSHOT_SUCCEEDED')")
+check(cr.eval("__screenshots") == 2 and not cr.eval(f"{grid}.shown") and cr.eval("__cvars.screenshotFormat") == "jpg"
+      and any("capture_art.py --raid" in m for m in chat(cr)),
+      "two screenshots, on black and white, then it hides, puts the format back and says what next")
+check(not any("Error in" in m for m in chat(cr)), "no errors")
+
 print("== personal resource display")
 # Forever's Personal Resource Display: the player's bars in a frame of their own, drawn with the plates' art and no
 # mask, so they take the plates' look; shown only with the game's option on.
@@ -2269,6 +2751,115 @@ check(ph.eval(f"__ns.Bars.Liquid({PH}).energy") < 0.05,
       "the display hidden (in-combat only, out of combat): the player's changes do not stir it")
 ph.execute(f"{PRD}:Show()")
 check(not any("Error in" in m for m in chat(ph)), "no errors")
+
+print("== faded out")
+# Frames Forever hides the player frame with SetAlpha(0), and "immersion" addons fade idle frames out the same way:
+# IsVisible still says yes, but a liquid there would run for nothing.
+fo = session()
+run(fo, 1)
+fo.execute("""
+    __updates = 0
+    local liq = __ns.Bars.Liquid(PlayerFrame.healthbar)
+    local update = liq.Update
+    liq.Update = function(self, ...) __updates = __updates + 1; return update(self, ...) end
+""")
+run(fo, 1)
+check(fo.eval("__updates") > 0, f"a shown bar's liquid updates ({fo.eval('__updates')} updates)")
+fo.execute("PlayerFrame.PlayerFrameContent:SetAlpha(0); __updates = 0")
+run(fo, 2)
+fo.execute("for _ = 1, 20 do __fire('UNIT_HEALTH', 'player') end")
+check(fo.eval("__updates") == 0 and fo.eval("__ns.Bars.Liquid(PlayerFrame.healthbar).energy") < 0.05,
+      f"the player frame faded out (alpha 0): its liquid is neither updated nor stirred ({fo.eval('__updates')} updates)")
+fo.execute("PlayerFrame.PlayerFrameContent:SetAlpha(0.3); __step(1 / 144)")
+check(fo.eval("__updates") > 0 and fo.eval("(select(2, __liquid(PlayerFrame.healthbar)))") > 0,
+      "faded half in again, it is drawn on the first frame")
+fo.execute("PlayerFrame.PlayerFrameContent:SetAlpha(__secret(0)); __updates = 0")
+run(fo, 0.5)
+check(fo.eval("__updates") > 0, "an alpha the client keeps secret is taken as visible")
+fo.execute("""
+    PlayerFrame.PlayerFrameContent:SetAlpha(0)
+    PlayerFrame.PlayerFrameContent.PlayerFrameContentMain.HealthBarsContainer:SetIgnoreParentAlpha(true)
+    __updates = 0
+""")
+run(fo, 0.5)
+check(fo.eval("__updates") > 0, "a bar in a frame that ignores its parent's alpha still shows, and still updates")
+fo.execute("PlayerFrame.PlayerFrameContent.PlayerFrameContentMain.HealthBarsContainer:SetIgnoreParentAlpha(false)")
+run(fo, 0.1)
+fo.execute("SlashCmdList.SMOOTHANIMATEDBARS('debug')")
+check(any("visible no (faded out)" in m for m in chat(fo)), "/sab debug tells a faded-out bar from a hidden one")
+fo.execute("PlayerFrame.PlayerFrameContent:SetAlpha(1)")
+check(not any("Error in" in m for m in chat(fo)), "no errors")
+
+# The markers pause while faded out, not hide: hidden, they forgot what they had shown and played it again on every
+# fade-in (a meal's release, the DoTs growing in from nothing).
+fm = session("{ setupDone = true }", "__player.class = 'DRUID'; __player.power = 0")
+fm.execute(f"""
+    __spells[433] = {{ 'Food', '{FED_FOOD}' }}
+    function __eat(id, guid)
+        __fire('UNIT_SPELLCAST_SENT', 'player', '', guid, id)
+        __fire('UNIT_SPELLCAST_SUCCEEDED', 'player', guid, id)
+    end
+    function __stars()
+        local n = 0
+        for _, m in ipairs(__ns.Bars.Liquid(PlayerFrame.healthbar).motes) do
+            if m.active and m.style and m.style.texture == 'Star' then n = n + 1 end
+        end
+        return n
+    end
+    function __fade(a) PlayerFrame.PlayerFrameContent:SetAlpha(a) end
+""")
+fm.execute("__eat(433, 'Cast-1')")
+run(fm, 13)
+fm.execute("__fade(0)")
+run(fm, 1)
+fm.execute("__fade(1)")
+run(fm, 0.3)
+most = fm.eval("__stars()")
+run(fm, 2)
+check(most < 25 and 0 < fm.eval("__stars()") < 25,
+      f"faded out and back after a meal's buff: its release is not played again ({most} stars), slow stars go on")
+fm.execute("__fire('PLAYER_STARTED_MOVING')")
+run(fm, 3)
+fm.execute("__eat(433, 'Cast-2')")
+run(fm, 5)
+fm.execute("__fade(0)")
+run(fm, 6.5)
+fm.execute("__fade(1)")
+run(fm, 0.3)
+most = fm.eval("__stars()")
+run(fm, 2)
+check(most < 25 and 0 < fm.eval("__stars()") < 25,
+      f"the buff reached while faded out: no release saved up for the fade-in ({most} stars), the slow stars after it")
+check(not any("Error in" in m for m in chat(fm)), "no errors")
+
+fd = session("{ setupDone = true, dots = true }")
+fd.execute("""
+    __spells[172] = { 'Corruption', 'Corrupts the target, causing 90 Shadow damage over 18 sec.' }
+    __spells[348] = { 'Immolate', 'Burns the enemy for 11 Fire damage and then an additional 20 Fire damage over 15 sec.' }
+    function __cast(id, guid)
+        __fire('UNIT_SPELLCAST_SENT', 'player', __target and __target.name or '', guid, id)
+        __fire('UNIT_SPELLCAST_SUCCEEDED', 'player', guid, id)
+    end
+    function __d(i) return (__ns.Marker.State()).liquids[i] end
+    __target = { guid = 'Creature-0-1-2-3-299-0001', name = 'Mottled Boar' }
+    __fire('PLAYER_TARGET_CHANGED')
+""")
+run(fd, 0.3)
+fd.execute("__cast(172, 'Cast-1')")
+run(fd, 3)
+before = fd.eval("__d(1).shown")
+fd.execute("TargetFrame:SetAlpha(0)")
+run(fd, 0.5)
+fd.execute("__cast(348, 'Cast-2')")
+run(fd, 0.5)
+fd.execute("TargetFrame:SetAlpha(1)")
+run(fd, 0.15)
+after = fd.eval("__d(1).shown")
+check(after > 0.8 * before and fd.eval("(__ns.Marker.State()).clip.shown"),
+      f"the target frame faded out and back: its DoT liquids stay as they were, not grown in again ({before:.1f}, {after:.1f})")
+check(fd.eval("__d(1).liquid.energy") < 0.3 and fd.eval("__d(2).liquid.energy") < 0.3,
+      "and a DoT that landed while it was faded out does not splash late")
+check(not any("Error in" in m for m in chat(fd)), "no errors")
 
 print("== enemy nameplates")
 
@@ -2739,31 +3330,21 @@ r, g, b = fp.eval("unpack(__ns.Bars.Liquid(__pbar('nameplate2')).theme.fillB)")
 r1, g1, b1 = fp.eval("unpack(__ns.Bars.Liquid(__pbar('nameplate1')).theme.fillB)")
 check((r, g, b) == (r1, g1, b1) and r > 0.9 and g < 0.6,
       f"Same as Enemy Nameplates: Fire too ({r:.2f}, {g:.2f}, {b:.2f})")
-def mob_rows(lua):
-    rows = lua.eval("__settingsRows()")
-    return [rows[i] for i in range(1, len(rows) + 1) if rows[i].key == "mobClassColor"]
-
-
-check(not any(r.frame.shown for r in mob_rows(fp)), "no nameplate or target on Class Color: Class Color on Mobs hidden")
+check(not mob_shown(fp, "target") and not mob_shown(fp, "plates"),
+      "no nameplate or target on Class Color: the editor's Class Color on Mobs hidden")
 fp.execute("__settings.plateFriendlyColor:SetValue('class')")
 run(fp, 0.7)
-under_target, under_plates = mob_rows(fp)
-check(under_plates.frame.shown and under_plates.indent and not under_target.frame.shown,
+check(mob_shown(fp, "plates") and not mob_shown(fp, "target"),
       "friendly nameplates on Class Color: Class Color on Mobs shows under Nameplates, not under Target")
-check(fp.eval("""(function()
-    local found = {}
-    for _, r in ipairs(__settingsRows()) do
-        if r.key == "mobClassColor" then found[#found + 1] = r.frame.initializer.data.setting end
-    end
-    return #found == 2 and found[1] == found[2]
-end)()"""), "both rows are the same setting")
+fp.execute("__ns.Editor.Close()")
 r, g, b = fp.eval("__tint(__pbar('nameplate3'))")
 check(b > 0.6 and r < 0.5, f"Class Color: another player in their class colour, a mage blue ({r:.2f}, {g:.2f}, {b:.2f})")
 r, g, b = fp.eval("__tint(__pbar('nameplate2'))")
 check(g > 0.5 and r < 0.4, f"and a friendly NPC by its reaction, green ({r:.2f}, {g:.2f}, {b:.2f})")
 fp.execute("__settings.plateFriendlyColor:SetValue('game'); __settings.plateHealthColor:SetValue('class')")
 run(fp, 0.3)
-check(mob_rows(fp)[1].frame.shown, "enemy nameplates on Class Color show it under Nameplates too")
+check(mob_shown(fp, "plates"), "enemy nameplates on Class Color show it under Nameplates too")
+fp.execute("__ns.Editor.Close()")
 fp.execute("__settings.plateHealthColor:SetValue('same')")
 run(fp, 0.7)
 fp.execute("__showPlate('nameplate4', { friendly = true, reaction = 5 }, { forbidden = true })")
@@ -2924,19 +3505,18 @@ wn.execute("__combat = false; __fire('PLAYER_REGEN_ENABLED')")
 check(window(wn) and wn.eval("SmoothAnimatedBarsDB.whatsNewSeen") == newest, "and shows once combat ends")
 wn.execute("SmoothAnimatedBarsWhatsNew:Hide(); SlashCmdList.SMOOTHANIMATEDBARS('changes')")
 check(window(wn), "/sab changes opens it again")
-wn.execute("__closeSettings(); __openedCategory = nil")
 wn.execute("""(function()
     for _, f in ipairs(__frames) do
-        if f.parent == SmoothAnimatedBarsWhatsNew and f.text == "Open Settings" then f.scripts.OnClick(f) end
+        if f.parent == SmoothAnimatedBarsWhatsNew and f.text == "Open Editor" then f.scripts.OnClick(f) end
     end
 end)()""")
-check(not window(wn) and wn.eval("__openedCategory") == "Smooth Animated Bars", "Open Settings closes it and opens them")
-rows = wn.eval("__settingsRows()")
-button = [rows[i] for i in range(1, len(rows) + 1) if rows[i].name == "What's New"]
-check(bool(button), "a What's New button on the settings page")
-if button:
-    button[0].onClick()
+check(not window(wn) and wn.eval("SmoothAnimatedBarsEditor.shown"), "Open Editor closes it and opens the editor")
+wn.execute("SmoothAnimatedBarsEditor:Hide()")
+check(wn.eval("__ns.Options.Page().whatsNew.text") == "What's New", "a What's New button on the settings page")
+wn.execute("local b = __ns.Options.Page().whatsNew; b.scripts.OnClick(b)")
 check(window(wn), "which opens it")
+wn.execute("SmoothAnimatedBarsWhatsNew:Hide(); __ns.Editor.Open(); local b = __ns.Editor.State().ui.whatsNew; b.scripts.OnClick(b)")
+check(window(wn), "and the editor's")
 many = [{"version": f"1.{i}.0", "sections": [("New", ["x"])]} for i in range(12, 0, -1)]
 wn.globals().__many = whatsnew_data.lua(many)
 wn.execute("assert(loadstring(__many))(nil, __ns)")
@@ -3087,6 +3667,29 @@ check(taken is True
       and ex.eval("__ns.Bars.Liquid(__ufHealth).theme.fillA[2]") > ex.eval("__ns.Bars.Liquid(__ufHealth).theme.fillA[1]"),
       "an unknown theme (one renamed or added later) falls back to the bar's own colour rather than failing")
 ex.execute("SmoothAnimatedBars.AddBar(__ufHealth, 'player', 'health')")
+run(ex, 0.3)
+check(ex.eval("SmoothAnimatedBarsDB.externalColors") is False, "your colours on their bars: off by default")
+ex.execute("__settings.healthColor:SetValue('arcane'); __settings.externalColors:SetValue(true)")
+run(ex, 0.3)
+check(ex.eval("__ns.Bars.Liquid(__ufHealth).theme.fillA[1]") == ex.eval("__ns.Bars.Liquid(PlayerFrame.healthbar).theme.fillA[1]"),
+      "on: a player bar that asked for no theme takes the colour picked for our player frame")
+ex.execute("__ufHealth:SetStatusBarColor(0.78, 0.61, 0.43); __settings.healthColor:SetValue('game')")
+run(ex, 0.3)
+r, g, b = ex.eval("__tint(__ufHealth)")
+check(g > r and g > b, f"with Game Colour there, the game's green health, not the addon's warrior tan (FlareUI's, seen "
+      f"in game) ({r:.2f}, {g:.2f}, {b:.2f})")
+ex.execute("__settings.targetHealthColor:SetValue('fire'); __ufLate = __ufBar(180, 24)")
+taken = ex.eval("SmoothAnimatedBars.AddBar(__ufLate, 'target', 'health')")
+run(ex, 0.3)
+check(taken is True and ex.eval("(select(2, __liquid(__ufLate)))") > 0
+      and ex.eval("__ns.Bars.Liquid(__ufLate).theme.fillA[1]") == ex.eval("__ns.Bars.Liquid(TargetFrame.healthbar).theme.fillA[1]"),
+      "a bar handed over while it is on (after a /reload) is taken, in its frame's colour (it failed to set up, seen in game)")
+ex.execute("SmoothAnimatedBars.RemoveBar(__ufLate); __settings.targetHealthColor:SetValue('same')")
+ex.execute("__settings.externalColors:SetValue(false)")
+run(ex, 0.3)
+r, g, b = ex.eval("__tint(__ufHealth)")
+check(r > g > b, f"off again: the addon's own colour back ({r:.2f}, {g:.2f}, {b:.2f})")
+ex.execute("__ufHealth:SetStatusBarColor(0.2, 0.8, 0.2)")
 run(ex, 0.3)
 
 # Called again with nothing changed, as an addon may on every update: nothing happens.
@@ -3359,6 +3962,117 @@ check(early.eval("__earlyTaken") is True and early.eval("(select(2, __liquid(__e
       "a bar handed over before our settings loaded gets the liquid once they have")
 check(early.eval("__earlyVTaken") is False, "and a vertical one is declined then too")
 
+print("== ClassicUI Forever (Adaptors/ClassicUIForever.lua)")
+# Its unit frames as 0.58.0 builds them: the game's bars faded out, StatusBars of its own in frame.fcui.host.fcui (and
+# tot.fcui.totHealth/totPower), and the pet's game bars kept, moved, with the game's mask taken off their fill.
+CUIF = """
+    function __cuifBar(parent, w, h)
+        local b = CreateFrame("StatusBar", nil, parent)
+        b.w, b.h, b.level = w, h, 4
+        b:SetStatusBarTexture(b:CreateTexture(nil, "ARTWORK"))
+        b:SetMinMaxValues(0, __secret()); b:SetValue(__secret())
+        b:SetStatusBarColor(0, 1, 0)
+        return b
+    end
+    function __cuifHost(frame, hw, hh, pw, ph)
+        local host = CreateFrame("Frame", nil, frame)
+        host.level = 3
+        host.fcui = { health = __cuifBar(host, hw, hh), power = __cuifBar(host, pw, ph) }
+        frame.fcui = { host = host }
+        return host.fcui.health, host.fcui.power
+    end
+    function __cuifSkin()
+        __cP, __cPp = __cuifHost(PlayerFrame, 119, 12, 119, 12)
+        __cT, __cTp = __cuifHost(TargetFrame, 119, 12, 119, 12)
+        PlayerFrame.PlayerFrameContent.PlayerFrameContentMain.HealthBarsContainer:SetAlpha(0)
+        TargetFrame.healthbar:SetAlpha(0)
+        local barHost = CreateFrame("Frame", nil, TargetFrameToT)
+        TargetFrameToT.fcui = { barHost = barHost, totHealth = __cuifBar(barHost, 46, 7), totPower = __cuifBar(barHost, 46, 7) }
+        __cTot = TargetFrameToT.fcui.totHealth
+        local m = PartyFrame.MemberFrame1
+        m:Show()
+        __cM, __cMp = __cuifHost(m, 70, 10, 74, 7)
+        PetFrame.fcui = { petArt = CreateFrame("Frame", nil, PetFrame) }
+        PetFrameHealthBar:GetStatusBarTexture():RemoveMaskTexture(PetFrameHealthBarMask)
+    end
+"""
+cu = session("{ setupDone = true, heals = false, dots = false, manaBuild = false }",
+             "__addons.ClassicUIForever = true" + CUIF)
+run(cu, 0.5)
+_, _, _, pet_masked_before, _ = cu.eval("__liquid(PetFrameHealthBar)")
+cu.execute("__cuifSkin()")
+run(cu, 1.2)
+for bar, what in [("__cP", "player health"), ("__cPp", "player power"), ("__cT", "target health"),
+                  ("__cTot", "target of target health"), ("__cM", "party member health")]:
+    n, shown, alpha, masked, free = cu.eval(f"__liquid({bar})")
+    check(shown > 0 and alpha == 0 and masked == 0,
+          f"its {what} bar, built after ours, gets the liquid, its fill hidden, no mask ({shown}/{n})")
+check(cu.eval("""(function()
+    local _, clip = __ours(__cP)
+    return clip.useParentLevel == true and clip.points.TOPLEFT.y == 0
+end)()"""), "at the bar's own level, under its art, motes kept in the bar")
+check(cu.eval("(__ns.Bars.External(__cT))") == "target"
+      and cu.eval("(__ns.Bars.External(__cTot))") == "targettarget"
+      and cu.eval("(__ns.Bars.External(__cM))") == "party1", "each follows its frame's unit")
+r, g, b = cu.eval("__tint(__cP)")
+check(g > r and g > b, f"with Game Colour, the colour it gives its bar ({r:.2f}, {g:.2f}, {b:.2f})")
+cu.execute("__settings.healthColor:SetValue('arcane')")
+run(cu, 0.3)
+r2, g2, b2 = cu.eval("__tint(__cP)")
+check(cu.eval("__ns.Bars.Liquid(__cP).theme.fillA[1]") == cu.eval("__ns.Bars.Liquid(PlayerFrame.healthbar).theme.fillA[1]")
+      and (r2, g2, b2) != (r, g, b), f"and the theme picked for our player frame's health ({r2:.2f}, {g2:.2f}, {b2:.2f})")
+check(cu.eval("__ns.Bars.Sight(PlayerFrame.healthbar)") == "faded", "the game's bar under it is faded, so its liquid pauses")
+_, _, _, pet_masked, _ = cu.eval("__liquid(PetFrameHealthBar)")
+check(pet_masked_before > 0 and pet_masked == 0 and cu.eval("(select(2, __liquid(PetFrameHealthBar)))") > 0,
+      f"the pet's moved bar keeps its liquid, no longer cut by the game's mask ({pet_masked_before} masked before)")
+check(cu.eval("""(function()
+    local _, clip = __ours(PetFrameHealthBar)
+    local tl, br = clip.points.TOPLEFT, clip.points.BOTTOMRIGHT
+    return tl.rel == PetFrameHealthBar and tl.x == 0 and tl.y == 0 and br.x == 0 and br.y == 0
+end)()"""), "and cut by its clip frame at the bar's edges instead, as the mask did")
+cu.execute("PartyFrame.MemberFrame1.unit = 'party3'")
+run(cu, 1.2)
+check(cu.eval("(__ns.Bars.External(__cM))") == "party3", "a party button given another member: the liquid follows")
+cu.execute("PartyFrame.MemberFrame1.unit = 'player'")
+run(cu, 1.2)
+check(cu.eval("(__ns.Bars.External(__cM))") == "party3",
+      "a member frame on the player (Edit Mode's preview) is not handed over as the player's bar")
+cu.execute("PartyFrame.MemberFrame1.unit = 'party3'")
+cu.execute("SmoothAnimatedBars.AddBar(__cT, 'target', 'health', { name = 'ClassicUI Forever' })")
+run(cu, 1.2)
+check(cu.eval("__ns.Bars.HandedBy(__cT)") == "addon",
+      "once the addon hands a bar over itself, the adaptor leaves it to the addon's options")
+cu.execute("SmoothAnimatedBars.RemoveBar(__cT)")
+run(cu, 1.2)
+check(not cu.eval("SmoothAnimatedBars.HasBar(__cT)") and cu.eval("__cT.fill.alpha") == 1,
+      "and its RemoveBar holds: the adaptor does not take the bar back")
+
+cu.execute("__settings.playerHealth:SetValue(false)")
+run(cu, 0.2)
+check(cu.eval("(select(2, __liquid(__cP)))") == 0 and cu.eval("__cP.fill.alpha") == 1
+      and cu.eval("(select(2, __liquid(__cPp)))") > 0, "follows our player health setting: off, its own fill back")
+cu.execute("__settings.playerHealth:SetValue(true); __settings.externalBars:SetValue(false)")
+run(cu, 1.2)
+check(cu.eval("(select(2, __liquid(__cP)))") > 0, "and not the Other Addons' Bars setting")
+cu.execute("__ns.Core.SetEffect('playerHealth', 'lightning', false)")
+run(cu, 0.2)
+check(cu.eval("__ns.Bars.EffectOptions(__cP).lightning") is False and cu.eval("__ns.Bars.EffectOptions(__cT).lightning"),
+      "with the player health bar's own effects")
+cu.execute("__cP:GetParent():Hide()")
+run(cu, 0.3)
+check(cu.eval("__ns.Bars.Sight(__cP)") == "hidden", "a piece turned off (its bars hidden): paused there")
+check(not any("Error" in m or "ClassicUI" in m for m in chat(cu)), "no errors")
+
+plain = session("{ setupDone = true }", CUIF)
+plain.execute("__cuifSkin()")
+run(plain, 1.2)
+check(not plain.eval("SmoothAnimatedBars.HasBar(__cP)") and plain.eval("(select(4, __liquid(PetFrameHealthBar)))") > 0,
+      "without ClassicUI Forever loaded, nothing is looked for")
+piece = session("{ setupDone = true }", "__addons.ClassicUIForeverStandaloneUnitFrames = true" + CUIF)
+piece.execute("__cuifSkin()")
+run(piece, 1.2)
+check(piece.eval("SmoothAnimatedBars.HasBar(__cP)") and piece.eval("(select(2, __liquid(__cP)))") > 0,
+      "its standalone unit frames piece is looked for too")
 print("== breath bar (the mirror timers)")
 # Forever's mirror timers (Blizzard_MirrorTimer): three pooled frames, each showing whichever timer the game hands it.
 # The breath bar's liquid shows while a frame shows BREATH, a level above the bar over the frame's dark background,

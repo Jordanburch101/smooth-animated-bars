@@ -4,17 +4,45 @@ Player-facing notes for each release. Write for players: what they can now
 do or see, and what was broken and now works. Leave out internal changes.
 Sections are `### New` and `### Fixed`; skip one that would be empty.
 
-## 1.11.0
+## 1.12.0
 
 ### New
 - **Breath bar**: the bar the game shows while you hold your breath under
   water now fills with the liquid too, in its own blue or any theme. Fatigue
   and Feign Death keep the game's own bar. Turn it off, or pick its colour,
-  under Breath in the settings.
+  under Breath in the editor.
 - **Bubbles while holding breath**: as your breath runs out, bubbles escape
   from the end of the breath bar and float up out of it, popping as they go.
   None come while your breath is coming back. Turn them off with Bubbles
-  While Holding Breath under Breath in the settings.
+  While Holding Breath under Breath in the editor.
+
+## 1.11.0
+
+### New
+- **The editor**: every setting in one window, beside live examples of all
+  your frames laid out as on your screen. Click a frame to change it, and
+  hover over a colour to try it on your bars first. Open it with `/sab`, by
+  right-clicking your frame, or from the addon's page in the game's AddOns
+  settings.
+- **Effects for one bar**: any bar can now have its own effects. Open it in
+  the editor and untick Use the global effects on its Effects tab, to turn
+  off Bubbles on just your power bar, say.
+- **Raid frames**: the liquid in raid frames, and in raid-style party
+  frames. Names, icons, heals and shields stay on top. Off to start with:
+  turn on Health and Power under Raid in the editor.
+- **Proven with other unit frame addons**: tried in game with FlareUI (from
+  6.10) and Frames Forever (from 1.4.3), which build the liquid into their
+  own bars, and now ClassicUI Forever, whose player, target, focus, target
+  of target, party and pet bars follow your settings for each frame. The
+  addon's page lists what each supports.
+- **Your colours on other addons' bars**: tick Your Colours on Their Bars
+  under Other Addons to give bars from addons like FlareUI the colours you
+  pick for each frame, instead of their own.
+
+### Fixed
+- **Faded-out frames**: bars on a frame another addon has faded out no
+  longer keep animating unseen. The liquid pauses until the frame is back.
+- **`/sab off`**: now turns off nameplates and raid frames too.
 
 ## 1.10.0
 

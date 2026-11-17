@@ -483,9 +483,27 @@ end
 function Liquid:SetSublevelOffset(offset)
     if offset == (self.offset or 0) then return end
     self.offset = offset
+    self:Restack()
+end
+
+-- Moves the textures into other draw layers: map = { ARTWORK = { "BORDER", -7 }, ... } puts each layer named there
+-- into another, its sublevels shifted by that much (their order kept), on top of SetSublevelOffset. nil puts them back.
+-- For a bar whose frame's own textures share the bar's frame level: the client sorts the textures of every frame at a
+-- level by draw layer together, so the liquid has to sit below what the game draws over its fill (the raid frames:
+-- Bars.lua, RAID_LAYERS).
+function Liquid:SetLayerMap(map)
+    self.layerMap = map
+    self:Restack()
+end
+
+function Liquid:Restack()
+    local offset, map = self.offset or 0, self.layerMap
     for _, t in ipairs(self.textures) do
         local d = self.drawLayers[t]
-        t:SetDrawLayer(d[1], max(-8, min(7, d[2] + offset)))
+        local layer, sub = d[1], d[2] + offset
+        local m = map and map[layer]
+        if m then layer, sub = m[1], sub + m[2] end
+        t:SetDrawLayer(layer, max(-8, min(7, sub)))
     end
 end
 

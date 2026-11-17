@@ -14,7 +14,7 @@ explains the details.
 
 | Folder | What it is |
 |---|---|
-| `SmoothAnimatedBars/` | The addon. `Bars.lua` puts the liquid on the unit frames, `Liquid.lua` draws it, `Themes.lua` holds the themes, `Dots.lua` tracks the player's DoTs (ported from DoesItDie) and `Marker.lua` marks them on the target, `Heals.lua` tracks the player's heals on themselves and `HealMarker.lua` marks them on the player's health, `ManaRule.lua` times the wait before mana regenerates, which `Bars.lua` draws, `Options.lua` the settings page, `Wizard.lua` the setup and `Preview.lua` its preview frames, `Capture.lua` the gallery's art capture |
+| `SmoothAnimatedBars/` | The addon. `Bars.lua` puts the liquid on the unit frames, `Liquid.lua` draws it, `Themes.lua` holds the themes, `Dots.lua` tracks the player's DoTs (ported from DoesItDie) and `Marker.lua` marks them on the target, `Heals.lua` tracks the player's heals on themselves and `HealMarker.lua` marks them on the player's health, `ManaRule.lua` times the wait before mana regenerates, which `Bars.lua` draws, `Editor.lua` the editor (every setting beside a live preview), `Options.lua` the settings page that opens it, `Wizard.lua` the setup and `Preview.lua` the preview frames both use, `Capture.lua` the gallery's art capture, `Adaptors/` other unit frame addons' bars for those that do not hand them over (`Adaptors/agent.md`) |
 | `tools/make_media.py` | Generates the textures in `SmoothAnimatedBars/Media/` |
 | `tools/harness/` | A mock of the Forever client's API that runs the addon outside the game: tests, previews and the gallery |
 | `tools/capture_art.py` | Cuts Forever's frame art out of the screenshots `/sab capture` takes |
@@ -35,6 +35,17 @@ tools/venv/Scripts/python tools/harness/preview.py SmoothAnimatedBars preview he
 ```
 
 `preview.py` takes any setting as `key=value`, and `power=` for the power type (0 mana, 1 rage, 3 energy).
+
+`editor_shot.py` draws the editor window at each frame and tab (or the ones named; `closed` closes the bar drawers)
+to check its layout:
+
+```powershell
+cd tools/harness; ../venv/Scripts/python editor_shot.py ../../SmoothAnimatedBars shots player plates effects
+```
+
+The mock has no art for the game's templates and atlases, so the window, buttons and check buttons are plain
+stand-ins and the examples' art is outlined. It applies `SetScale` and clipping but not texture coordinates, so the
+colour tiles' textures are not drawn as in game. It shows where things sit; how the game's art looks is for the game.
 
 ## The in-game changelog
 
@@ -82,7 +93,7 @@ Capture again only if the game's frame art changes. The mage, rogue and warlock 
 characters' portraits: capture on each, then `capture_art.py --portrait mage --pair 2`, `--portrait rogue
 --pair 1` and `--portrait warlock --pair N` (the newest pair is the last capture; until a warlock portrait is
 captured, the warlock uses the capturing character's; `rend` is the warrior again). `gallery.py` takes scenario
-names to render only some: `hero`, `mage`, `rogue`, `warlock`, `rend`, `priest`, `druid`, `eating`, `mana`, `fury`, `themes`, `plates`, `prd`, `party`, `breath`. `eating` is the player frame alone, a meal up to its buff, with the druid's portrait. `mana` is the player frame alone, the build-up to mana regenerating, with the mage's portrait. `fury` is the warrior's rage building to full and spent on Heroic Strikes and a Hamstring, through the addon's own Rage Fury. The druid
+names to render only some: `hero`, `mage`, `rogue`, `warlock`, `rend`, `priest`, `druid`, `eating`, `mana`, `fury`, `themes`, `plates`, `prd`, `party`, `raid`, `breath`. `eating` is the player frame alone, a meal up to its buff, with the druid's portrait. `mana` is the player frame alone, the build-up to mana regenerating, with the mage's portrait. `fury` is the warrior's rage building to full and spent on Heroic Strikes and a Hamstring, through the addon's own Rage Fury. The druid
 carries both markers (Moonfire on the target, Rejuvenation and Healing Touch on itself) and has its own
 portrait (`--portrait druid`). The priest's
 health carries the heal marker (Holy, then a bandage's Nature), its casts going through the addon's own heal

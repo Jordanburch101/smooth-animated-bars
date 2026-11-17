@@ -2,7 +2,7 @@
 
 Usage: python gallery.py <addon dir> [out dir] [scenario ...]
 Default out dir: branding/gallery. Writes each scenario as an animated WebP (hero is the warrior, then
-mage, rogue, then warlock and rend, whose targets carry the DoT marker, priest, with the heal marker, druid, with both, eating, a meal up to its buff, mana, the build-up to mana regenerating, and fury, a warrior's rage building to full and spent), frames.png (a still of the warrior), themes.png (the player frame in a few themes) plates.webp (four nameplates, from the plate art capture_art.py --plates cut out) and prd.webp (a warrior's Personal Resource Display through a fight and a bandage, on the same plate art) and party.webp (four party members through a fight, from the party art capture_art.py --party cut out) and breath.webp (the breath bar running out under water, bubbles rising off it, then refilling at the surface, from the art capture_art.py --breath cut out).
+mage, rogue, then warlock and rend, whose targets carry the DoT marker, priest, with the heal marker, druid, with both, eating, a meal up to its buff, mana, the build-up to mana regenerating, and fury, a warrior's rage building to full and spent), frames.png (a still of the warrior), themes.png (the player frame in a few themes) plates.webp (four nameplates, from the plate art capture_art.py --plates cut out) and prd.webp (a warrior's Personal Resource Display through a fight and a bandage, on the same plate art) and party.webp (four party members through a fight, from the party art capture_art.py --party cut out) and raid.webp (ten raid members through a pull, from the raid art capture_art.py --raid cut out) and breath.webp (the breath bar running out under water, bubbles rising off it, then refilling at the surface, from the art capture_art.py --breath cut out).
 A full run takes about a quarter of an hour.
 
 The frame art comes from branding/art, which tools/capture_art.py cuts out of the screenshots /sab
@@ -1184,6 +1184,206 @@ def party():
     print(f"wrote party.webp ({os.path.getsize(webp) // 1024} KB)")
 
 
+# ---------------------------------------------------------------------------- the raid
+
+# A ten-player raid in raid-style frames (CompactUnitFrameTemplate), two groups of five side by side as Edit Mode keeps
+# groups together, each member 98 x 44 with its health bar 1 in from the edges and its power bar the bottom 8 of it
+# (Blizzard's DefaultCompactUnitFrameSetup), from the pieces /sab capture raid captured (capture_art.py --raid): the
+# frame's background, the power bar's, the target's highlight and the group's border. Without them, plain stand-ins.
+RAID_W, RAID_H, RAID_POWER_H = 98, 44, 8
+RAID_GROUP_GAP = 10
+# The editor's example raid (Preview.lua, RAIDERS): name, class, power type, most power.
+RAIDERS = [("Brannoc", "WARRIOR", "RAGE", 100), ("Elisande", "PRIEST", "MANA", 300), ("Corvin", "MAGE", "MANA", 320),
+           ("Tessaly", "ROGUE", "ENERGY", 100), ("Garrik", "PALADIN", "MANA", 280), ("Mirelle", "DRUID", "MANA", 300),
+           ("Vexa", "WARLOCK", "MANA", 310), ("Aldric", "PRIEST", "MANA", 290), ("Sorin", "MAGE", "MANA", 330),
+           ("Hadrek", "WARRIOR", "RAGE", 100)]
+RAID_STEP, RAID_STEPS = 1.0, 8
+# A pull: the two warriors tank and build rage, everyone takes a burst of damage at 3 s that the healers bring back,
+# the casters' mana drains and the rogue's energy comes and goes. Each member's health and power for each step (as
+# fractions); the loop ends where it began.
+RAID_HEALTH = [[1.00, 0.72, 0.86, 0.58, 0.80, 0.66, 0.90, 1.00],   # Brannoc, the main tank
+               [1.00, 1.00, 0.95, 0.62, 0.78, 0.90, 1.00, 1.00],
+               [1.00, 0.95, 1.00, 0.55, 0.70, 0.85, 0.95, 1.00],
+               [1.00, 1.00, 0.88, 0.50, 0.64, 0.80, 0.92, 1.00],
+               [1.00, 0.96, 1.00, 0.66, 0.82, 0.94, 1.00, 1.00],
+               [1.00, 1.00, 0.97, 0.60, 0.76, 0.92, 1.00, 1.00],
+               [0.92, 0.85, 0.80, 0.48, 0.66, 0.74, 0.86, 0.92],   # Vexa, paying life for mana
+               [1.00, 1.00, 1.00, 0.64, 0.84, 0.95, 1.00, 1.00],
+               [1.00, 0.94, 1.00, 0.52, 0.72, 0.86, 0.96, 1.00],
+               [1.00, 0.84, 0.70, 0.46, 0.62, 0.78, 0.88, 1.00]]   # Hadrek, the off tank
+RAID_POWER = [[0.10, 0.45, 0.70, 0.90, 0.55, 0.80, 0.40, 0.10],
+              [1.00, 0.92, 0.84, 0.66, 0.52, 0.48, 0.70, 1.00],
+              [1.00, 0.86, 0.74, 0.64, 0.52, 0.42, 0.70, 1.00],
+              [1.00, 0.55, 0.85, 0.35, 0.75, 0.45, 0.90, 1.00],
+              [1.00, 0.95, 0.90, 0.70, 0.60, 0.58, 0.80, 1.00],
+              [1.00, 0.95, 0.88, 0.70, 0.56, 0.52, 0.76, 1.00],
+              [1.00, 0.88, 0.96, 0.84, 0.72, 0.82, 0.90, 1.00],
+              [1.00, 0.94, 0.86, 0.62, 0.50, 0.46, 0.72, 1.00],
+              [1.00, 0.84, 0.70, 0.58, 0.46, 0.38, 0.68, 1.00],
+              [0.10, 0.35, 0.60, 0.80, 0.50, 0.70, 0.30, 0.10]]
+RAID_TARGET = 0  # the player's target: the main tank, with the game's highlight round the frame
+
+
+def raid_pieces():
+    """The captured raid pieces at K px a unit, by name; None without a capture (stand-ins are drawn instead)."""
+    path = os.path.join(ART, "raid.json")
+    if not os.path.exists(path):
+        print("  no raid art yet (/sab capture raid, then capture_art.py --raid): drawing stand-ins")
+        return None
+    cells = json.load(open(path, encoding="utf-8"))["cells"]
+    return {n: resize_rgba(Image.open(os.path.join(ART, n + ".png")).convert("RGBA"), (round(w * K), round(h * K)))
+            for n, (w, h) in cells.items()}
+
+
+def raid_session():
+    """The addon in the mock with ten raid-style frames, raid1..10 in CompactRaidGroup1-2Member1-5, their health and
+    power on; each bar's liquid frame becomes __raid<i>_health and __raid<i>_power."""
+    lines = ["__cvars.raidFramesDisplayClassColor = '1'"]
+    for i, (_, cls, token, _) in enumerate(RAIDERS, 1):
+        lines.append(f"__units.raid{i} = {{ isOtherPlayer = true, class = {cls!r}, power = {POWER[token]} }}")
+    before = "\n".join(lines) + f"""
+        SmoothAnimatedBarsDB.setupDone = true
+        for i = 1, {len(RAIDERS)} do
+            local name = string.format('CompactRaidGroup%dMember%d', math.floor((i - 1) / 5) + 1, (i - 1) % 5 + 1)
+            local f = CreateFrame('Button', name, UIParent)
+            f.w, f.h, f.unit, f.displayedUnit = {RAID_W}, {RAID_H}, 'raid' .. i, 'raid' .. i
+            f.healthBar = CreateFrame('StatusBar', name .. 'HealthBar', f)
+            f.healthBar.w, f.healthBar.h = {RAID_W - 2}, {RAID_H - 2 - RAID_POWER_H}
+            f.powerBar = CreateFrame('StatusBar', name .. 'PowerBar', f)
+            f.powerBar.w, f.powerBar.h = {RAID_W - 2}, {RAID_POWER_H}
+            f.powerBar:SetFrameLevel(5)
+            for _, b in ipairs({{ f.healthBar, f.powerBar }}) do
+                b:SetMinMaxValues(0, __secret()); b:SetValue(__secret())
+            end
+            f:Show()
+        end
+    """
+    after = f"""
+        -- Each bar's liquid: in the first frame of ours on the bar that holds a frame (a raid bar's does not clip; a
+        -- mask cuts it), the frame inside.
+        for i = 1, {len(RAIDERS)} do
+            local name = string.format('CompactRaidGroup%dMember%d', math.floor((i - 1) / 5) + 1, (i - 1) % 5 + 1)
+            local f = _G[name]
+            for kind, bar in pairs({{ health = f.healthBar, power = f.powerBar }}) do
+                local holder
+                for _, c in ipairs(__frames) do
+                    if c.parent == bar and not c.SetValue and not holder then
+                        for _, x in ipairs(__frames) do
+                            if x.parent == c then holder = c; break end
+                        end
+                    end
+                end
+                for _, x in ipairs(__frames) do
+                    if holder and x.parent == holder and not x.SetValue then
+                        x.w, x.h = bar.w, bar.h -- the client sizes it from its anchors
+                        _G['__raid' .. i .. '_' .. kind] = x
+                    end
+                end
+            end
+        end
+        -- The bar's own square mask cuts it in game; here the drawing is cut to the bar instead.
+        local unmasked = 0
+        function __unmask()
+            for i = unmasked + 1, #__regions do __regions[i].masks = nil end
+            unmasked = #__regions
+        end
+        __unmask()
+    """
+    on = {k: "false" for k in ("playerHealth", "playerPower", "targetHealth", "targetPower", "partyHealth",
+                               "partyPower", "prdHealth", "prdPower")}
+    on.update(raidHealth="true", raidPower="true")
+    return render.Session(ADDON, settings=on, before_login=before, after_login=after)
+
+
+def raid():
+    """Ten raid members through a pull, in two groups as the game keeps them: raid.webp."""
+    art = raid_pieces()
+    session = raid_session()
+    missing = [i for i in range(len(RAIDERS)) for kind in ("health", "power")
+               if session.lua.eval(f"_G['__raid{i + 1}_{kind}'] == nil")]
+    if missing:
+        sys.exit(f"No raid liquid on members {sorted(set(m + 1 for m in missing))}: is raidHealth on?")
+    pad = 14
+    group_w = RAID_W + 4  # the group's border: 2 each side
+    w = round((2 * pad + 2 * group_w + RAID_GROUP_GAP) * K)
+    h = round((2 * pad + 5 * RAID_H + 5) * K)
+    back = backdrop(w, h)
+    keys = [(i, kind) for i in range(len(RAIDERS)) for kind in ("health", "power")]
+    maxes = {(i, "health"): 400 for i in range(len(RAIDERS))}
+    maxes.update({(i, "power"): m[3] for i, m in enumerate(RAIDERS)})
+    loop = RAID_STEP * RAID_STEPS
+
+    def at(t):
+        n = min(RAID_STEPS - 1, int(t / RAID_STEP))
+        return {(i, kind): (RAID_HEALTH if kind == "health" else RAID_POWER)[i][n] for i, kind in keys}
+
+    def origin(i):
+        """Member i's top-left, in px."""
+        g, row = divmod(i, 5)
+        return (round((pad + 2 + g * (group_w + RAID_GROUP_GAP)) * K), round((pad + 2 + row * RAID_H) * K))
+
+    def paste(img, piece, x, y):
+        canvas = img.convert("RGBA")
+        canvas.alpha_composite(piece, (x, y))
+        img.paste(canvas.convert("RGB"))
+
+    # What stays still: the groups' borders, each frame's background and its power bar's.
+    base = back.copy()
+    draw = ImageDraw.Draw(base)
+    for g in range(2):
+        gx, gy = round((pad + g * (group_w + RAID_GROUP_GAP)) * K), round(pad * K)
+        if art:
+            paste(base, art["raid-group"], gx, gy)
+    for i in range(len(RAIDERS)):
+        fx, fy = origin(i)
+        if art:
+            paste(base, art["raid-bg"], fx, fy)
+            paste(base, art["raid-power-bg"], fx + round(K), fy + round((RAID_H - 1 - RAID_POWER_H) * K))
+        else:
+            draw.rectangle((fx, fy, fx + round(RAID_W * K) - 1, fy + round(RAID_H * K) - 1), fill=(20, 20, 20),
+                           outline=(0, 0, 0), width=max(1, round(K / 2)))
+
+    fills, shown = dict(at(0)), at(0)
+    frames, t, dt = [], 0.0, 1 / FPS
+    while t < loop - 1e-9:
+        goal = at(t)
+        for i, kind in keys:
+            if round(goal[(i, kind)] * maxes[(i, kind)]) != round(shown[(i, kind)] * maxes[(i, kind)]):
+                if kind == "health":
+                    session.lua.execute(f"__fire('UNIT_HEALTH', 'raid{i + 1}')")
+                else:
+                    session.lua.execute(f"__fire('UNIT_POWER_UPDATE', 'raid{i + 1}', {RAIDERS[i][2]!r})")
+        shown = goal
+        session.run_until(t)
+        session.lua.execute("__unmask()")
+        for k in keys:
+            fills[k] += (goal[k] - fills[k]) * (1 - math.exp(-8 * dt))
+        img = base.copy()
+        for i, (name, _, _, _) in enumerate(RAIDERS):
+            fx, fy = origin(i)
+            for kind, top, bh in (("health", 1, RAID_H - 2 - RAID_POWER_H), ("power", RAID_H - 1 - RAID_POWER_H,
+                                                                              RAID_POWER_H)):
+                bx, by = fx + round(K), fy + round(top * K)
+                bw = round((RAID_W - 2) * K)
+                sub = img.crop((bx, by, bx + bw, by + round(bh * K)))
+                session.frame = f"__raid{i + 1}_{kind}"
+                # The liquid's frame ends at the fill's edge; cut to the bar, as the game's square mask cuts it.
+                img.paste(session.render(sub, (fills[(i, kind)] - 1) * bw, 0, K), (bx, by))
+            if art and i == RAID_TARGET:
+                paste(img, art["raid-selected"], fx, fy)
+            d = ImageDraw.Draw(img)
+            d.text((fx + 4 * K, fy + 3 * K), name, font=render.font(8 * K), fill=(255, 255, 255), anchor="lt",
+                   stroke_width=max(1, round(K * 0.35)), stroke_fill=(0, 0, 0))
+        frames.append(img)
+        t += dt
+    os.makedirs(OUT, exist_ok=True)
+    webp = os.path.join(OUT, "raid.webp")
+    frames[0].save(webp, save_all=True, append_images=frames[1:], duration=round(1000 / FPS), loop=0,
+                   quality=92, method=6)
+    print(f"wrote raid.webp ({os.path.getsize(webp) // 1024} KB)")
+
+
+
 # ---------------------------------------------------------------------------- the breath bar
 
 # Forever's breath bar (Blizzard_MirrorTimer/Mainline MirrorTimer.xml), from the art /sab capture breath captured
@@ -1299,5 +1499,7 @@ if __name__ == "__main__":
         prd()
     if not ONLY or "party" in ONLY:
         party()
+    if not ONLY or "raid" in ONLY:
+        raid()
     if not ONLY or "breath" in ONLY:
         breath()
