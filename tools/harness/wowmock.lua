@@ -176,6 +176,7 @@ function Region:SetGradient(_, c1, c2)
     self.grad = { { c1:GetRGBA() }, { c2:GetRGBA() } }
 end
 function Region:SetBlendMode(m) self.blend = m end
+function Region:SetDesaturated(v) self.desaturated = v and true or false end
 function Region:SetHorizTile(v) self.horizTile = v end
 function Region:SetVertTile(v) self.vertTile = v end
 function Region:SetTexCoord(l, r, t, b) self.tc = { l, r, t, b } end

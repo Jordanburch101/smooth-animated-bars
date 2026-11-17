@@ -324,6 +324,9 @@ lua.execute(f"""function __click(b) b.scripts.OnClick(b) end
 check(lua.eval(ED + ".tabs.frames.picked") and lua.eval(ED + ".hots.player.edges[1].shown")
       and not lua.eval(ED + ".hots.target.edges[1].shown"),
       "it opens on the Frames tab, the player frame outlined in gold on the screen and only it")
+check(lua.eval(ED + ".tabs.frames.bg.atlas") == "UI-Character-Info-Title" and not lua.eval(ED + ".tabs.frames.bg.desaturated")
+      and lua.eval(ED + ".tabs.effects.bg.desaturated") and lua.eval(ED + ".tabs.effects.bg.alpha") == 0.7,
+      "the tabs are the character sheet's title plaque, as Road to Sixty's: the picked one in colour, the others faded grey")
 check(lua.eval(ED + ".hots.target.dashes[1].shown") and not lua.eval(ED + ".hots.player.dashes[1].shown")
       and lua.eval("#" + ED + ".hots.raid.dashes") > 50,
       "the others have a dashed outline, as in the mockup, all the way round")
@@ -390,6 +393,8 @@ check(lua.eval("SmoothAnimatedBarsDB.targetHealthColor") == "same", "ticking it 
 lua.execute(f"__click({ED}.scenes.damage)")
 check(all(lua.eval(f"{ED}.examples.{k}.scene") == "damage" for k in ("frames", "party", "plates", "prd", "raid"))
       and lua.eval(ED + ".scenes.damage.picked"), "Damage plays on every example at once")
+check(lua.eval(ED + ".scenes.damage.bg.atlas") == "UI-Character-Info-Title" and not lua.eval(ED + ".scenes.damage.bg.desaturated")
+      and lua.eval(ED + ".scenes.fight.bg.desaturated"), "the scene buttons are the tabs' plaque too, the playing one in colour")
 lua.execute(f"__click({ED}.scenes.heal)")
 run(lua, 1.5)
 HEALER = ED + ".examples.frames.healer"

@@ -418,9 +418,11 @@ Facts found while building this, which the code relies on and which are not obvi
   rather than hides: hidden, it forgot what it had shown, so each fade-in replayed a meal's release and grew the DoTs
   in from nothing (a review caught it). While faded it drops landings and ticks (`calm`), and a buff reached meanwhile
   sates the bar quietly (`Bars.Sate`). Not yet seen in game.
-- **The editor** (`Editor.lua`): the game's `ButtonFrameTemplate` window (as the setup's), `UICheckButtonTemplate`
-  boxes, `UIPanelButtonTemplate` buttons, and chips and tiles of our own (solid textures, gradients by `SetGradient` from
-  each theme's `fillA`/`fillB`). Nothing in it is protected, so it opens in combat, unlike the game's settings panel.
+- **The editor** (`Editor.lua`): the game's `ButtonFrameTemplate` window (as the setup's), tabs on the character
+  sheet's title plaque (`UI-Character-Info-Title`, as Road to Sixty's mode switch: the picked one in colour, the others
+  desaturated at 70%; the scene buttons under the screen too), `UICheckButtonTemplate` boxes, `UIPanelButtonTemplate` buttons, and chips of our own. Its colour tiles are stills of each theme's liquid (`PaintTile`):
+  the fill's gradient, the theme's cloud and vein textures in its colours, the front's glow and line, and two of its
+  particles (its ambient ones, else its burst's), all static, so a drawer of 26 costs nothing while open. Nothing in it is protected, so it opens in combat, unlike the game's settings panel.
   Its first build (a sidebar of sections over one preview) was replaced, on the user's choice of mockups (canvas
   "SAB Options Redesign", board E), by a screen of every example at once where the game puts them, clicked to edit,
   and an inspector of bar cards with Colour and Effects drawers. The examples are `Preview.lua`'s: `Create` (the

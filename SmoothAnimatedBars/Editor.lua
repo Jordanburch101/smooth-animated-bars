@@ -211,6 +211,110 @@ local function Paint(tex, choice, frame, kind)
     end
 end
 
+-- A colour tile: a still of the theme's liquid, built from the layers Liquid.lua draws it with: its fill, its clouds
+-- and veins (the theme's own textures, in its colours), the glow and bright line of its front on the right, and the
+-- particles it throws (snow for Frost, sparks for Fire, leaves for Nature...), a couple of them over the top. Still, so
+-- a drawer of tiles costs nothing while it is open.
+local TILE_W, TILE_H, TILE_GAP, TILES_PER_ROW = 40, 20, 4, 6
+local MEDIA = "Interface\\AddOns\\SmoothAnimatedBars\\Media\\"
+-- Particles too small or too soft to read at a tile's size, where a theme has nothing better.
+local FAINT = { Mote = true, Glow = true, Wisp = true }
+
+local function TileTheme(choice, frame, kind)
+    local a, b = Ends(choice, frame, kind)
+    local theme
+    if choice == "game" then
+        theme = ns.Themes.FromColor(b, ns.Themes.Get(ns.Themes.default))
+    else
+        theme = ns.Themes.Get(choice)
+        if theme.Resolve then theme = theme:Resolve("player", true) or theme end
+    end
+    return theme, a, b
+end
+
+-- The particle a theme shows best at a tile's size: its own ambient particles, else what it throws, else none.
+local function TileParticle(theme)
+    local ambient = type(theme.ambient) == "table" and theme.ambient or {}
+    for _, em in ipairs(ambient) do
+        if em.texture and not FAINT[em.texture] then return em.texture, em.blend end
+    end
+    local burst = type(theme.burst) == "table" and theme.burst
+    if burst and burst.texture and not FAINT[burst.texture] then return burst.texture, burst.blend end
+end
+
+local function Layer(tile, sub, file, blend, color, alpha)
+    local t = tile:CreateTexture(nil, "ARTWORK", nil, sub)
+    t:SetTexture(MEDIA .. file)
+    t:SetPoint("TOPLEFT", 2, -2)
+    t:SetPoint("BOTTOMRIGHT", -2, 2)
+    t:SetBlendMode(blend)
+    t:SetVertexColor(color[1], color[2], color[3], alpha)
+    return t
+end
+
+-- Paints tile (a button TILE_W x TILE_H) as choice's liquid on a bar of this frame and kind.
+local function PaintTile(tile, choice, frame, kind)
+    local theme, a, b = TileTheme(choice, frame, kind)
+    tile.swatch = tile:CreateTexture(nil, "ARTWORK", nil, 0)
+    tile.swatch:SetPoint("TOPLEFT", 2, -2)
+    tile.swatch:SetPoint("BOTTOMRIGHT", -2, 2)
+    tile.swatch:SetColorTexture(1, 1, 1, 1)
+    if CreateColor and tile.swatch.SetGradient then
+        tile.swatch:SetGradient("HORIZONTAL", CreateColor(a[1], a[2], a[3], 1), CreateColor(b[1], b[2], b[3], 1))
+    else
+        tile.swatch:SetColorTexture(b[1], b[2], b[3], 1)
+    end
+    local clouds = type(theme.clouds) == "table" and theme.clouds or {}
+    local swirl = type(theme.swirl) == "table" and theme.swirl or {}
+    local light = theme.swirlB or b
+    local veins = theme.swirlA or b
+    -- Each texture at the scale Liquid.lua draws it on a bar (its DrawLayer calls): a vein texture repeats every 256 px
+    -- across and 64 down, the second veins at 0.7 of that, the clouds at their scale (0.55) and the light ones 1.4 times
+    -- that. Mapping a whole slice of a texture into the tile squeezed it (seen in game).
+    local w, h = TILE_W - 4, TILE_H - 4
+    local function Span(layer, k, u, v)
+        layer:SetTexCoord(u, u + w * k / 256, v, v + h * k / 64)
+    end
+    local cs = clouds.scale or 0.55
+    local dark = Layer(tile, 1, clouds.texture or "Nebula", "BLEND", { 0, 0, 0 }, (clouds.dark or 0.55) * 0.6)
+    Span(dark, cs, 0.1, 0.2)
+    local wisps = Layer(tile, 2, clouds.texture or "Nebula", "ADD", light, (clouds.light or 0.25) * 1.2)
+    Span(wisps, cs * 1.4, 0.5, 0.55)
+    -- Veins, two layers as on a bar, as bright as the theme makes them.
+    local vein = Layer(tile, 3, swirl.texture or "Swirl", "ADD", veins, math.min(0.8, 0.45 * (swirl.alpha or 1)))
+    Span(vein, 1, 0.2, 0.3)
+    local vein2 = Layer(tile, 3, swirl.texture or "Swirl", "ADD", light, math.min(0.6, 0.3 * (swirl.alpha or 1)))
+    Span(vein2, 0.7, 0.6, 0.1)
+    -- The front: a glow and a bright line along the tile's right edge.
+    local glowColor = theme.glow or b
+    local glow = tile:CreateTexture(nil, "ARTWORK", nil, 4)
+    glow:SetTexture(MEDIA .. "Glow")
+    glow:SetBlendMode("ADD")
+    glow:SetVertexColor(glowColor[1], glowColor[2], glowColor[3], 0.7)
+    glow:SetSize(14, TILE_H)
+    glow:SetPoint("RIGHT", -2, 0)
+    local tipColor = theme.tip or b
+    local tip = tile:CreateTexture(nil, "ARTWORK", nil, 5)
+    tip:SetColorTexture(tipColor[1], tipColor[2], tipColor[3], 0.85)
+    tip:SetWidth(1)
+    tip:SetPoint("TOPRIGHT", -2, -2)
+    tip:SetPoint("BOTTOMRIGHT", -2, 2)
+    -- Its particles.
+    local file, blend = TileParticle(theme)
+    if file then
+        local from, to = theme.splashFrom or tipColor, theme.splashTo or b
+        for i, spot in ipairs({ { 10, -3, 10, from }, { 24, -8, 8, to } }) do
+            local p = tile:CreateTexture(nil, "OVERLAY", nil, i)
+            p:SetTexture(MEDIA .. file)
+            p:SetBlendMode(blend or "ADD")
+            p:SetVertexColor(spot[4][1], spot[4][2], spot[4][3], 0.95)
+            p:SetSize(spot[3], spot[3])
+            p:SetPoint("TOPLEFT", spot[1], spot[2])
+        end
+        tile.particle = file
+    end
+end
+
 local function ChoiceName(choice, bar, f)
     if choice == "same" then return bar.same or f.same or "Same" end
     if choice == "game" then return "Game Colour" end
@@ -299,6 +403,29 @@ local function Chip(parent, w, h, text, onClick)
     return c
 end
 
+-- A tab along the top: the character sheet's title plaque (atlas UI-Character-Info-Title) with the name in gold, as
+-- Road to Sixty's mode switch has it; the picked one in full colour with its name in white, the others faded and grey.
+local function Tab(parent, w, text, onClick)
+    local b = CreateFrame("Button", nil, parent)
+    b:SetSize(w, 28)
+    b.bg = b:CreateTexture(nil, "BACKGROUND")
+    b.bg:SetAllPoints()
+    if not (b.bg.SetAtlas and b.bg:SetAtlas("UI-Character-Info-Title")) then b.bg:SetColorTexture(0.14, 0.11, 0.06, 0.9) end
+    local hl = b:CreateTexture(nil, "HIGHLIGHT")
+    hl:SetAllPoints()
+    hl:SetColorTexture(1, 1, 1, 0.06)
+    b.text = Font(b, "GameFontNormal", text, "CENTER")
+    b.text:SetPoint("CENTER", 0, 1)
+    b:SetScript("OnClick", onClick)
+    function b.SetPicked(_, on)
+        b.picked = on and true or false
+        if b.bg.SetDesaturated then b.bg:SetDesaturated(not on) end
+        b.bg:SetAlpha(on and 1 or 0.7)
+        if on then b.text:SetTextColor(1, 1, 1) else b.text:SetTextColor(GOLD[1], GOLD[2], GOLD[3]) end
+    end
+    return b
+end
+
 -- A check box from the game's template with a label beside it; onClick decides what a click does.
 local function Check(parent, label, onClick, template)
     local b = CreateFrame("CheckButton", nil, parent, "UICheckButtonTemplate")
@@ -315,7 +442,6 @@ end
 -- The inspector: a frame's cards and drawers
 --------------------------------------------------------------------------------
 
-local TILE_W, TILE_H, TILE_GAP, TILES_PER_ROW = 40, 20, 4, 6
 
 -- The Colour tab of a bar's drawer: follow another frame's colour, or a theme from the tiles, each tried on the bars
 -- while the mouse is on it.
@@ -366,10 +492,7 @@ local function ColourPane(drawer, bar, f)
             local t = CreateFrame("Button", nil, p.tileFrame)
             t:SetSize(TILE_W, TILE_H)
             t:SetPoint("TOPLEFT", 6 + col * (TILE_W + TILE_GAP), -(ty + line * (TILE_H + TILE_GAP)))
-            t.swatch = t:CreateTexture(nil, "ARTWORK")
-            t.swatch:SetPoint("TOPLEFT", 2, -2)
-            t.swatch:SetPoint("BOTTOMRIGHT", -2, 2)
-            Paint(t.swatch, key, bar.frame, bar.kind)
+            PaintTile(t, key, bar.frame, bar.kind)
             t.edges = Outline(t, { 0, 0, 0 })
             t.key, t.name = key, ChoiceName(key, bar, f)
             t:SetScript("OnEnter", function()
@@ -883,14 +1006,14 @@ local function Build()
     -- The tabs along the top, with the setup and the changelog on the right.
     local x = 14
     for _, t in ipairs(TABS) do
-        local chip = Chip(frame, 104, 24, t.label, function()
+        local chip = Tab(frame, 104, t.label, function()
             if t.id == "frames" then
                 Editor.Show(FRAMES[current] and current or ui.lastFrame or "player")
             else
                 Editor.Show(t.id)
             end
         end)
-        chip:SetPoint("TOPLEFT", x, -30)
+        chip:SetPoint("TOPLEFT", x, -28)
         ui.tabs[t.id] = chip
         x = x + 108
     end
@@ -927,8 +1050,8 @@ local function Build()
     play:SetPoint("BOTTOMLEFT", 16, 24)
     local last
     for _, name in ipairs(ns.Preview.SCENES) do
-        local chip = Chip(frame, 76, 22, SCENE_LABELS[name] or name, function() PlayScene(name) end)
-        if last then chip:SetPoint("LEFT", last, "RIGHT", 6, 0) else chip:SetPoint("LEFT", play, "RIGHT", 10, 0) end
+        local chip = Tab(frame, 90, SCENE_LABELS[name] or name, function() PlayScene(name) end)
+        if last then chip:SetPoint("LEFT", last, "RIGHT", 4, 0) else chip:SetPoint("LEFT", play, "RIGHT", 10, 0) end
         ui.scenes[name] = chip
         last = chip
     end
