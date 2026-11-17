@@ -235,6 +235,9 @@ with the liquid off are dimmed. Each of the frame's bars opens to two tabs: **Co
 following another frame's or a theme picked from its tiles (rest the mouse on one to try it on your bars first), and
 **Effects**, the global ones or the bar's own.
 
+<p align="center"><img src="https://raw.githubusercontent.com/Jordanburch101/smooth-animated-bars/refs/heads/main/branding/gallery/editor.webp" alt="The editor in game: live examples of the player, target, focus, pet, target of target, party, nameplates, Personal Resource Display and raid frames on one screen, the raid frames picked and outlined in gold, with the raid's Health card open to its colour tiles beside them"></p>
+<p align="center"><em>The editor: every frame on one screen, playing out a fight. Click one to change it.</em></p>
+
 - **Player, Target, Focus, Pet and Target of Target:** each frame's Health and Power, on or off, and its colour.
   Game Colour keeps green health and the game's power colours (blue mana, red rage, yellow energy); any theme brings
   its own colours and particles. Following yours (target, pet) or your target's (focus, target of target) is where
