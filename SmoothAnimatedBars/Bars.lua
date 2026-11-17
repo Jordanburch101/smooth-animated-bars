@@ -1129,7 +1129,8 @@ function Bars.mirror.UpdateBubbles(b, dt)
     local bb = b.breathBubbles
     if not bb then return end
     local B = Bars.mirror.BUBBLE
-    local on = ns.Core.Get("breathBubbles") and ns.Core.Get("bubbles")
+    -- The Bubbles effect as this bar has it: the global one, or the breath bar's own (Core.Effect, the editor).
+    local on = ns.Core.Get("breathBubbles") and b.opts.bubbles
     if on and Bars.mirror.Draining(b, dt) then
         bb.acc = bb.acc + dt * B.rate
         while bb.acc >= 1 do
@@ -1778,6 +1779,8 @@ local function UpdateBar(b, dt)
             Bars.mirror.Raise(b)
             Bars.mirror.SyncTexts(b)
         end
+    elseif b.breathBubbles then
+        Bars.mirror.UpdateBubbles(b, dt) -- the editor's example breath bar (Preview.CreateBreath)
     end
     -- The game can swap or reset its fill textures; keep them hidden under the liquid.
     HideGameFill(bar, 0, b.spot.external)
@@ -2578,6 +2581,8 @@ function Bars.Preview(bar, spec)
     -- A flat preview (a nameplate's, the Personal Resource Display's) is raised over its bar, as the real ones are.
     if spec.flat then RaisePlate(b) end
     previews[#previews + 1] = b
+    -- The editor's example breath bar: bubbles off its front as on the real one, its value going down saying when.
+    if spec.breath then Bars.mirror.NewBubbles(b) end
     -- Only the first needs the driver started; the editor builds some forty, in combat too.
     SetLive(b, ns.Core.Get(b.spot.key) and not b.err and true or false)
     if b.live and not (driver and driver:IsShown()) then Bars.Apply() end

@@ -380,10 +380,13 @@ Facts found while building this, which the code relies on and which are not obvi
   border (`OVERLAY`, 2 px around the bar) is under the liquid there; the clip frame has no spill (`spot.bare`), so the waves
   stay inside the bar. The fill is an atlas (`MirrorTimerAtlas`), so the bar's colour is white: Game Colour is
   `MirrorTimerColors` where a client has it, else blue. The game sets the value every frame from
-  `GetMirrorTimerProgress`; whether Forever keeps it secret is not known, so bubbles (`Mirror.UpdateBubbles`, rising
+  `GetMirrorTimerProgress`; whether Forever keeps it secret is not known, so bubbles (`Bars.mirror.UpdateBubbles`, rising
   off the fill's edge on an unclipped frame two levels above the liquid) go by the value falling where it is readable,
-  else by `GetMirrorTimerInfo`'s scale below 0 and `paused` (a number) 0. Seen in game: the liquid. Not yet seen in
-  game: the bubbles.
+  else by `GetMirrorTimerInfo`'s scale below 0 and `paused` (a number) 0. The bubbles follow the bar's own Bubbles
+  effect (`b.opts.bubbles`, so a breath bar with effects of its own decides). In the editor the breath bar is a frame
+  of its own (`FRAMES.breath`), its example `Preview.CreateBreath`: the game's art around a preview bar
+  (`spec.breath`, which gets bubbles from `Bars.Preview`) playing its own loop of breath running out and coming back,
+  not the scenes. Seen in game: the liquid. Not yet seen in game: the bubbles, and the editor's example.
 - **Unit frame menus** (`Options.lua`, `AddToUnitMenus`): `Menu.ModifyMenu("MENU_UNIT_" .. which, ...)` adds Open
   Editor (Open Settings before the editor), opening it at that frame's section; the frames pass themselves as `contextData.ownerFrame` (Mainline `PlayerFrame.lua`, `TargetFrame.lua`,
   `PetFrame.lua`), which tells them from chat names. The party's member frames are pooled and nameless, so they are

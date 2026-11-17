@@ -923,3 +923,74 @@ function Preview.CreatePRD(parent)
     holder.health, holder.power, holder.bars = health, power, { health, power }
     return holder
 end
+
+--------------------------------------------------------------------------------
+-- The preview breath bar (the editor's)
+--------------------------------------------------------------------------------
+-- The game's breath bar (Blizzard_MirrorTimer/Mainline MirrorTimer.xml, forever branch): a 195 x 13 bar in the casting
+-- bar's text box, dark background and border (Capture.lua's BREATH_PIECES, as the timer frame lays them), its label in
+-- the text box under it. It plays its own loop rather than the frames' scenes: breath running out, bubbles rising off
+-- the front (Bars.mirror, as on the real bar), then filling back up at the surface.
+
+local BREATH_W, BREATH_H, BREATH_MAX = 195, 13, 600
+local BREATH_PIECES = {
+    { "ui-castingbar-textbox", 0, 0, 195, 27, "BACKGROUND", 0 },
+    { "ui-castingbar-background", -1, -1, 197, 15, "BACKGROUND", 1 },
+    { "ui-castingbar-frame", -2, -2, 199, 17, "OVERLAY", 0 },
+}
+-- { seconds, fraction }: running out for 6.4 s, back up by 9.
+local BREATH_LOOP = { { 0.0, 1.00 }, { 6.4, 0.28 }, { 9.0, 1.00 } }
+
+local function BreathAt(t)
+    local loop = BREATH_LOOP
+    t = t % loop[#loop][1]
+    for i = 2, #loop do
+        local a, b = loop[i - 1], loop[i]
+        if t <= b[1] then return a[2] + (b[2] - a[2]) * (t - a[1]) / (b[1] - a[1]) end
+    end
+    return loop[#loop][2]
+end
+
+function Preview.CreateBreath(parent)
+    local holder = CreateFrame("Frame", nil, parent)
+    -- From the border's top-left (2 out from the bar) to the text box's bottom (27 under the bar's top).
+    holder:SetSize(BREATH_W + 4, 27 + 2)
+    for _, piece in ipairs(BREATH_PIECES) do
+        local tex = holder:CreateTexture(nil, piece[6], nil, piece[7])
+        if Atlas(tex, piece[1]) then
+            tex:SetPoint("TOPLEFT", 2 + piece[2], -(2 + piece[3]))
+            tex:SetSize(piece[4], piece[5])
+        elseif piece[1] == "ui-castingbar-background" then
+            tex:SetPoint("TOPLEFT", 2 + piece[2], -(2 + piece[3]))
+            tex:SetSize(piece[4], piece[5])
+            tex:SetColorTexture(0, 0, 0, 0.7)
+        else
+            tex:Hide()
+        end
+    end
+    local bar = CreateFrame("StatusBar", nil, holder)
+    bar:SetSize(BREATH_W, BREATH_H)
+    bar:SetPoint("TOPLEFT", 2, -2)
+    local fill = bar:CreateTexture(nil, "ARTWORK")
+    fill:SetColorTexture(1, 1, 1, 1)
+    bar:SetStatusBarTexture(fill)
+    local c = ns.Bars.mirror.Color()
+    bar:SetStatusBarColor(c[1], c[2], c[3])
+    bar:SetMinMaxValues(0, BREATH_MAX)
+    bar:SetValue(BREATH_MAX)
+    local label = holder:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+    label:SetPoint("TOP", bar, "BOTTOM", 0, -1)
+    -- The game's own word for it (GlobalStrings), as the timer's label shows it.
+    local word = rawget(_G, "BREATH_LABEL")
+    label:SetText(type(word) == "string" and word or "Breath")
+    bar.state = ns.Bars.Preview(bar, { key = "breath", frame = "breath", unit = "player", kind = "breath",
+                                       bare = true, breath = true })
+    local t = 0
+    holder:SetScript("OnUpdate", function(_, elapsed)
+        t = t + elapsed * (holder.speed or 1)
+        -- Off, it rests full and still, as the other examples whose liquid is off.
+        bar:SetValue(Resting(bar) and BREATH_MAX or BreathAt(t) * BREATH_MAX)
+    end)
+    holder.bar, holder.bars = bar, { bar }
+    return holder
+end

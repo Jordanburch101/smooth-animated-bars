@@ -495,6 +495,44 @@ check(lua.eval("SmoothAnimatedBarsDB.effects.playerHealth") is None
       "ticking Use the global effects gives the bar back to them")
 lua.execute(f"__click({FX.format(1)}.global); __click({ED}.defaults)")
 check(lua.eval("SmoothAnimatedBarsDB.effects.playerHealth") is None, "and so does the frame's Defaults")
+# The breath bar: an example of the game's bar of its own, playing breath running out and coming back.
+BX = ED + ".examples.breath"
+lua.execute(f"""function __breathMost(seconds)
+    local most, st = 0, {BX}.bar.state
+    for _ = 1, math.floor(seconds * 60) do
+        __step(1 / 60)
+        local n = 0
+        for _, p in ipairs(st.breathBubbles.pool) do if p.active then n = n + 1 end end
+        most = math.max(most, n)
+    end
+    return most
+end""")
+lua.execute(f"__click({ED}.hots.breath)")
+check(lua.eval("__ns.Editor.State().section") == "breath" and lua.eval(BX + ".speed") == 1
+      and lua.eval(BX + ".bar.state.spot.key") == "breath" and lua.eval(BX + ".bar.state.kind") == "breath"
+      and lua.eval(f"__ns.Bars.IsLive({BX}.bar)") and lua.eval(ED + ".hots.breath.name.text") == "Breath",
+      "clicking the breath bar edits it: an example of the game's breath bar, the liquid in it, on its settings")
+check(lua.eval("__card(1).label.text") == "Breath Bar" and lua.eval("__card(1).colour.follow.label.text")
+      == "Follow your power colour" and lua.eval("__page().rows.breathBubbles.shown"),
+      "its card, following your power colour as its Same as Your Power does, and Bubbles While Holding Breath")
+most = lua.eval("__breathMost(9.5)")
+check(most > 0, f"the example's breath runs out and bubbles rise off its front, as on the real bar ({most} at most)")
+lua.execute("__click(__card(1).header); __click(__card(1).header); __click(__card(1).tabs.effects); "
+            "__click(__card(1).effects.global); __click(__card(1).effects.fx.bubbles)")
+lua.eval("__breathMost(3)")  # the ones already out pop
+most = lua.eval("__breathMost(9.5)")
+check(lua.eval("SmoothAnimatedBarsDB.effects.breath.bubbles") is False and most == 0
+      and lua.eval("SmoothAnimatedBarsDB.bubbles") is True,
+      f"Bubbles off for the breath bar alone: none off its front either ({most})")
+lua.execute(f"__click({ED}.defaults)")
+check(lua.eval("SmoothAnimatedBarsDB.effects.breath") is None, "and Defaults gives it the global effects back")
+lua.execute("__click(__card(1).check)")
+run(lua, 1.0)
+check(lua.eval("SmoothAnimatedBarsDB.breath") is False and lua.eval(ED + ".hots.breath.off")
+      and not lua.eval("__page().rows.breathBubbles.shown")
+      and lua.eval(BX + ".bar:GetValue()") == lua.eval(f"select(2, {BX}.bar:GetMinMaxValues())"),
+      "Breath Bar off: the example dimmed, resting full, and its bubbles' setting hidden")
+lua.execute("__click(__card(1).check)")
 lua.execute(f"__click({ED}.hots.plates)")
 check(not lua.eval("__page().rows.plateDots.shown"), "Nameplates: Your DoTs on Nameplates hidden while they are off")
 lua.execute("__click(__card(1).check)")

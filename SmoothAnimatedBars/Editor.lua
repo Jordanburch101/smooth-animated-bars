@@ -3,7 +3,8 @@
 --
 --   * Tabs along the top: Frames, Effects, Combat and Other Addons, with Run Setup and What's New beside them.
 --   * On the left a screen of examples where the game puts them (Preview.lua): the player and target frames, the party
---     stacked, nameplates, the Personal Resource Display, raid frames, and the focus, pet and target of target. Clicking
+--     stacked, nameplates, the Personal Resource Display, raid frames, the breath bar, and the focus, pet and target of
+--     target. Clicking
 --     one edits it: a gold outline round it, and frames whose liquid is off are dimmed. Scenes (fight, damage, healing,
 --     power) play on every
 --     example at once; only the one being edited plays at full speed (Preview.SetActive).
@@ -86,6 +87,18 @@ local FRAMES = {
                    { key = "plateKillIcon", label = "Kill Icon on Nameplates",
                      desc = "The game's skull beside a nameplate when your DoTs will finish that mob off.",
                      shown = function() return Get("plateHealth") and Get("plateDots") end },
+               } },
+    breath = { label = "Breath", desc = "Liquid in the bar the game shows while you hold your breath under water. "
+                   .. "Fatigue and Feign Death keep the game's own bar.",
+               bars = {
+                   { on = "breath", color = "breathColor", frame = "breath", kind = "breath", label = "Breath Bar",
+                     same = "Same as Your Power", whose = "your" },
+               },
+               rows = {
+                   { key = "breathBubbles", label = "Bubbles While Holding Breath",
+                     desc = "Bubbles escape from the bar's front and float up while your breath runs out, not while it "
+                         .. "comes back. With the Bubbles effect on.",
+                     shown = function() return Get("breath") end },
                } },
 }
 
@@ -193,6 +206,7 @@ local function Ends(choice, frame, kind)
         elseif frame == "friend" then c = { 0, 1, 0 }
         elseif kind == "health" then c = { 0, 0.8, 0 }
         elseif frame == "player" or frame == "pet" or frame == "prd" then c = PowerColor()
+        elseif frame == "breath" then c = ns.Bars.mirror.Color()
         else c = { 0, 0, 1 } end
         return { c[1] * 0.45, c[2] * 0.45, c[3] * 0.45 }, c
     end
@@ -454,7 +468,7 @@ local function ColourPane(drawer, bar, f)
     local y = 4
     if bar.same or f.same then
         local whose = bar.whose or f.whose
-        p.follow = Check(p, "Follow " .. whose .. " " .. (bar.kind == "power" and "power" or "health") .. " colour",
+        p.follow = Check(p, "Follow " .. whose .. " " .. (bar.kind == "health" and "health" or "power") .. " colour",
             function()
                 if Get(bar.color) == "same" then
                     -- Keep showing what it showed: the followed colour, now its own.
@@ -683,7 +697,8 @@ end
 -- out on one grid, measured on a screenshot of the editor and agreed on a mockup (canvas board F): a 20 px margin; the
 -- player, target and focus along the top, the focus flush right; under them the pet (left edges with the player's),
 -- the target of target (right edges with the focus's) and between them the Personal Resource Display; then the party
--- down the left, and beside it the nameplates on the party's top line with the raid frames under them.
+-- down the left, and beside it the nameplates on the party's top line with the raid frames under them. The breath bar
+-- (added after) sits in the gap between the pet and the Personal Resource Display, level with the display's bars.
 local EXAMPLES = {
     -- 490 wide rather than 480, so the outlines round the player and the target are 20 px apart, as on the mockup.
     frames = { make = function(p) return ns.Preview.Create(p) end, x = 21, y = 38, width = 490 },
@@ -694,11 +709,12 @@ local EXAMPLES = {
     party = { make = function(p) return ns.Preview.CreateParty(p, "party", true) end, x = 21, y = 270 },
     plates = { make = function(p) return ns.Preview.CreatePlates(p) end, x = 242, y = 270 },
     raid = { make = function(p) return ns.Preview.CreateRaid(p) end, x = 233, y = 406 },
+    breath = { make = function(p) return ns.Preview.CreateBreath(p) end, x = 184, y = 186, scale = 0.75 },
 }
 -- Which example a frame is edited on, and each example's frames' place on the screen.
 local EXAMPLE_OF = { player = "frames", target = "frames", focus = "focus", pet = "pet", tot = "tot", party = "party",
-                     plates = "plates", prd = "prd", raid = "raid" }
-local SCREEN = { "player", "target", "tot", "pet", "focus", "party", "plates", "prd", "raid" }
+                     plates = "plates", prd = "prd", raid = "raid", breath = "breath" }
+local SCREEN = { "player", "target", "tot", "pet", "focus", "party", "plates", "prd", "raid", "breath" }
 
 local function Example(key)
     local e = ui.examples[key]
@@ -1137,7 +1153,7 @@ end
 
 function Editor.Sections()
     local ids = {}
-    for _, id in ipairs({ "player", "target", "focus", "pet", "tot", "party", "raid", "prd", "plates" }) do
+    for _, id in ipairs({ "player", "target", "focus", "pet", "tot", "party", "raid", "prd", "plates", "breath" }) do
         ids[#ids + 1] = id
     end
     for _, t in ipairs(TABS) do
