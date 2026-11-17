@@ -147,18 +147,22 @@ On by default, under Rage in the settings.
 *   **Spending rage lets it go:** every ability that costs rage throws sparks off the front, and while the bar was hot the whole fury flares and cools back to red at what is left.
 *   **It goes by your rage itself,** which WoW Forever keeps hidden from addons: the game fades the fury in, so it shows exactly as far as your rage has climbed. It shows on any rage bar: yours, a druid's in Bear Form, your target's.
 
-## Using another unit frame addon?
+## Proven compatibility
 
-If your unit frame addon replaces the game's frames, the liquid has nowhere to show: the game's bars are hidden. Unit frame addons can now hand their own health and power bars to Smooth Animated Bars, and the liquid fills them instead.
+Unit frame addons that replace the game's frames, tried in game with Smooth Animated Bars. Use one of them at a time.
 
-**Ask your unit frame addon's author to take a look.** It takes them a few lines, and everything they need is in the [For addon authors](https://github.com/Jordanburch101/smooth-animated-bars#for-addon-authors) section of the README. Feel free to link it in their comments or issues.
+*   **[FlareUI](https://www.curseforge.com/wow/addons/flareui)** by Malkkav and the FlareUI team, built in from FlareUI 6.10: the liquid in the health and power bars of its player, target, focus, pet and target of target frames, its party's health and its Resource Bars, with its heals and shields kept on top. Its round portrait style cuts the liquid to fit.
+*   **[Frames Forever](https://www.curseforge.com/wow/addons/frames-forever)** by Halfdays, built in from Frames Forever 1.4.3: the liquid in its unit frames' health and power bars, flowing the other way on bars that show health lost, with your DoTs on its target's health.
+*   **[ClassicUI Forever](https://www.curseforge.com/wow/addons/classicui-forever)** by justawower, from Smooth Animated Bars 1.11.0: Smooth Animated Bars finds its classic frames' bars by itself, on the player, target, focus, target of target and party, under its frame art, and fits your pet's bars to its smaller frame. Its standalone Unit Frames piece works too.
 
-Once your addon supports it:
+With any of them:
 
-*   **Your bars keep their look:** the liquid takes the colours you set in that addon, and a bar that fills from the right gets the liquid flowing the other way.
 *   **Your own bars get the extras:** heals, bandages, food and drink pour in, the mana bar builds up before mana regenerates, and a warrior's rage grows furious.
 *   **Your DoTs show** on the target's health bar, with the DoT Marker on.
-*   **On by default,** under Other Addons in the settings (Other Addons' Bars), or `/sab off` for every bar.
+*   **Colours:** FlareUI's and Frames Forever's bars keep the colours you set in that addon, unless you tick Your Colours on Their Bars under Other Addons. ClassicUI Forever's follow your settings for each frame, as the game's own frames do.
+*   **On by default,** under Other Addons in the editor (Other Addons' Bars), or `/sab off` for every bar.
+
+**Using another unit frame addon?** If it replaces the game's frames, the liquid has nowhere to show until it hands its bars over. Ask its author to take a look: it takes them a few lines, and everything they need is in the [For addon authors](https://github.com/Jordanburch101/smooth-animated-bars#for-addon-authors) section of the README. Feel free to link it in their comments or issues.
 
 ## Make it yours
 
@@ -194,7 +198,7 @@ Open the settings with `/sab`, from **Open Settings** when you right-click your 
 ## Good to know
 
 *   **WoW Forever only.** It draws on Forever's own unit frames.
-*   **Player, target, pet, focus, target-of-target, party and raid frames, the Personal Resource Display and nameplates.** Raid frames (and raid-style party frames) get it in their health and power bars, off to start with. Another addon's unit frames get the liquid once that addon hands its bars over (see Using another unit frame addon? above).
+*   **Player, target, pet, focus, target-of-target, party and raid frames, the Personal Resource Display and nameplates.** Raid frames (and raid-style party frames) get it in their health and power bars, off to start with. Another addon's unit frames get the liquid once that addon hands its bars over (see Proven compatibility above).
 *   **Always matches the game.** WoW Forever keeps health and power hidden from addons, so the game itself places the liquid on its own bar. That is also why a hit and someone else's heal both just stir the liquid.
 *   **Spell text in eight languages.** The DoT tracking reads your spells' tooltips in English, French, German, Spanish, Portuguese, Russian, Korean and Chinese (rogue poisons in English only). The heal tracking reads English only, so on other client languages it may not pick up your heals.
 *   **Light on your game.** Once the bars settle, the liquid drops to a low update rate, and the party's small bars and the rage's fury keep to a lower one even in a fight.
@@ -205,6 +209,7 @@ Open the settings with `/sab`, from **Open Settings** when you right-click your 
 *   The liquid comes from [Smooth Experience Bar](https://www.curseforge.com/wow/addons/smooth-experience-bar), whose look is based on the [Luxthos Experience Bar](https://wago.io/LuxthosExperienceBar) WeakAura by Luxthos & Daemoos.
 *   The DoT tracking is ported from DoesItDie by JoeGG (MIT licence), which worked out how to follow your DoTs on WoW Forever.
 *   The art is the game's own, the poison skulls too.
+*   Thanks to Malkkav and the FlareUI team for building Smooth Animated Bars into FlareUI, with care for its heals, shields and portrait styles, and to Halfdays, whose Frames Forever asked for a way in and was the first to use it. ClassicUI Forever's classic frames are justawower's work.
 
 Open source under the MIT licence: [source, issues and licence on GitHub](https://github.com/Jordanburch101/smooth-animated-bars).
 

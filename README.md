@@ -270,6 +270,29 @@ as it was.
 - **Light on your game.** Once the bars settle, the liquid drops to a low update rate, and the party's small bars
   and the rage's fury keep to a lower one even in a fight.
 
+## Proven compatibility
+
+Unit frame addons that replace the game's frames, tried in game with Smooth Animated Bars. Use one of them at a time.
+
+- **[FlareUI](https://www.curseforge.com/wow/addons/flareui)** by Malkkav and the FlareUI team, built in from FlareUI
+  6.10: the liquid in the health and power bars of its player, target, focus, pet and target of target frames, its
+  party's health and its Resource Bars, with its heals and shields kept on top. Its round portrait style cuts the
+  liquid to fit.
+- **[Frames Forever](https://www.curseforge.com/wow/addons/frames-forever)** by Halfdays, built in from Frames
+  Forever 1.4.3: the liquid in its unit frames' health and power bars, flowing the other way on bars that show health
+  lost, with your DoTs on its target's health.
+- **[ClassicUI Forever](https://www.curseforge.com/wow/addons/classicui-forever)** by justawower, from Smooth Animated
+  Bars 1.11.0: Smooth Animated Bars finds its classic frames' bars by itself, on the player, target, focus, target of
+  target and party, under its frame art, and fits your pet's bars to its smaller frame. Its standalone Unit Frames
+  piece works too.
+
+FlareUI's and Frames Forever's bars go by Other Addons' Bars under Other Addons in the editor, on to start with, and
+keep the colours you set in that addon unless you tick Your Colours on Their Bars. ClassicUI Forever's follow your
+settings for each frame, as the game's own frames do. Your heals, food, drink and mana build-up show on all of them, and
+your DoTs on their target's health with the DoT Marker on.
+
+Using another unit frame addon? Ask its author to look at For addon authors below: it takes a few lines.
+
 ## For addon authors
 
 A unit frame addon that hides the game's frames can hand Smooth Animated Bars its own bars. The table is
@@ -351,6 +374,9 @@ Install it from CurseForge, or download the zip from the
 - **The DoT tracking** is ported from DoesItDie by JoeGG (MIT licence), which worked out how to follow
   your DoTs on WoW Forever, where the combat log is closed to addons. The idea of marking them on the
   target's health bar is its too.
+- **Other unit frame addons:** thanks to Malkkav and the FlareUI team for building Smooth Animated Bars into FlareUI,
+  with care for its heals, shields and portrait styles, and to Halfdays, whose Frames Forever asked for a way in and
+  was the first to use it. ClassicUI Forever's classic frames are justawower's work.
 - **The art** is the game's own: the addon's icon (Greater Nether Essence), the kill icon's skull, the poison
   skulls, and the unit frames in the images above, captured in game.
 
