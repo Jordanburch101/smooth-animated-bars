@@ -1,0 +1,21 @@
+{
+  "ppu": 5.04,
+  "cells": {
+    "raid-bg": [
+      98,
+      44
+    ],
+    "raid-selected": [
+      98,
+      44
+    ],
+    "raid-power-bg": [
+      96,
+      8
+    ],
+    "raid-group": [
+      102,
+      225
+    ]
+  }
+}

@@ -544,6 +544,8 @@ SlashCmdList.SMOOTHANIMATEDBARS = function(input)
         ns.Capture.Start("plates")
     elseif cmd == "capture party" then -- and a party member frame's
         ns.Capture.Start("party")
+    elseif cmd == "capture raid" then -- and a raid-style frame's
+        ns.Capture.Start("raid")
     elseif cmd == "setup" then
         ns.Wizard.Open()
     elseif cmd == "changes" then

@@ -2468,6 +2468,34 @@ check(cq.eval("__screenshots") == 2 and not cq.eval(f"{grid}.shown") and cq.eval
       "two screenshots, on black and white, then it hides, puts the format back and says what next")
 check(not any("Error in" in m for m in chat(cq)), "no errors")
 
+print("== /sab capture raid (raid frame art)")
+cr = session(setup="COMPACT_UNIT_FRAME_FRIENDLY_HEALTH_COLOR_BG = { GetRGB = function() return 0.1, 0.1, 0.1 end }")
+cr.execute("SlashCmdList.SMOOTHANIMATEDBARS('capture raid')")
+grid = "SmoothAnimatedBarsCaptureRaid"
+pieces = cr.eval(f"""(function()
+    local out = {{}}
+    for _, r in ipairs(__regions) do
+        if r.parent == {grid} and r.kind == "Texture" and r.atlas then
+            local p = r.points.TOPLEFT
+            out[#out + 1] = r.atlas .. " " .. p.x .. "," .. p.y .. " " .. r.w .. "x" .. r.h
+                .. (r.vc and r.vc[1] ~= 1 and (" " .. r.vc[1]) or "")
+        end
+    end
+    return table.concat(out, "; ")
+end)()""")
+check(pieces == "raidframe-hp-bg-white 20,-40 98x44 0.1; RaidFrame-TargetFrame 130,-40 98x44; "
+      "_RaidFrame-Resource-Background 240,-40 96x8; options_frame_child 350,-40 102x225",
+      f"a grid of its own: the frame's background tinted as the game tints it, the target's highlight, the power bar's "
+      f"background and a group's border, at a 98 x 44 frame's sizes: {pieces}")
+run(cr, 0.6)
+cr.execute("__fire('SCREENSHOT_SUCCEEDED')")
+run(cr, 4.1)
+cr.execute("__fire('SCREENSHOT_SUCCEEDED')")
+check(cr.eval("__screenshots") == 2 and not cr.eval(f"{grid}.shown") and cr.eval("__cvars.screenshotFormat") == "jpg"
+      and any("capture_art.py --raid" in m for m in chat(cr)),
+      "two screenshots, on black and white, then it hides, puts the format back and says what next")
+check(not any("Error in" in m for m in chat(cr)), "no errors")
+
 print("== personal resource display")
 # Forever's Personal Resource Display: the player's bars in a frame of their own, drawn with the plates' art and no
 # mask, so they take the plates' look; shown only with the game's option on.
