@@ -499,6 +499,9 @@ st = ED + ".examples.frames.bars[1].state"
 check(lua.eval(st + ".wait") > 0,
       f"its examples, hidden, are looked at a few times a second, not every frame "
       f"({lua.eval(st + '.wait')}, {lua.eval(st + '.sight')}, {lua.eval(st + '.live')})")
+lua.execute("__ns.Editor.Open()")
+check(lua.eval(st + ".wait") == 0, "opened again, they are looked at on the very next frame")
+lua.execute("__ns.Editor.Close()")
 check(not any("Error" in m for m in chat(lua)), "no errors")
 lua.execute("__settings.playerHealth:SetValue(false)")
 run(lua, 0.2)

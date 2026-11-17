@@ -409,6 +409,7 @@ local function Build()
         if not closing then Wizard.Close("skip") end
         closing = nil
     end)
+    frame:SetScript("OnShow", function() ns.Bars.WakePreviews() end)
     if frame.SetTitle then
         frame:SetTitle("Smooth Animated Bars Setup")
     elseif frame.TitleText then

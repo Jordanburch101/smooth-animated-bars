@@ -217,7 +217,7 @@ liquid is, your DoTs, and nameplates, each shown on example frames. Skip leaves 
 | Command | |
 |---|---|
 | `/sab` | Open the editor |
-| `/sab on` / `/sab off` | Liquid in all the bars, or back to the game's own |
+| `/sab off` / `/sab on` | The game's own bars everywhere, or the liquid back in your frames (raid frames and nameplates stay as they are) |
 | `/sab setup` | Run the setup again |
 | `/sab changes` | What changed in recent versions |
 | `/sab debug` | What each bar is doing, if something looks wrong |

@@ -996,6 +996,7 @@ local function Build()
     -- Escape closes it like the game's windows; a colour being tried goes with it.
     table.insert(UISpecialFrames, "SmoothAnimatedBarsEditor")
     frame:SetScript("OnHide", function() ns.Core.Try(nil) end)
+    frame:SetScript("OnShow", function() ns.Bars.WakePreviews() end)
     if frame.SetTitle then
         frame:SetTitle("Smooth Animated Bars")
     elseif frame.TitleText then

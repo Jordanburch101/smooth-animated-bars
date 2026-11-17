@@ -466,7 +466,7 @@ events:RegisterEvent("PLAYER_ENTERING_WORLD")
 
 local HELP = {
     "/sab - open the editor: every setting beside a live preview",
-    "/sab on | off - liquid in all the bars, or none",
+    "/sab off - the game's own bars everywhere; /sab on - the liquid back in your frames (raid frames and nameplates stay as they are)",
     "/sab setup - open the setup wizard",
     "/sab changes - what's new in the latest versions",
     "/sab debug - what each bar is doing",

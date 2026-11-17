@@ -2288,6 +2288,12 @@ function Bars.Preview(bar, spec)
     return b
 end
 
+-- A window of previews was shown (the editor, the setup): each is looked at again on the next frame, rather than when
+-- its wait while hidden runs out, so the examples move at once and their heal markers find them shown.
+function Bars.WakePreviews()
+    for _, b in ipairs(previews) do b.wait, b.sight = 0, nil end
+end
+
 -- A preview bar's value changed.
 function Bars.Stir(b)
     if b.live then Stir(b) end

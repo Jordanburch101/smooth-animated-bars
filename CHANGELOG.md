@@ -48,7 +48,7 @@ Sections are `### New` and `### Fixed`; skip one that would be empty.
   addon that fades your UI while you are idle) no longer keep animating
   unseen. The liquid pauses and picks up again as soon as the frame fades
   back in.
-- **`/sab off`** now turns the liquid off everywhere, nameplates and raid
+- **`/sab off`**: now turns the liquid off everywhere, nameplates and raid
   frames included. `/sab on` still leaves those as they were, since they
   start off.
 
