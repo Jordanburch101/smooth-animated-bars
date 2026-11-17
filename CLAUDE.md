@@ -434,7 +434,9 @@ Facts found while building this, which the code relies on and which are not obvi
   frames' colours from the CVars and each member's class, and no spill: the frames touch, and in game the first build's
   motes flew over them). All play the scenes (`SetScene`: fight, damage, heal, power; groups take the frames' rows a
   little apart); the one being edited at full speed and the rest at a third, idling at 10 fps (`Preview.SetActive`,
-  `spot.calm`), as about 40 liquids show at once. The heal scene feeds a heal marker on the example's health
+  `spot.calm`), as about 40 liquids show at once. A frame whose health and power are both off rests full and still
+  instead of playing the scene (`Preview.Resting`, in `SetFraction` and `SetPlate`), asked for once raid frames, off by
+  default, kept animating their plain fill. The heal scene feeds a heal marker on the example's health
   (`HealMarker.Preview`, named "preview" so real heals and meals never reach it): a Renew, then a bandage; in game the
   first build's Healing only moved the bar (seen). A colour tile under the mouse is tried on every bar its setting
   reaches, real and example, without being saved (`Core.Try`, read by `Core.ColorChoice`), until the mouse leaves or

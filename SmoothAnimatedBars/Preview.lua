@@ -233,7 +233,19 @@ local function Bar(f, top, spec, setup)
     return bar
 end
 
+-- Whether an example bar's whole frame has the liquid off (its health and power settings, "playerHealth" and
+-- "playerPower", or a friendly nameplate's one): such a frame rests, full and still, instead of playing the scene.
+local function Resting(bar)
+    local key = bar.state and bar.state.spot and bar.state.spot.key
+    if type(key) ~= "string" then return false end
+    local frame = key:match("^(.-)Health$") or key:match("^(.-)Power$")
+    if not frame then return not ns.Core.Get(key) end
+    return not ns.Core.Get(frame .. "Health") and not ns.Core.Get(frame .. "Power")
+end
+Preview.Resting = Resting
+
 local function SetFraction(bar, frac)
+    if Resting(bar) then frac = 1 end
     local value = math.floor(frac * bar.max + 0.5)
     if value == bar.shownValue then return end
     bar.shownValue = value
@@ -787,6 +799,7 @@ local function Plate(holder, top, spec)
 end
 
 local function SetPlate(bar, frac)
+    if Resting(bar) then frac = 1 end
     local value = math.floor(frac * bar.max + 0.5)
     if value == bar.shownValue then return end
     bar.shownValue = value

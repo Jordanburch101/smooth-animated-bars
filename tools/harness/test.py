@@ -417,8 +417,19 @@ lua.execute(f"__click({ED}.hots.raid)")
 RM = ED + ".examples.raid.members"
 check(lua.eval("#" + RM) == 10 and not lua.eval(f"__ns.Bars.IsLive({RM}[1].health)"),
       "Raid: ten example raid frames, the game's own fill while raid frames are off")
+RESTING = f"""(function()
+    for _, m in ipairs({RM}) do
+        for _, bar in ipairs({{ m.health, m.power }}) do
+            if bar.shownValue ~= bar.max then return false end
+        end
+    end
+    return true
+end)()"""
+run(lua, 2.0)
+check(lua.eval(RESTING), "and with them off, every example rests full and still rather than playing the scene")
 lua.execute("__click(__card(1).check); __click(__card(2).check)")
-run(lua, 0.5)
+run(lua, 2.0)
+check(not lua.eval(RESTING), "turned on, they play the scene again")
 check(lua.eval(f"__ns.Bars.IsLive({RM}[1].health)") and lua.eval(f"__ns.Bars.IsLive({RM}[1].power)")
       and not lua.eval(ED + ".hots.raid.off"), "turned on, they take the liquid, health and power, and light up")
 check(lua.eval(f"""(function()
