@@ -3,7 +3,8 @@
 # Smooth Animated Bars
 
 Liquid health and power bars for your unit frames in **WoW Forever**: yours, your target's, your pet's, your
-focus's, your targets of target and your party's, the Personal Resource Display, and nameplates too. The liquid from
+focus's, your targets of target, your party's and your raid's, the Personal Resource Display, and nameplates too. The
+liquid from
 [Smooth Experience Bar](https://www.curseforge.com/wow/addons/smooth-experience-bar) — waves, a swirl of magic,
 bubbles, sparkles and lightning — now fills the bars you watch all fight long.
 
@@ -29,6 +30,8 @@ short setup on the first login lets you choose the look, or skip it.
 - **Nameplates (optional):** the liquid in enemy and friendly nameplates too, with your DoTs on every mob that
   carries them.
 - **Party frames:** each member's health and power, in their class or power colours.
+- **Raid frames (optional):** every raid member's health and power in the game's raid frames, and your party's
+  when you use raid-style party frames, in the raid frames' own colours.
 - **Your heals on the way:** your own heals over time, bandages and the heal you are casting on yourself show
   ahead of your health as far as they will still bring it, and pour into it.
 - **Food and drink:** what you are eating and drinking shows ahead of your health and mana, and food with a buff
@@ -109,8 +112,25 @@ On by default, under Party in the editor, or right-click a party member's frame 
 - **Colours:** Same as Yours follows your own; Class Color shows each member's class, and Game Colour each one's
   power type (blue mana, red rage, yellow energy).
 - **While a member is offline** their bar goes back to the game's grey one, until they are back.
-- **The game's party frames only.** With Use Raid-Style Party Frames on, they keep the game's bars. The game's own
-  incoming heals and shields still show on them.
+- **The game's own incoming heals and shields** still show on them.
+- **Raid-style party frames?** With Use Raid-Style Party Frames on, your party is in raid frames, and they go by the
+  Raid settings below.
+
+## Raid frames
+
+<p align="center"><img src="https://raw.githubusercontent.com/Jordanburch101/smooth-animated-bars/refs/heads/main/branding/gallery/raid.webp" alt="Ten raid members in two groups of the game's raid frames through a pull: each health liquid in its class colour, the two warriors' red rage climbing as they tank, a burst of raid damage dropping everyone's health and the healers bringing it back, the casters' blue mana draining, and the main tank outlined as the target"></p>
+<p align="center"><em>Raid: both tanks build rage, a burst of damage hits the whole raid and the healers bring it back, while the casters' mana drains.</em></p>
+
+Off to start with: turn on Health and Power under Raid in the editor.
+
+- **The game's raid frames,** and your party's when you use raid-style party frames: each member's health and power,
+  the liquid inside the frame.
+- **The game's own stays on top:** names, role icons, health text, incoming heals, shields and the highlight round your
+  target show over the liquid.
+- **Colours:** health takes the raid frames' own colours (each member's class colour, or the colour set in the game's
+  Raid Frames options), power its power type's; or pick any theme.
+- **While a member is offline** their bar goes back to the game's grey one, until they are back.
+- **Light in a big raid:** the more raid frames show, the lower the liquid's update rate.
 
 ## Personal Resource Display
 
