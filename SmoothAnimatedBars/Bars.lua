@@ -2343,6 +2343,12 @@ function Bars.IsLive(bar)
     return b and b.live and not b.err and not b.away or false
 end
 
+-- Whether the bar's liquid front is moved off the health's edge (Bars.Front), as the shield moves it back.
+function Bars.Moved(bar)
+    local b = StateFor(bar)
+    return b and b.front ~= nil or false
+end
+
 -- Where a bar's liquid ends: on the left edge of region (the DoT marker's span, Marker.lua), or with nil
 -- back on the bar's own fill edge.
 function Bars.Front(bar, region)
@@ -2746,6 +2752,12 @@ end
 function Bars.StirBar(bar)
     local b = StateFor(bar)
     if b and b.live then Stir(b) end
+end
+
+-- A small push on a bar's front with no splash (Liquid:Nudge): a shield lapping at the health (Shield.lua).
+function Bars.Lap(bar, kick)
+    local b = StateFor(bar)
+    if b and b.live then b.liquid:Nudge(kick) end
 end
 
 -- A theme by key, with its movement scaled down for the unit frames' small bars.

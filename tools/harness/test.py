@@ -303,7 +303,7 @@ OPTION_KEYS = ["playerHealth", "healthColor", "playerPower", "powerColor", "targ
                "partyPowerColor", "raidHealth", "raidHealthColor", "raidPower", "raidPowerColor", "prdHealth",
                "prdHealthColor", "prdPower", "prdPowerColor", "plateHealth", "plateHealthColor", "plateFriendly",
                "plateFriendlyColor", "plateDots", "plateKillIcon", "waves", "swirl", "bubbles", "sparkles", "ambient",
-               "lightning", "dots", "dotKillIcon", "heals", "manaBuild", "rageFury", "externalBars", "externalColors"]
+               "lightning", "dots", "dotKillIcon", "heals", "shield", "manaBuild", "rageFury", "externalBars", "externalColors"]
 keys = list(lua.eval("__ns.Editor.Keys()").values())
 check(sorted(keys) == sorted(OPTION_KEYS), f"the editor has a control for every setting ({sorted(set(keys) ^ set(OPTION_KEYS))})")
 check(all(lua.eval(f"__settings.{k} ~= nil") for k in OPTION_KEYS),
@@ -1569,7 +1569,7 @@ check(pm.eval("SmoothAnimatedBarsSetup.shown") and pm.eval("(select(2, __liquid(
       "a missing atlas leaves that piece out: no mask, liquid uncut, no error")
 
 print("== DoT marker")
-dm = session("{ setupDone = true, heals = false, manaBuild = false, rageFury = false }")
+dm = session("{ setupDone = true, heals = false, shield = false, manaBuild = false, rageFury = false }")
 run(dm, 0.5)
 check(dm.eval("__ns.Core.db.dots") is False and not dm.eval("__ns.Dots.IsEnabled()")
       and dm.eval("(__ns.Marker.State())") is None, "off by default: no tracking, no marker built")
@@ -1711,24 +1711,28 @@ check(dm.eval("__m().clip.shown") and grow < dm.eval("__d(2).run.value") and abs
 dm.execute("__target.dead = true")
 run(dm, 0.3)
 check(not dm.eval("__m().clip.shown"), "a dead target: marker hidden")
-# Rend, as seen in game: Forever keeps hit amounts secret, so no tick is ever seen. White swings land and are
-# parried around it.
+# Rend, as seen in game: Forever keeps hit amounts secret, but not their school. Its ticks are matched on school and
+# timing (DoesItDie 0.9.1), and white swings land and are parried around it, one just ahead of its first tick.
 dm.execute("""
     __spells[6546] = { 'Rend', 'Wounds the target causing them to bleed for 28 damage over 12 sec.' }
     __target = { guid = 'Creature-0-1-2-3-524-0002', name = 'Rockhide Boar' }
     __fire('PLAYER_TARGET_CHANGED')
     __cast(6546, 'Cast-3')
+    function __physical() __fire('UNIT_COMBAT', 'target', 'WOUND', '', __secret(), 1) end
 """)
 run(dm, 0.3)
 dm.execute("__fire('UNIT_COMBAT', 'target', 'PARRY', '', 0, 1)")
-for _ in range(3):
-    run(dm, 2.2)
-    dm.execute("__fire('UNIT_COMBAT', 'target', 'WOUND', '', __secret(), 1)")
-run(dm, 0.5)  # 7.4 s after the cast: two ticks left
+for wait in (2.4, 0.3, 1.7, 1.3):  # a white swing at 2.7 s, Rend's tick at 3, a swing at 4.7, its tick at 6
+    run(dm, wait)
+    dm.execute("__physical()")
+check(dm.eval("__ns.Dots.Target() and #__ns.Dots.Debug(0) > 0") and any(
+      "TICK Rend (amount hidden)" in m for m in dm.eval("__ns.Dots.Debug(40)").values()),
+      "Rend's ticks are matched with their amounts hidden, by school and timing")
+run(dm, 1.4)  # 7.4 s after the cast: two ticks left
 check(dm.eval("__total()") == 14 and dm.eval("__m().clip.shown"),
-      f"Rend with hit amounts secret: no tick is seen, but it is not dropped, and runs down on time ({dm.eval('__total()')})")
+      f"a swing just ahead of a tick doesn't pull Rend's schedule early: it runs down on time ({dm.eval('__total()')})")
 check(any("Hit amounts are secret" in m for m in dm.eval("__ns.Dots.Debug(40)").values()),
-      "and the tracking says why")
+      "and the tracking says why it reads them that way")
 # The hit flags (crits): readable on Forever, unlike the amounts. /sab dots counts what the target's hits show,
 # readable or secret, and only under the target's token (the same hit comes again under its nameplate's).
 dm.execute("""
@@ -1827,9 +1831,13 @@ check(dm.eval("__total()") == 46 and dm.eval("__d(1).themeKey") == "plague" and 
       "Rend joins it as Blood behind the poison")
 run(dm, 2.4)
 dm.execute("__nature()")
-run(dm, 3)
+run(dm, 0.3)
+dm.execute("__physical()")  # Rend's own ticks, their amounts hidden too
+run(dm, 2.7)
 dm.execute("__nature()")  # the last of its four ticks
-run(dm, 3)
+run(dm, 0.3)
+dm.execute("__physical()")
+run(dm, 2.7)
 dm.execute("__nature()")  # and one more: it was put on again meanwhile
 run(dm, 0.3)
 check(dm.eval("__total()") == 27 + 14,
@@ -2108,6 +2116,18 @@ check(hm.eval("__hd(1).mover.points.TOPRIGHT.rel == __hd(1).fill") and hm.eval("
       and hm.eval("__h().clip.points.BOTTOMRIGHT.rel == PlayerFrame.healthbar")
       and hm.eval("__h().clip.points.BOTTOMRIGHT.x") == 0 and hm.eval("__h().clip.clipsChildren"),
       "the heal liquid ends where the health will be, starts a little under the health's edge, cut at the bar's end")
+check(hm.eval("__hd(1).seam.mover.shown") and hm.eval("__hd(1).pool.points.TOPLEFT.x") < 0,
+      "under the health liquid, reaching back under its front, a seam of the health's colour on the meeting")
+hm.execute("__absorb.whole = 40; PlayerFrame.healthbar.TotalAbsorbBar:Show()")
+run(hm, 0.3)
+check(hm.eval("__ns.Shield.State().clip.shown") and not hm.eval("__hd(1).seam.mover.shown")
+      and hm.eval("__hd(1).pool.points.TOPLEFT.x") == 0,
+      "with a shield up (the health liquid's front moved back to it): the heal from the health's edge past the shield, "
+      "no seam (its health colour on the health's edge painted green over the shield, seen in game)")
+hm.execute("PlayerFrame.healthbar.TotalAbsorbBar:Hide()")
+run(hm, 2.0)
+check(not hm.eval("__ns.Shield.State().clip.shown") and hm.eval("__hd(1).seam.mover.shown")
+      and hm.eval("__hd(1).pool.points.TOPLEFT.x") < 0, "the shield gone, the heal is under the health liquid again")
 HEAL_LAYERS = """(function(i)
     local m = __h()
     local mask = PlayerFrame.PlayerFrameContent.PlayerFrameContentMain.HealthBarsContainer.HealthBarMask
@@ -2479,7 +2499,7 @@ check(not any("Error" in m for m in chat(mr)), "no errors")
 
 print("== rage fury")
 check(lua.eval("__ns.Core.db.rageFury") is True, "on by default")
-rf = session("{ setupDone = true, heals = false, dots = false, manaBuild = false }")
+rf = session("{ setupDone = true, heals = false, shield = false, dots = false, manaBuild = false }")
 rf.execute("""
     __spellCosts[78] = { { type = 1, name = 'RAGE', cost = 15 } }
     __spellCosts[6673] = {}
@@ -2563,6 +2583,252 @@ run(nc, 0.5)
 check(not any("Error" in m for m in chat(nc))
       and nc.eval("(select(2, __liquid(PlayerFrame.manabar)))") > 0,
       "a client without curves keeps the plain liquid, without an error")
+
+print("== DoT tracking: DoesItDie 0.9.1 to 0.9.4")
+dd = session("{ setupDone = true, dots = true, heals = false, shield = false, manaBuild = false, rageFury = false }")
+dd.execute("""
+    __spells[172] = { 'Corruption', 'Corrupts the target, causing 36 Shadow damage over 12 sec.' }
+    __spells[1079] = { 'Rip', 'Finishing move that causes damage over time.  Damage increases per combo point and by '
+        .. 'your Attack Power:\\n   1 point  : 57 damage over 12 sec.\\n   2 points: 90 damage over 12 sec.\\n   3 points: '
+        .. '123 damage over 12 sec.\\n   4 points: 156 damage over 12 sec.\\n   5 points: 189 damage over 12 sec.' }
+    function __total() return (__ns.Dots.Target()) end
+    function __on(unit) return (__ns.Dots.Unit(unit)) end
+    function __send(id, guid, name) __fire('UNIT_SPELLCAST_SENT', 'player', name, guid, id) end
+    function __done(id, guid) __fire('UNIT_SPELLCAST_SUCCEEDED', 'player', guid, id) end
+    function __cast(id, guid) __send(id, guid, __target and __target.name or ''); __done(id, guid) end
+    function __shadow() __fire('UNIT_COMBAT', 'target', 'WOUND', '', __secret(), 32) end
+    function __log()
+        local t = {}
+        for _, l in ipairs(__ns.Dots.Debug(80)) do t[#t + 1] = l end
+        return table.concat(t, '\\n')
+    end
+    function __mob(n) __target = { guid = 'Creature-0-1-2-3-100-000' .. n, name = 'Kobold Miner' }; __fire('PLAYER_TARGET_CHANGED') end
+    __mob(1)
+""")
+run(dd, 0.2)
+dd.execute("__combat = true; __cast(172, 'Cast-1')")
+for _ in range(4):
+    run(dd, 3)
+    dd.execute("__shadow()")
+check("TICK Corruption (amount hidden)" in dd.eval("__log()") and dd.eval("__total()") == 0,
+      "Corruption's four ticks matched with their amounts hidden, and it ends with its last")
+dd.execute("""__meter.spells = { { spellID = 172, totalAmount = 60 } }
+    __combat = false; __fire('PLAYER_REGEN_ENABLED')""")
+run(dd, 0.7)
+check(dd.eval("SmoothAnimatedBarsDB.dotTicks[172]") == 15 and dd.eval("SmoothAnimatedBarsDB.dotTickWeights[172]") == 4
+      and "LEARN Corruption: meter 60 over 4 tick(s) = 15.0 per tick (description 9.0)" in dd.eval("__log()"),
+      "after combat the damage meter's total teaches its real tick (15, with spell power), not the tooltip's 9")
+dd.execute("__mob(2); __combat = true; __cast(172, 'Cast-2')")
+run(dd, 0.1)
+check(dd.eval("__total()") == 60, f"the next Corruption starts from it: 4 ticks of 15 ({dd.eval('__total()')})")
+dd.execute("SmoothAnimatedBarsDB.dotTicks[172] = 30")
+run(dd, 0.1)
+check(dd.eval("__total()") == 60, "a size learned meanwhile doesn't move a DoT that hasn't ticked yet")
+dd.execute("SmoothAnimatedBarsDB.dotTicks[172] = 15")
+# Never ticks, on a mob whose hits show their school: resisted, dropped.
+dd.execute("__fire('UNIT_COMBAT', 'target', 'WOUND', '', __secret(), 1)")
+run(dd, 7)
+check(dd.eval("__total()") == 0 and "DROP Corruption never ticked" in dd.eval("__log()"),
+      "a Corruption that never ticks on a mob whose hits show their school is dropped (resisted)")
+dd.execute("__mob(3); __cast(172, 'Cast-3'); __fire('UNIT_COMBAT', 'target', 'WOUND', '', __secret(), __secret())")
+run(dd, 7)
+check(dd.eval("__total()") == 30, f"where the school is hidden too, no tick could be matched: it runs on ({dd.eval('__total()')})")
+dd.execute("""__combat = false; __meter.spells = { { spellID = 172, totalAmount = 900 } }
+    __fire('PLAYER_REGEN_ENABLED')""")
+run(dd, 0.7)
+check(dd.eval("SmoothAnimatedBarsDB.dotTicks[172]") == 15 and dd.eval("__log()").count("LEARN Corruption:") == 1,
+      "a fight where no tick was counted teaches nothing, whatever the meter says")
+check(dd.eval("__ns.Dots.parseDirectPart('Burns the enemy for 11 Fire damage and then an additional 20 Fire damage over 15 sec.')") == 11
+      and dd.eval("__ns.Dots.parseDirectPart('Rakes the target for 19 damage and an additional 39 damage over 9 sec.')") == 19
+      and dd.eval("__ns.Dots.parseDirectPart('Corrupts the target, causing 36 Shadow damage over 12 sec.')") == 0
+      and dd.eval("__ns.Dots.parseDirectPart('Verbrennt den Feind und fügt ihm 11 Feuerschaden sowie 20 Feuerschaden über 15 Sek. zu.')") == 11
+      and dd.eval("__ns.Dots.parseDirectPart('Brûle l’ennemi et lui inflige 11 points de dégâts de Feu')") is None,
+      "an upfront hit (Immolate, Rake) is split off the meter's total; in a language it can't be read in, nothing is learned")
+
+# Where the cast goes.
+dd.execute("""
+    __target = { guid = 'Creature-0-1-2-3-100-0010', name = 'Kobold Miner', dead = true }
+    __units.softenemy = { guid = 'Creature-0-1-2-3-100-0011', name = 'Kobold Miner' }
+    __fire('PLAYER_TARGET_CHANGED')
+    __cast(172, 'Cast-4')
+""")
+run(dd, 0.1)
+check(dd.eval("__on('softenemy')") > 0 and dd.eval("__total()") == 0,
+      "with action targeting, a cast over the last kill's corpse goes on the soft enemy, not the corpse")
+dd.execute("""
+    __units.softenemy = nil
+    __target = { guid = 'Creature-0-1-2-3-100-0012', name = 'Kobold Miner' }
+    __units.mouseover = { guid = 'Creature-0-1-2-3-100-0013', name = 'Kobold Geomancer' }
+    __fire('PLAYER_TARGET_CHANGED')
+    __send(172, 'Cast-5', 'Kobold Geomancer'); __done(172, 'Cast-5')
+""")
+run(dd, 0.1)
+check(dd.eval("__on('mouseover')") > 0 and dd.eval("__total()") == 0,
+      "a /cast [@mouseover] macro's DoT goes on the mob under the mouse")
+dd.execute("""
+    __units.mouseover = { guid = 'Creature-0-1-2-3-100-0014', name = 'Kobold Miner' }
+    GetCVarBool = function(name) return name == 'enableMouseoverCast' end
+    GetModifiedClick = function(action) return action == 'MOUSEOVERCAST' and 'NONE' or nil end
+    __cast(172, 'Cast-6')
+""")
+run(dd, 0.1)
+check(dd.eval("__on('mouseover')") > 0 and dd.eval("__total()") == 0,
+      "with the game's own Mouseover Cast on, a cast goes on the mob under the mouse, even one named like the target")
+dd.execute("GetCVarBool, GetModifiedClick, __units.mouseover = nil, nil, nil")
+
+# A finisher and a white swing missing in the same instant.
+dd.execute("__mob(5); __comboPoints = 5; __cast(1079, 'Cast-7'); __fire('UNIT_COMBAT', 'target', 'MISS', '', 0, 1)")
+run(dd, 0.05)
+check(dd.eval("__total()") == 0, "a Rip with a miss right after it is dropped at first")
+dd.execute("__comboPoints = 0")
+run(dd, 0.6)
+check(dd.eval("__total()") == 189 and "spent: it landed, restored" in dd.eval("__log()"),
+      f"its five combo points were spent, so it landed: it's put back ({dd.eval('__total()')})")
+dd.execute("__mob(6); __comboPoints = 5; __cast(1079, 'Cast-8'); __fire('UNIT_COMBAT', 'target', 'MISS', '', 0, 1)")
+run(dd, 0.6)
+check(dd.eval("__total()") == 0 and "it missed" in dd.eval("__log()"),
+      "a Rip that kept its combo points missed: it stays dropped")
+check(not any("Error" in m for m in chat(dd)), "no errors")
+
+print("== shield")
+sh = session("{ setupDone = true, heals = false, manaBuild = false }", "__player.class = 'PRIEST'")
+sh.execute("""
+    __spells[17] = { 'Power Word: Shield', 'Draws on the soul of the party member to shield them.' }
+    function __sh() return __ns.Shield.State() end
+    function __gameAbsorb() return PlayerFrame.healthbar.TotalAbsorbBar, PlayerFrame.healthbar.OverAbsorbGlow end
+    function __healthFront() local _, _, mover = __ours(PlayerFrame.healthbar); return mover.points.TOPRIGHT.rel end
+    function __healthClip() local _, clip = __ours(PlayerFrame.healthbar); return clip end
+""")
+run(sh, 0.3)
+SH = "__sh()"
+check(sh.eval("__ns.Core.db.shield") is True and sh.eval(SH + " ~= nil") and sh.eval(SH + ".bar == PlayerFrame.healthbar"),
+      "on by default, built on the player frame's health bar")
+check(sh.eval(f"{SH}.glass.masks ~= nil and {SH}.glass.masks[1] == PlayerFrame.healthbar.parent.HealthBarMask")
+      and sh.eval(f"{SH}.rim.masks[1] == PlayerFrame.healthbar.parent.HealthBarMask")
+      and sh.eval(SH + ".glass.blend") == "BLEND" and sh.eval(SH + ".glass.alpha") == 1,
+      "its glass is opaque and its own colour, and it is cut by the bar's own mask, as the health liquid is")
+check(not sh.eval(SH + ".clip.shown") and sh.eval("__healthFront() ~= " + SH + ".start"), "no shield: nothing shown")
+sh.execute("__absorb.whole = 60; (__gameAbsorb()):Show()")
+run(sh, 0.3)
+check(sh.eval(SH + ".clip.shown") and sh.eval(SH + ".flash") > 0,
+      "a shield going up, as the game's own absorb bar says: it shows, with a flash")
+check(sh.eval(SH + ".sheen.alpha") == 0.16 and sh.eval(SH + ".strandsB.alpha") == 0.45
+      and sh.eval(SH + ".mover.alpha") == 1,
+      "its layers keep their own strengths while it shows, the whole faded by its frame (a texture has one alpha: "
+      "fading the layers in with SetAlpha made the faint sheen opaque in game, a flat cream block)")
+check(sh.eval(f"{SH}.glass.masks[2] == {SH}.edge and {SH}.strandsA.masks[2] == {SH}.edge")
+      and sh.eval(f"{SH}.edge.file:sub(-10)") == "ShieldEdge" and sh.eval(f"{SH}.rim.masks[2] == nil"),
+      "its body ends on the rim's crescent (in game it ran on past the rim), the rim itself left whole")
+check(sh.eval(f"{SH}.contact.shown and {SH}.spill.points.TOPRIGHT.rel == {SH}.start")
+      and sh.eval(f"{SH}.seam == nil and {SH}.veil == nil and {SH}.glassFade == nil"),
+      "where the health liquid meets it: its light spills back over the health, with no crescent (a stray C in game) "
+      "and no band of a colour of its own (a strip with a step in game)")
+check(sh.eval(f"{SH}.shed.shown and {SH}.shed.parent == PlayerFrame.healthbar and #{SH}.beams") == 6
+      and sh.eval(f"{SH}.beams[1].tex.file:sub(-4)") == "Beam"
+      and sh.eval(f"(function() for _, b in ipairs({SH}.beams) do if b.tex.alpha > 0 then return true end end end)()"),
+      "it sheds god rays past the bar from its rim, in a frame of their own that does not clip them")
+check(sh.eval(f"(function() for _, q in ipairs({SH}.sparks) do if q.tex.shown then return true end end end)()"),
+      "and lets off embers of light while it holds, with no hit")
+check(sh.eval(f"{SH}.run.value ~= nil and issecretvalue({SH}.run.value)") and sh.eval(f"{SH}.run.interpolation") == 1
+      and sh.eval(f"{SH}.run.reverse") and sh.eval(f"{SH}.run.points.TOPRIGHT.rel == {SH}.proxy.fill"),
+      "its size comes from the game's calculator as a secret, back from the health's front, with the client's smoothing")
+check(sh.eval("__healthFront() == " + SH + ".start") and sh.eval(f"{SH}.run.points.TOPRIGHT.x") == -3
+      and sh.eval(f"{SH}.ghost.points.TOPRIGHT.x") == -3
+      and sh.eval(f"{SH}.fadeIn.points.TOPLEFT.rel == {SH}.hold and {SH}.pool.points.TOPLEFT.rel == {SH}.hold")
+      and sh.eval(f"{SH}.ghost.reverse and {SH}.ghost.points.TOPRIGHT.rel == {SH}.proxy.fill")
+      and sh.eval(f"{SH}.ghost.value == {SH}.run.value")
+      and sh.eval(f"{SH}.fadeIn.points.TOPLEFT.x") < 0
+      and sh.eval(f"{SH}.pool.points.TOPLEFT.x") == sh.eval(f"{SH}.fadeIn.points.TOPLEFT.x")
+      and sh.eval(f"{SH}.fadeIn.file:sub(-10)") == "ShieldFade"
+      and sh.eval(f"(function() for _, t in ipairs({{ {SH}.glass, {SH}.sheen, {SH}.strandsA, {SH}.rays[1].tex, "
+                  f"{SH}.motes[1].tex }}) do if t.masks[3] ~= {SH}.fadeIn then return false end end return true end)()"),
+      "the health liquid ends where the shield starts, measured from the rim so it never passes the rim (from the "
+      "health's front, a shield smaller than the rim's inset let the health run past it in game), never past the health "
+      "(set past the start, it slid right as the "
+      "shield drained, a gap at the bar's left end in game); the whole body fades in from just behind it, so its waves "
+      "show lapping into the barrier")
+sh.execute("""__laps = 0
+    local lap = __ns.Bars.Lap
+    __ns.Bars.Lap = function(...) __laps = __laps + 1; return lap(...) end""")
+run(sh, 3)
+check(sh.eval("__laps") >= 2 and sh.eval("(function() for _, v in ipairs(__ns.Bars.stateOf[PlayerFrame.healthbar].liquid.vel)"
+                                     " do if v ~= 0 then return true end end end)()"),
+      "while it holds it laps at the health's front now and then, which ripples")
+check(sh.eval("__healthClip().useParentLevel") and sh.eval(SH + ".clip.useParentLevel"),
+      "both at the bar's level, under the game's text (raised over the shield, the health liquid hid the text in game)")
+check(sh.eval("PlayerFrame.healthbar.TotalAbsorbBar.Fill.alpha") == 0
+      and sh.eval("PlayerFrame.healthbar.TotalAbsorbBar.TiledFillOverlay.alpha") == 0
+      and sh.eval("PlayerFrame.healthbar.OverAbsorbGlow.alpha") == 0,
+      "the game's own absorb fill and glow are transparent while it shows")
+sh.execute("""function __sparks()
+        local n = 0
+        for _, q in ipairs(__sh().sparks) do if q.tex.shown then n = n + 1 end end
+        return n
+    end""")
+run(sh, 2)
+sh.execute("__fire('UNIT_COMBAT', 'player', 'ABSORB', '', __secret(), 1)")
+run(sh, 0.05)
+check(sh.eval(SH + ".flare") > 0.5 and sh.eval("__sparks()") >= 5, "a hit it soaks: the rim flares and throws sparks")
+run(sh, 0.15)
+check(sh.eval(SH + ".push") > 0.5, "and a moment later the push reaches the health: the meeting lights up")
+sh.execute("""function __shown(pool)
+        local n = 0
+        for _, q in ipairs(__sh()[pool]) do if q.tex.shown then n = n + 1 end end
+        return n
+    end""")
+sh.execute("(__gameAbsorb()):Hide()")
+run(sh, 0.1)
+check(sh.eval(SH + ".ending") == "shatter" and sh.eval(SH + ".clip.shown") and sh.eval(f"{SH}.run.value") == 0
+      and sh.eval(f"issecretvalue({SH}.ghost.value)") and sh.eval("__healthFront() == " + SH + ".start")
+      and sh.eval(f"{SH}.run.points.TOPRIGHT.x") == -3
+      and sh.eval(SH + ".body") == 1 and sh.eval(SH + ".cracks.shown") and sh.eval(SH + ".cracks.alpha") > 0,
+      "broken by a hit: it strains, cracks glowing through the glass, the glass held in its place (the ghost) while "
+      "the health flows up beneath it, held to the rim (faded at once, the empty bar showed between them in game; let "
+      "through to the health's front, its last units showed past the rim)")
+run(sh, 0.25)
+check(sh.eval(SH + ".burstDone") and sh.eval(SH + ".body") < 1 and sh.eval(f"{SH}.run.points.TOPRIGHT.x") > -3 and sh.eval("__shown('shards')") >= 20
+      and sh.eval(SH + ".blast.shown") and sh.eval(SH + ".wave.alpha") > 0 and sh.eval(SH + ".whiten.alpha") == 1,
+      "then it shatters: the glass gone in a flash, shards flying, a shockwave off the rim")
+run(sh, 1.1)
+check(not sh.eval(SH + ".clip.shown") and sh.eval("__healthFront() ~= " + SH + ".start")
+      and sh.eval("PlayerFrame.healthbar.TotalAbsorbBar.Fill.alpha") == 1 and sh.eval("__shown('shards')") == 0,
+      "then it is gone, the health liquid back to its own front, the game's absorb display back")
+sh.execute("__absorb.whole = 50; (__gameAbsorb()):Show()")
+run(sh, 1.0)
+sh.execute("(__gameAbsorb()):Hide()")
+run(sh, 0.45)
+check(sh.eval(SH + ".ending") == "shatter" and sh.eval(SH + ".burstDone") and sh.eval("__shown('shards')") >= 20,
+      "run out or taken off, with no hit: it shatters all the same (a dissolve was tried and not liked)")
+check(sh.eval("__shown('rimShards')") >= 20, "and shards burst from the rim too, whatever is left of the shield")
+run(sh, 1.5)
+check(not sh.eval(SH + ".clip.shown"), "and is gone")
+sh.execute("SlashCmdList.SMOOTHANIMATEDBARS('shield')")
+check(any("Calculator: yes" in m for m in chat(sh)) and any("Hits on you since login: ABSORB 1" in m for m in chat(sh))
+      and any("Layout: bar 124.0 wide" in m for m in chat(sh)),
+      "/sab shield reports what the game lets the addon read, and how the shield is laid out")
+sh.execute("SlashCmdList.SMOOTHANIMATEDBARS('shield test')")
+check(sh.eval(SH + ".testBlock.shown") and sh.eval(SH + ".testBlock.masks ~= nil"), "/sab shield test shows a block")
+sh.execute("SlashCmdList.SMOOTHANIMATEDBARS('shield test off')")
+check(not sh.eval(SH + ".testBlock.shown"), "and /sab shield test off hides it")
+sh.execute("__absorb.whole = 40; (__gameAbsorb()):Show()")
+run(sh, 0.3)
+sh.execute("__settings.shield:SetValue(false)")
+run(sh, 0.2)
+check(not sh.eval(SH + ".clip.shown") and sh.eval("PlayerFrame.healthbar.TotalAbsorbBar.Fill.alpha") == 1
+      and sh.eval("__healthFront() ~= " + SH + ".start"),
+      "off: gone, the health liquid's front and the game's own absorb display back")
+check(not any(f for f in sh.eval("(function() local t = {} for _, f in ipairs(__frames) do if f.events.UNIT_COMBAT then t[#t + 1] = f end end return t end)()").values()),
+      "and no hits listened to")
+sh.execute("__settings.shield:SetValue(true)")
+run(sh, 0.2)
+check(sh.eval(SH + ".clip.shown"), "on again, with the shield still up: it shows")
+check(not any("Error" in m for m in chat(sh)), "no errors (health and the shield stayed secret)")
+
+nc = session("{ setupDone = true }", "CreateUnitHealPredictionCalculator = nil")
+run(nc, 0.3)
+check(not nc.eval("__ns.Shield.State().clip.shown") and nc.eval("PlayerFrame.healthbar.TotalAbsorbBar.Fill.alpha") != 0
+      and not any("Error" in m for m in chat(nc)),
+      "without the game's calculator: no shield and no errors, the game's own absorb bar left showing")
 
 print("== /sab capture (gallery art)")
 cap = session()
@@ -3912,7 +4178,12 @@ check(before > 0 and ex.eval("__motes(__ufHealth)") == before
 check(ex.eval("SmoothAnimatedBars.AddBar(PlayerFrame.healthbar, 'player', 'health')") is False
       and ex.eval("""(function()
           local n = 0
-          for _, f in ipairs(__frames) do if f.parent == PlayerFrame.healthbar and f.clipsChildren then n = n + 1 end end
+          local shield = __ns.Shield.State() -- the shield's own clip frames are not a liquid
+          for _, f in ipairs(__frames) do
+              if f.parent == PlayerFrame.healthbar and f.clipsChildren and f ~= shield.clip then
+                  n = n + 1
+              end
+          end
           return n
       end)()""") == 1, "one of our own bars (the game's player health) is declined: no second liquid")
 check(ex.eval("SmoothAnimatedBars.AddBar(__ufBar(100, 10), 'nameplate3', 'health')") is False, "a nameplate unit is declined")

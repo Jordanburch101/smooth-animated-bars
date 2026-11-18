@@ -18,6 +18,31 @@ Sections are `### New` and `### Fixed`; skip one that would be empty.
   every character sharing them takes the copy.
 - **Raid frames in the setup**: the setup has a step for them now, with an
   example raid to try their bars and colours on.
+- **Shields on your health**: while Power Word: Shield or any other shield is
+  on you, the end of your health bar, as much as the shield will soak, turns
+  into a barrier of golden light with strands drifting through it and a bright
+  rim on your health's edge, shedding rays of light and embers past the bar.
+  Its glow spills back over your health where the two meet. The rim flares as
+  the shield soaks a hit, and the barrier wears down as it takes them. When it
+  ends, broken, run out or taken off, it cracks, strains and bursts into
+  shards of golden glass. Turn it
+  off under Shield in the editor's Combat tab.
+- **DoT marker sizes your DoTs from your real damage**: after each fight it
+  learns what your DoTs actually ticked for from the game's damage meter,
+  spell power and attack power included, so the marker and the kill icon
+  catch up with your gear. Thanks to DoesItDie, whose tracking this follows.
+
+### Fixed
+- A DoT that is resisted and never ticks no longer stays on the marker for
+  its whole duration.
+- Rend and other bleeds no longer run out on the marker a tick early when
+  your swings land just before their ticks.
+- With action targeting, a DoT cast while the last kill is still your target
+  goes on the next mob, not the corpse.
+- DoTs cast with a `/cast [@mouseover]` macro, or with the game's own
+  Mouseover Cast option, go on the mob under your mouse.
+- Rip and Rupture no longer vanish from the marker when an auto-attack misses
+  at the same moment.
 - The editor's panels have borders in the game's own style.
 
 ## 1.11.0

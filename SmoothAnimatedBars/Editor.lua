@@ -114,6 +114,9 @@ local TABS = {
             desc = "The game's skull on your target's portrait when your DoTs will finish it off." },
           { key = "heals", label = "Heal Marker",
             desc = "Your heals over time, bandages, food and drink, ahead of your health and mana. Play Healing." },
+          { key = "shield", label = "Shield",
+            desc = "A wall of light on your health bar while a shield is on you, Power Word: Shield or any other. It "
+                .. "flares as it soaks a hit and shatters when it breaks." },
           { key = "manaBuild", label = "Mana Regen Build-Up",
             desc = "Your mana bar builds up through the five seconds after a spell, and lets go in stars." },
           { key = "rageFury", label = "Rage Fury",

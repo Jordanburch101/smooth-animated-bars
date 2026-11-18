@@ -79,6 +79,8 @@ local DEFAULTS = {
     dotKillIcon = true,
     -- The heal marker on the player's health bar (HealMarker.lua)
     heals       = true,
+    -- The shield on the player's health bar while an absorb is on them (Shield.lua)
+    shield      = true,
     -- The build-up on the mana bar through the wait before mana regenerates (ManaRule.lua)
     manaBuild   = true,
     -- The rage bar growing furious as it fills, and bursting when rage is spent (Bars.lua, Fury)
@@ -190,6 +192,7 @@ local SETTING_APPLY = {
     dots        = function() ns.Marker.Apply() end,
     dotKillIcon = function() ns.Marker.Apply() end,
     heals       = function() ns.HealMarker.Apply() end,
+    shield      = function() ns.Shield.Apply() end,
     manaBuild   = function() ns.ManaRule.Apply() end,
     plateHealth = function() ApplyBars(false); ns.Marker.Apply() end,
     plateDots   = function() ns.Marker.Apply() end,
@@ -220,6 +223,7 @@ local function ApplyEffects()
     ns.Bars.ApplyOptions()
     ns.Marker.ApplyOptions()
     ns.HealMarker.ApplyOptions()
+    ns.Shield.ApplyOptions()
 end
 for _, key in ipairs(EFFECTS) do
     IS_EFFECT[key] = true
@@ -396,6 +400,7 @@ local function ApplyAll(wasExternal, how, from)
         ns.Bars.ApplyColors()
         ns.Marker.Apply()
         ns.HealMarker.Apply()
+        ns.Shield.Apply()
         ns.ManaRule.Apply()
         ApplyEffects()
     end
@@ -648,6 +653,7 @@ events:SetScript("OnEvent", function(self, event, arg1, arg2)
         ns.Bars.ApplyColors() -- class and faction themes know the player now
         ns.Marker.Apply()
         ns.HealMarker.Apply()
+        ns.Shield.Apply()
         ns.ManaRule.Apply()
         ns.Adaptors.Start() -- other unit frame addons' own bars, for those that do not hand them over (Adaptors/)
         -- The settings page's preview, once the bars are set up and before the settings panel can be open.
@@ -671,6 +677,8 @@ local HELP = {
     "/sab debug - what each bar is doing",
     "/sab dots - your DoTs on the target, and what the tracking saw lately",
     "/sab heals - your heals on the way to you, and what the tracking saw lately",
+    "/sab shield - what the game lets the addon read about shields on you, and what the shield is doing; "
+        .. "/sab shield test [off] - magenta blocks where the shield draws, to see what the game lays out",
     "/sab mana - the wait before your mana regenerates, and what it saw lately",
     "/sab self on | off - note what the game lets the addon read about DoTs and hits on you, saved for /reload; "
         .. "/sab self shows it (self clear: start afresh)",
@@ -766,6 +774,10 @@ SlashCmdList.SMOOTHANIMATEDBARS = function(input)
     elseif cmd == "heals" then
         for _, line in ipairs(ns.HealMarker.Debug()) do Core.Print(line) end
         for _, line in ipairs(ns.Heals.Debug(15)) do Core.Print(line) end
+    elseif cmd == "shield" then
+        for _, line in ipairs(ns.Shield.Debug()) do Core.Print(line) end
+    elseif cmd == "shield test" or cmd == "shield test off" then
+        Core.Print(ns.Shield.Test(cmd == "shield test"))
     elseif cmd == "mana" then
         for _, line in ipairs(ns.ManaRule.Debug(15)) do Core.Print(line) end
     elseif cmd == "self" then

@@ -171,7 +171,12 @@ function Region:UnregisterAllEvents() self.events = {} end
 function Region:IsEventRegistered(e) return self.events[e] end
 function Region:SetTexture(file, wh, wv) self.file, self.wrap, self.wrapV, self.color = file, wh, wv or wh, nil end
 function Region:SetColorTexture(r, g, b, a) self.file, self.color = "SOLID", { r, g, b, a or 1 } end
-function Region:SetVertexColor(r, g, b, a) self.vc, self.grad = { r, g, b, a or 1 }, nil end
+-- The client keeps one alpha for a texture: SetVertexColor's fourth value is the same alpha SetAlpha sets (seen in game:
+-- the shield's sheen, given 0.16 here and then faded in with SetAlpha(1), drew opaque). So the mock keeps it in alpha.
+function Region:SetVertexColor(r, g, b, a)
+    self.vc, self.grad = { r, g, b, 1 }, nil
+    if a ~= nil then self.alpha = a end
+end
 function Region:SetGradient(_, c1, c2)
     self.grad = { { c1:GetRGBA() }, { c2:GetRGBA() } }
 end
@@ -434,6 +439,9 @@ function UnitName(unit)
     if unit == "player" then return __player.name, __player.surname end
     if __identitySecret[unit] then return __secret() end
     if unit == "target" and __target then return __target.name end
+    local u = (unit == "mouseover" or unit == "softenemy" or (type(unit) == "string" and unit:match("^nameplate%d+$")))
+        and __units[unit]
+    if u then return u.name end
 end
 -- Units whose identity is secret (in an instance or battleground): __identitySecret[unit] = true. Their names are
 -- secret, and so is the width of a menu title showing one (see __openUnitMenu).
@@ -685,6 +693,17 @@ do
         segment.Fill = segment:CreateTexture(nil, "BORDER")
         PlayerFrame.healthbar[key] = segment
     end
+    -- Its absorb segments (a Fill, and a tiled overlay on the shield's) and the glow at the bar's end when the shield
+    -- is more than the missing health (PlayerFrame.xml). The game hides the shield's segment when it has no width.
+    for _, key in ipairs({ "HealAbsorbBar", "TotalAbsorbBar" }) do
+        local segment = CreateFrame("Frame", nil, PlayerFrame.healthbar)
+        segment.Fill = segment:CreateTexture(nil, "BORDER")
+        PlayerFrame.healthbar[key] = segment
+        segment:Hide()
+    end
+    PlayerFrame.healthbar.TotalAbsorbBar.TiledFillOverlay = PlayerFrame.healthbar.TotalAbsorbBar:CreateTexture(nil, "BORDER")
+    PlayerFrame.healthbar.OverAbsorbGlow = PlayerFrame.healthbar:CreateTexture(nil, "ARTWORK")
+    PlayerFrame.healthbar.OverAbsorbGlow:Hide()
 end
 TargetFrame = UnitFrame("TargetFrame", "TargetFrameContent", "TargetFrameContentMain")
 FocusFrame = UnitFrame("FocusFrame", "TargetFrameContent", "TargetFrameContentMain")
@@ -777,8 +796,10 @@ TargetFrame.TargetFrameContainer.Portrait = TargetFrame.TargetFrameContainer:Cre
 
 -- The target: nil for none, else { guid, name, dead }. Its health is secret like the player's.
 __target = nil
--- A nameplate's unit (__units.nameplateN, set by __showPlate) exists, has its guid and can be dead like the target.
+-- A nameplate's unit (__units.nameplateN, set by __showPlate) exists, has its guid and can be dead like the target. So
+-- do the mob under the mouse and the soft enemy (__units.mouseover, __units.softenemy: { guid, name, dead, friendly }).
 local function plateUnit(unit)
+    if unit == "mouseover" or unit == "softenemy" then return __units[unit] end
     return type(unit) == "string" and unit:match("^nameplate%d+$") and __units[unit] or nil
 end
 function UnitExists(unit)
@@ -813,13 +834,15 @@ function UnitCanAssist(_, unit)
     return unit == "target" and __target ~= nil and (__target.friendly or __target.isPlayer) or false
 end
 function UnitCanAttack(_, unit)
-    if type(unit) == "string" and unit:match("^nameplate%d+$") then
+    if type(unit) == "string" and (unit:match("^nameplate%d+$") or unit == "mouseover" or unit == "softenemy") then
         local u = __units[unit]
         return u ~= nil and not u.friendly and not u.isPlayer
     end
     return unit == "target" and __target ~= nil and not __target.friendly and not __target.isPlayer
 end
-function GetComboPoints() return 0 end
+-- The player's combo points on the target, readable here (__comboPoints); the tests set them for finishers.
+__comboPoints = 0
+function GetComboPoints() return __comboPoints end
 -- Wall-clock seconds, as the client's time(): moves with the mock's clock.
 __epoch = 1800000000
 function time() return __epoch + math.floor(__now) end
@@ -907,11 +930,37 @@ function UnitPowerType(unit)
 end
 function UnitHealth() return __secret() end
 function UnitHealthMax() return __secret() end
+-- The heal prediction calculator (UnitHealPredictionCalculatorAPIDocumentation): the client fills it for a unit, and
+-- its damage absorbs come back secret, with whether they were cut to the clamp mode's bound (a secret boolean).
+-- __absorb holds the player's: toMissing (cut to the missing health), whole (cut to the whole bar), clamped.
+__absorb = { toMissing = 0, whole = 0, clamped = false }
+local Calculator = {}
+Calculator.__index = Calculator
+function Calculator:SetDamageAbsorbClampMode(mode)
+    assert(type(mode) == "number" and not issecretvalue(mode), "SetDamageAbsorbClampMode: an enum value")
+    self.mode = mode
+end
+function Calculator:GetDamageAbsorbs()
+    assert(self.filled, "GetDamageAbsorbs before UnitGetDetailedHealPrediction")
+    if self.mode == Enum.UnitDamageAbsorbClampMode.MaximumHealth then
+        return __secret(__absorb.whole), __secret(false)
+    end
+    return __secret(__absorb.toMissing), __secret(__absorb.clamped)
+end
+function CreateUnitHealPredictionCalculator()
+    return setmetatable({ mode = Enum.UnitDamageAbsorbClampMode.MissingHealth }, Calculator)
+end
+function UnitGetDetailedHealPrediction(unit, healer, calc)
+    assert(type(unit) == "string" and getmetatable(calc) == Calculator,
+        "Usage: UnitGetDetailedHealPrediction(unit, healerUnit, calculator)")
+    calc.filled = true
+end
 function UnitPower() return __secret() end
 function UnitPowerMax() return __secret() end
 -- The client's own StatusBar smoothing (Forever).
 Enum = { StatusBarInterpolation = { Immediate = 0, ExponentialEaseOut = 1 }, LuaCurveType = { Linear = 0, Step = 1 },
-         InputDeviceInterfaceType = { Mkb = 0, Gamepad = 1 } }
+         InputDeviceInterfaceType = { Mkb = 0, Gamepad = 1 },
+         UnitDamageAbsorbClampMode = { MissingHealth = 0, MissingHealthWithoutIncomingHeals = 1, MaximumHealth = 2 } }
 
 -- Curves (C_CurveUtil): plain points, evaluated on a value the client keeps secret into another secret, which widgets
 -- take (Region:SetAlpha). UnitPowerPercent evaluates one on the unit's share of its power, __powerPercent[unit]
@@ -967,6 +1016,21 @@ NamePlateSetupOptions = { healthBarFontHeight = 11, unitNameAnchorStyle = 2 }
 
 __combat = false
 function InCombatLockdown() return __combat end
+-- The damage meter (C_DamageMeter): the player's per-spell damage for the current combat session, __meter.spells =
+-- { { spellID = ..., totalAmount = ... } }, or nil while it has nothing. __meter.secret makes the totals secret.
+__meter = {}
+C_DamageMeter = {
+    GetCombatSessionSourceFromType = function(sessionType, damageType, guid)
+        assert(type(sessionType) == "number" and type(damageType) == "number" and type(guid) == "string",
+            "Usage: GetCombatSessionSourceFromType(sessionType, damageMeterType, sourceGUID)")
+        if not __meter.spells then return nil end
+        local rows = {}
+        for i, sp in ipairs(__meter.spells) do
+            rows[i] = { spellID = sp.spellID, totalAmount = __meter.secret and __secret(sp.totalAmount) or sp.totalAmount }
+        end
+        return { combatSpells = rows }
+    end,
+}
 function UnitAffectingCombat(unit) return unit == "player" and __combat or false end
 
 GameTooltip = NewRegion("Frame", UIParent)

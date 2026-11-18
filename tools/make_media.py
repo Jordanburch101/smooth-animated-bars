@@ -524,6 +524,171 @@ def make_plus(path, size=32):
     write_tga(path, size, size, radial(size, fn))
 
 
+def make_strands(path, w=256, h=64):
+    """Long curving filaments of light that come and go along their length, for the shield (Shield.lua): the
+    strands of light in a priest's barrier. A bar is about 20 px high in game and the texture is drawn one bar high,
+    so the strands are 1.5 to 2.5 texels across: thinner ones blurred into a haze at the game's size. Tiles both ways:
+    every curve has a whole number of waves across."""
+    rnd = random.Random(260)
+    strands = []
+    for _ in range(7):
+        strands.append(dict(c=rnd.random(), a=0.10 + 0.22 * rnd.random(), n=rnd.choice((1, 1, 2)), p=rnd.random(),
+                            n2=rnd.choice((3, 4, 5)), a2=0.03 * rnd.random(), p2=rnd.random(),
+                            width=0.022 + 0.014 * rnd.random(), bright=0.55 + 0.45 * rnd.random()))
+    along = [(TileNoise(6 * 2**i, 1, 300 + i), 0.5**i) for i in range(3)]
+
+    def field(u, v):
+        total = 0.0
+        for k, s in enumerate(strands):
+            y = s["c"] + s["a"] * math.sin(2 * math.pi * (s["n"] * u + s["p"])) \
+                + s["a2"] * math.sin(2 * math.pi * (s["n2"] * u + s["p2"]))
+            d = (v - y + 0.5) % 1.0 - 0.5  # wraps top to bottom
+            core = math.exp(-(d / s["width"]) ** 2)
+            halo = 0.25 * math.exp(-(d / (s["width"] * 3)) ** 2)
+            fade = max(0.0, fbm(along, (u + k * 0.37) % 1.0, 0.0) - 0.35) * 2.2
+            total += (core + halo) * s["bright"] * min(1.0, fade)
+        return total
+
+    write_field(path, w, h, field, 1.1)
+
+
+# The shield's rim: a crescent of light bowed toward the texture's right, its line at RIM_LINE across the texture at
+# the middle and RIM_BOW further left at the top and bottom. Shield.lua matches both.
+RIM_LINE, RIM_BOW = 0.70, 0.30
+
+
+def make_rim(path, w=32, h=64):
+    """The shield's rim (Shield.lua): a white-hot crescent with a soft glow either side of it, its core about a unit
+    across at the rim's width (thinner was lost at the game's size, about a pixel and a half to a unit)."""
+
+    def pixel(x, y):
+        u, v = (x + 0.5) / w, (y + 0.5) / h
+        d = u - (RIM_LINE - RIM_BOW * (2 * v - 1) ** 2)
+        a = math.exp(-(d / 0.07) ** 2) + 0.4 * math.exp(-(d / 0.2) ** 2)
+        return 1, 1, 1, min(1.0, a)
+
+    write_tga(path, w, h, pixel)
+
+
+def make_rim_crackle(path, w=32, h=64, frames=4):
+    """Jagged filaments of light along the rim's crescent, frames stacked top to bottom: the shield flicks between
+    them so its edge crackles (Shield.lua)."""
+    rnd = random.Random(410)
+    paths = []
+    for _ in range(frames):
+        offsets, o = [], 0.0
+        for _ in range(h):
+            o = max(-0.09, min(0.09, o + rnd.uniform(-0.03, 0.03)))
+            offsets.append(o)
+        paths.append((offsets, rnd.uniform(-0.05, 0.02)))
+
+    def pixel(x, y):
+        f, row = divmod(y, h)
+        offsets, shift = paths[f]
+        u, v = (x + 0.5) / w, (row + 0.5) / h
+        d = u - (RIM_LINE + shift + offsets[row] - RIM_BOW * (2 * v - 1) ** 2)
+        a = math.exp(-(d / 0.028) ** 2) + 0.25 * math.exp(-(d / 0.08) ** 2)
+        return 1, 1, 1, min(1.0, a)
+
+    write_tga(path, w, h * frames, pixel)
+
+
+# The shield's edge mask is this many rim widths across, its crescent in the last of them (Shield.lua, EDGE_SPAN).
+EDGE_SPAN = 16
+
+
+def make_shield_edge(path, w=512, h=64):
+    """A mask that ends the shield's body on its rim's crescent (Shield.lua): opaque left of the rim's line, clear
+    right of it, over about a unit. The crescent fills the last 1/EDGE_SPAN of the width, as the rim fills its texture,
+    so it lines up with Rim.tga when the mask is EDGE_SPAN rim widths across. Its straight cut ended the body past the
+    rim's bowed top and bottom (seen in game)."""
+
+    def pixel(x, y):
+        u, v = (x + 0.5) / w, (y + 0.5) / h
+        rim_u = (u - (1 - 1 / EDGE_SPAN)) * EDGE_SPAN
+        d = rim_u - (RIM_LINE - RIM_BOW * (2 * v - 1) ** 2)
+        return 1, 1, 1, max(0.0, min(1.0, 0.5 - d / 0.07))
+
+    write_tga(path, w, h, pixel)
+
+
+def make_shard(path, size=32):
+    """A fragment of the shield's glass as it shatters (Shield.lua): a solid angular sliver, brighter along its edges,
+    with a soft glow round it. Crystal.tga, an ice shard clear in its middle, drew as a faint outline at the shield's
+    size."""
+    pts = [(-0.36, -0.44), (0.42, -0.08), (-0.08, 0.46)]
+
+    def edge_d(px, py):
+        best, inside = 9.0, True
+        for i in range(3):
+            (ax, ay), (bx, by) = pts[i], pts[(i + 1) % 3]
+            ex, ey = bx - ax, by - ay
+            ln = math.hypot(ex, ey)
+            side = (ex * (py - ay) - ey * (px - ax)) / ln  # signed distance to the edge's line
+            if side < 0:
+                inside = False
+            t = max(0.0, min(1.0, ((px - ax) * ex + (py - ay) * ey) / (ln * ln)))
+            best = min(best, math.hypot(px - ax - t * ex, py - ay - t * ey))
+        return best, inside
+
+    def pixel(x, y):
+        px, py = (x + 0.5) / size - 0.5, (y + 0.5) / size - 0.5
+        d, inside = edge_d(px, py)
+        if inside:
+            a = 0.8 + 0.2 * math.exp(-(d / 0.05) ** 2)
+        else:
+            a = 0.45 * math.exp(-(d / 0.07) ** 2)
+        return 1, 1, 1, a
+
+    write_tga(path, size, size, pixel)
+
+
+# The shield's fade-in mask is this many fade widths across, its ramp in the first of them (Shield.lua, FADE_SPAN).
+FADE_SPAN = 32
+
+
+def make_shield_fade(path, w=512, h=4):
+    """A mask that fades the shield's body in from its back (Shield.lua): clear at its left edge, opaque from the end
+    of its first 1/FADE_SPAN on, smoothly between, so the body (glass, strands and all) comes in over the health's end
+    with no colour of its own to match. A band of a set colour before the body showed as a lighter strip with a step
+    where the body began, in game."""
+
+    def pixel(x, y):
+        k = min(1.0, (x + 0.5) / w * FADE_SPAN)
+        return 1, 1, 1, k * k * (3 - 2 * k)
+
+    write_tga(path, w, h, pixel)
+
+
+def make_beam(path, size=64):
+    """A shaft of light from the texture's middle out to its top edge, narrow at its root and fading as it spreads:
+    the god rays the shield sheds past the bar (Shield.lua). Square and clear at its borders, so SetRotation (which
+    turns the texture inside its square) can point it anywhere from the rim."""
+
+    def pixel(x, y):
+        dx, up = (x + 0.5) / size - 0.5, 0.5 - (y + 0.5) / size
+        along = up / 0.5
+        if along <= 0 or along >= 1:
+            return 1, 1, 1, 0
+        width = 0.022 + 0.06 * along
+        a = math.exp(-(dx / width) ** 2) * (1 - along) ** 0.9 * min(1.0, along / 0.06)
+        return 1, 1, 1, a
+
+    write_tga(path, size, size, pixel)
+
+
+def make_ray(path, w=32, h=64):
+    """A soft shaft of light leaning a little to the right as it goes up, like light through a cathedral window: the
+    god rays drifting through the shield (Shield.lua)."""
+
+    def pixel(x, y):
+        u, v = (x + 0.5) / w, (y + 0.5) / h
+        d = u - 0.5 + 0.22 * (v - 0.5)
+        return 1, 1, 1, math.exp(-(d / 0.16) ** 2) * (0.75 + 0.25 * math.sin(math.pi * v))
+
+    write_tga(path, w, h, pixel)
+
+
 # How bright the captured plate fill is down from its top edge, as a share of its middle, against the distance from
 # the edge as a share of its height: it fades over its top and bottom quarter, so the game's red sits inside the rim.
 PLATE_FADE = [(0.0, 0.0), (0.041, 0.13), (0.082, 0.37), (0.123, 0.59), (0.164, 0.75), (0.206, 0.87), (0.247, 0.94),
@@ -681,6 +846,14 @@ def main():
     make_star(os.path.join(out, "Star.tga"))
     make_crystal(os.path.join(out, "Crystal.tga"))
     make_plus(os.path.join(out, "Plus.tga"))
+    make_strands(os.path.join(out, "Strands.tga"))
+    make_rim(os.path.join(out, "Rim.tga"))
+    make_rim_crackle(os.path.join(out, "RimCrackle.tga"))
+    make_ray(os.path.join(out, "Ray.tga"))
+    make_shield_edge(os.path.join(out, "ShieldEdge.tga"))
+    make_beam(os.path.join(out, "Beam.tga"))
+    make_shield_fade(os.path.join(out, "ShieldFade.tga"))
+    make_shard(os.path.join(out, "Shard.tga"))
     make_skull(os.path.join(out, "Skull.tga"))
     make_plate_mask(os.path.join(out, "PlateMask.tga"))
     make_plate_shade(os.path.join(out, "PlateShade.tga"))

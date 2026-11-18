@@ -225,8 +225,11 @@ local function Raise(m)
     end
 end
 
+-- While the health liquid's front is moved back off the health's edge (a shield, Shield.lua, between them), the heal
+-- liquids meet the shield, not the health liquid: side by side from the health's edge, with no seam (a seam of the
+-- health's colour on the health's edge painted green over the shield, seen in game).
 local function Layer(m)
-    local under = ns.Bars.IsLive(m.bar)
+    local under = ns.Bars.IsLive(m.bar) and not ns.Bars.Moved(m.bar)
     if under == m.under then return end
     m.under = under
     for i, d in ipairs(m.liquids) do

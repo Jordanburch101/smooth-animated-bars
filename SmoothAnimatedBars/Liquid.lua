@@ -555,6 +555,19 @@ function Liquid:BurstColors(from, to)
     return from, to
 end
 
+-- A small push on the front alone, a ripple from a random point with no splash (no energy, charge or motes): a shield
+-- lapping at the health's front (Shield.lua, through Bars.Lap).
+function Liquid:Nudge(kick)
+    if not self.opts.waves or self.leader then return end
+    local n = self.n
+    local centre = random(1, n)
+    kick = kick * (1 - self.steady)
+    for i = 1, n do
+        local d = (i - centre) / n
+        self.vel[i] = self.vel[i] + kick * exp(-d * d * 8)
+    end
+end
+
 -- A gain or a stir. intensity 0..1; motes fly from fromX..toX.
 function Liquid:Splash(intensity, fromX, toX)
     self.energy = min(1.5, self.energy + 0.08 + intensity * 0.9)

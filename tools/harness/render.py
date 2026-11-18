@@ -164,7 +164,8 @@ class Session:
 
     def regions(self, only=None):
         v = self._visible(self.frame)
-        regions = [v[i + 1] for i in range(len(v))]
+        # A mask is never drawn, only used to cut what it is added to (the shield's edge mask is on its own frame).
+        regions = [v[i + 1] for i in range(len(v)) if v[i + 1].kind != "MaskTexture"]
         if only:
             regions = [r for r in regions if only(r)]
         regions.sort(key=lambda r: (LAYERS.get(r.layer, 2), r.frameRank or 0, r.sub, r.order))
