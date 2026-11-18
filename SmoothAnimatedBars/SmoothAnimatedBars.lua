@@ -527,8 +527,8 @@ local settingsView = setmetatable({}, {
 --     theme key, an unknown one meaning the bar's own colour), mask (a MaskTexture, taken the first time), level (whole
 --     frame levels above the bar, 0 to 20, 1 by default), spill (true lets motes fly past the bar's edges), name (the
 --     addon's name, for /sab perf and /sab debug). Bad arguments raise an error in the caller.
---     Declined: a vertical bar, one of this addon's own bars, a nameplate unit, or more than ten party and raid members'
---     bars at once.
+--     Declined: a vertical bar, one of this addon's own bars, a nameplate unit, a bar inside one of the game's aura
+--     buttons (forbidden once an aura is assigned), or more than ten party and raid members' bars at once.
 --   SmoothAnimatedBars.RemoveBar(bar) -> true if it was added: the bar's own fill comes back.
 --   SmoothAnimatedBars.HasBar(bar): added and not removed. IsLive(bar): its liquid is showing now.
 --   SmoothAnimatedBars.IsEnabled(): whether the player allows other addons' bars (externalBars).

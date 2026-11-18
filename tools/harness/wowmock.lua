@@ -12,7 +12,32 @@ local function anchorPos(name, w, h)
 end
 
 local Region = {}
-Region.__index = Region
+
+-- Forbidden objects: the client makes an aura button (CustomAuraContainer's) and everything in it forbidden once an
+-- aura is assigned, frames an addon made inside it too, and then every method but IsForbidden fails for an addon
+-- (issue #13, seen in game by its reporter). __forbid(region) does that here; until it is used nothing is looked up.
+local forbids = 0
+local function Forbidden(r)
+    while r do
+        if rawget(r, "__forbidden") then return true end
+        r = rawget(r, "parent")
+    end
+    return false
+end
+Region.__index = function(self, k)
+    local m = Region[k]
+    if forbids > 0 and type(m) == "function" and k ~= "IsForbidden" and Forbidden(self) then
+        return function()
+            error("calling '" .. k .. "' on bad self (Attempt to access forbidden object from code tainted by an AddOn)", 2)
+        end
+    end
+    return m
+end
+function Region:IsForbidden() return Forbidden(self) end
+function __forbid(r)
+    r.__forbidden = true
+    forbids = forbids + 1
+end
 
 local function NewRegion(kind, parent, layer, sub)
     local r = setmetatable({

@@ -310,8 +310,16 @@ world.
 "party1"...); `kind` "health" or "power". Calling `AddBar` again with the same arguments does nothing, so it is safe
 from your update code. With a new unit (a party frame after a roster change) the liquid follows it. Bad arguments
 raise an error in your code. `AddBar` declines (returns false) a vertical bar, a bar of Smooth Animated Bars' own, a
-nameplate unit, a bar that fails to set up, and more than ten party and raid members' bars at once (each is a liquid
-of its own; a raid frame would cost more than the game's frames together). Remove a bar before you throw it away.
+nameplate unit, a bar inside one of the game's aura buttons (below), a bar that fails to set up, and more than ten
+party and raid members' bars at once (each is a liquid of its own; a raid frame would cost more than the game's frames
+together). Remove a bar before you throw it away.
+
+**Aura timers can't take the liquid.** On Forever an addon can show a target's debuffs only through the game's
+`CustomAuraContainerTemplate`, and the bar handed to a button's `SetDurationBar` is the game's to drive. Once an aura
+is assigned, the game makes the button and everything inside it forbidden, frames other addons made there too, and
+the duration bar's values can't be read to copy into a bar of your own either. So `AddBar` declines such a bar, and
+drops one that turns forbidden after it was added. Thanks to Todd Harris for finding this out
+([#13](https://github.com/Jordanburch101/smooth-animated-bars/issues/13)).
 
 **Options**, all optional:
 - `theme`: left out, your bar's own colour; `"settings"`, the colours chosen in Smooth Animated Bars for that unit;

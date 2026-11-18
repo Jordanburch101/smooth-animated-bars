@@ -1911,6 +1911,11 @@ local function RunBar(b, dt)
     if not ok then
         b.err = tostring(err)
         pcall(SetLive, b, false)
+        -- Another addon's bar the game has made forbidden (an aura button's, Bars.AuraBound): ours no longer, and
+        -- nothing a player could act on, so dropped without a word. /sab debug still shows why.
+        if b.spot.external and Bars.AuraBound(b.bar) then
+            b.err, b.spot.removed, b.reported = "made forbidden by the game (an aura button's bar)", true, true
+        end
         -- Another addon's bar may be added again and fail again: said once.
         if not b.reported then ns.Core.Print("Error in the " .. (b.spot.preview and "preview " or "") .. (b.spot.plate and "nameplate " or "")
             .. (b.spot.label or (b.unit .. " " .. b.kind)) .. " bar, which is back to the game's own: " .. b.err) end
@@ -2491,10 +2496,30 @@ local function Vertical(bar)
     return ok and not Secret(orientation) and orientation == "VERTICAL"
 end
 
+-- A bar inside one of the game's aura buttons (CustomAuraContainer's, the only way addons can show a target's debuffs
+-- on Forever), such as the duration bar handed to its SetDurationBar: the game drives that bar, and once an aura is
+-- assigned it makes the button and everything in it forbidden, our liquid's frames too, so no addon can touch them
+-- (reported by an addon author, issue #13: "calling 'SetVertexColor' on bad self"). Told by the button's own
+-- SetDurationBar, or a frame on the way up already forbidden; anything that fails while looking counts too. Not yet seen
+-- in game.
+function Bars.AuraBound(bar)
+    local ok, bound = pcall(function()
+        local f = bar
+        for _ = 1, 20 do
+            if not f then return false end
+            if f.IsForbidden and f:IsForbidden() then return true end
+            if type(f.SetDurationBar) == "function" then return true end
+            f = f:GetParent()
+        end
+        return false
+    end)
+    return not ok or bound
+end
+
 -- Whether AddBar declines a bar whatever its options (before the settings have loaded too).
 function Bars.Declined(bar, unit)
-    return OwnBar(bar) or Vertical(bar) or (type(unit) == "string" and unit:lower():match("^nameplate")) and true
-        or false
+    if type(unit) == "string" and unit:lower():match("^nameplate") then return true end
+    return OwnBar(bar) or Vertical(bar) or Bars.AuraBound(bar)
 end
 
 -- How many party and raid members' bars other addons have handed over and not removed.
@@ -2530,7 +2555,8 @@ function External.Drop(spot)
 end
 
 -- True when the bar is taken (it shows the liquid, or will once the player allows other addons' bars), false when it
--- is declined: vertical, one of this addon's own, a nameplate's, or past the cap on group members' bars. Calling it
+-- is declined: vertical, one of this addon's own, a nameplate's, inside an aura button, or past the cap on group
+-- members' bars. Calling it
 -- again with the same arguments does nothing, so an addon can call it whenever it updates its frame.
 -- key is ours, never the public API's: an adapter for an addon that does not call AddBar (Adaptors/) hands its bars
 -- over with the on/off setting of the frame they stand for ("playerHealth"), which they then follow, with that bar's
@@ -2562,6 +2588,12 @@ function Bars.AddBar(bar, unit, kind, options, key)
     if added and spot.unit == unit and spot.kind == kind and ext.theme == theme and ext.level == level
         and ext.spill == spill and ext.name == name and spot.key == key and not bars[spot].err then
         return true
+    end
+    -- Looked for only past that, as an addon may call this on every update. A bar that turns forbidden once added is
+    -- dropped by RunBar.
+    if Bars.AuraBound(bar) then
+        if added then pcall(External.Drop, spot) end
+        return false
     end
 
     local b

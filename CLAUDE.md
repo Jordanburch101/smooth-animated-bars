@@ -506,6 +506,13 @@ Facts found while building this, which the code relies on and which are not obvi
   rather than hides: hidden, it forgot what it had shown, so each fade-in replayed a meal's release and grew the DoTs
   in from nothing (a review caught it). While faded it drops landings and ticks (`calm`), and a buff reached meanwhile
   sates the bar quietly (`Bars.Sate`). Not yet seen in game.
+  Aura timers (issue #13, found in game by a DoT timer addon's author): addons show a target's debuffs only through
+  the game's `CustomAuraContainerTemplate`, whose buttons drive the bar handed to `SetDurationBar`, and once an aura is
+  assigned the button and everything in it are forbidden (our liquid's frames too: "calling 'SetVertexColor' on bad
+  self"), its bar's getters included, and `C_UnitAuras` throws in combat. So `AddBar` declines a bar under a frame
+  with `SetDurationBar` or a forbidden one (`Bars.AuraBound`), and `RunBar` drops one that turns forbidden without a
+  word in chat. The mock's `__forbid` makes a region and its children reject every method but `IsForbidden`. Not yet
+  seen in game: whether the button's `SetDurationBar` and `IsForbidden` answer as expected.
 - **The editor** (`Editor.lua`): the game's `ButtonFrameTemplate` window (as the setup's), tabs on the character
   sheet's title plaque (`UI-Character-Info-Title`, as Road to Sixty's mode switch: the picked one in colour, the others
   desaturated at 70%; the scene buttons under the screen too), `UICheckButtonTemplate` boxes, `UIPanelButtonTemplate` buttons, and chips of our own. Its colour tiles are stills of each theme's liquid (`PaintTile`):

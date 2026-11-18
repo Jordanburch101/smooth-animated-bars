@@ -4421,6 +4421,49 @@ check(ex.eval("SmoothAnimatedBars.AddBar(__vbar, 'player', 'health')") is False,
 check(not any(("Error in" in m or "Could not" in m) and "broken range" not in m and "no width" not in m
               and "careless" not in m for m in chat(ex)), "no other errors")
 
+# An aura button's duration bar (issue #13): on Forever addons show a target's debuffs only through the game's
+# CustomAuraContainer, which drives the bar handed to a button's SetDurationBar and, once an aura is assigned, makes the
+# button and everything in it forbidden, our liquid's frames too.
+ab = session("{ setupDone = true, heals = false, dots = false, manaBuild = false }")
+ab.execute("""
+    function __abBar(parent)
+        local b = CreateFrame("StatusBar", nil, parent)
+        b.w, b.h, b.level = 120, 8, 6
+        b:SetStatusBarTexture(b:CreateTexture(nil, "ARTWORK"))
+        b:SetMinMaxValues(0, __secret())
+        b:SetValue(__secret())
+        return b
+    end
+    __btn = CreateFrame("Button", nil, UIParent)
+    __btn.SetDurationBar = function(self, bar) self.durationBar = bar end  -- CustomAuraButtonSharedMixin's
+    __timer = __abBar(__btn)
+    __btn:SetDurationBar(__timer)
+    __deep = __abBar(CreateFrame("Frame", nil, __btn))
+    __locked = CreateFrame("Frame", nil, UIParent)
+    __forbid(__locked)
+    __lockedBar = __abBar(UIParent)
+    __lockedBar:SetParent(__locked)
+""")
+check(ab.eval("SmoothAnimatedBars.AddBar(__timer, 'target', 'health')") is False
+      and ab.eval("SmoothAnimatedBars.AddBar(__deep, 'target', 'health')") is False
+      and not ab.eval("SmoothAnimatedBars.HasBar(__timer)"),
+      "an aura button's duration bar, or any bar inside the button, is declined")
+check(ab.eval("SmoothAnimatedBars.AddBar(__lockedBar, 'target', 'health')") is False,
+      "a bar the game has already made forbidden is declined, not an error")
+check(ab.eval("__ns.Bars.Declined(__timer, 'target')") is True, "and before the settings have loaded")
+ab.execute("__holder = CreateFrame('Frame', nil, UIParent); __later = __abBar(__holder)")
+taken = ab.eval("SmoothAnimatedBars.AddBar(__later, 'target', 'health')")
+run(ab, 0.3)
+check(taken is True and ab.eval("SmoothAnimatedBars.IsLive(__later)") is True, "a plain bar is taken")
+ab.execute("__forbid(__holder)")
+run(ab, 0.5)
+check(not ab.eval("SmoothAnimatedBars.HasBar(__later)") and not ab.eval("SmoothAnimatedBars.IsLive(__later)"),
+      "made forbidden once added (an aura assigned to its button): dropped")
+check(ab.eval("SmoothAnimatedBars.AddBar(__later, 'target', 'health')") is False, "and declined if added again")
+run(ab, 0.3)
+check(not any("Error in" in m or "Could not" in m for m in chat(ab)),
+      "without an error in chat: nothing the player could act on")
+
 # DoTs on the target, on another addon's target health bar.
 ed = session("{ setupDone = true, dots = true, heals = false, manaBuild = false, rageFury = false }")
 ed.execute("""
