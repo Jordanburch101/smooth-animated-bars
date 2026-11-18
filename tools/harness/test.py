@@ -303,7 +303,7 @@ OPTION_KEYS = ["playerHealth", "healthColor", "playerPower", "powerColor", "targ
                "partyPowerColor", "raidHealth", "raidHealthColor", "raidPower", "raidPowerColor", "prdHealth",
                "prdHealthColor", "prdPower", "prdPowerColor", "plateHealth", "plateHealthColor", "plateFriendly",
                "plateFriendlyColor", "plateDots", "plateKillIcon", "waves", "swirl", "bubbles", "sparkles", "ambient",
-               "lightning", "dots", "dotKillIcon", "heals", "shield", "manaBuild", "rageFury", "externalBars", "externalColors"]
+               "lightning", "dots", "dotKillIcon", "heals", "shield", "weakenedSoul", "manaBuild", "rageFury", "externalBars", "externalColors"]
 keys = list(lua.eval("__ns.Editor.Keys()").values())
 check(sorted(keys) == sorted(OPTION_KEYS), f"the editor has a control for every setting ({sorted(set(keys) ^ set(OPTION_KEYS))})")
 check(all(lua.eval(f"__settings.{k} ~= nil") for k in OPTION_KEYS),
@@ -1569,7 +1569,7 @@ check(pm.eval("SmoothAnimatedBarsSetup.shown") and pm.eval("(select(2, __liquid(
       "a missing atlas leaves that piece out: no mask, liquid uncut, no error")
 
 print("== DoT marker")
-dm = session("{ setupDone = true, heals = false, shield = false, manaBuild = false, rageFury = false }")
+dm = session("{ setupDone = true, heals = false, shield = false, weakenedSoul = false, manaBuild = false, rageFury = false }")
 run(dm, 0.5)
 check(dm.eval("__ns.Core.db.dots") is False and not dm.eval("__ns.Dots.IsEnabled()")
       and dm.eval("(__ns.Marker.State())") is None, "off by default: no tracking, no marker built")
@@ -2499,7 +2499,7 @@ check(not any("Error" in m for m in chat(mr)), "no errors")
 
 print("== rage fury")
 check(lua.eval("__ns.Core.db.rageFury") is True, "on by default")
-rf = session("{ setupDone = true, heals = false, shield = false, dots = false, manaBuild = false }")
+rf = session("{ setupDone = true, heals = false, shield = false, weakenedSoul = false, dots = false, manaBuild = false }")
 rf.execute("""
     __spellCosts[78] = { { type = 1, name = 'RAGE', cost = 15 } }
     __spellCosts[6673] = {}
@@ -2638,6 +2638,18 @@ dd.execute("""__combat = false; __meter.spells = { { spellID = 172, totalAmount 
 run(dd, 0.7)
 check(dd.eval("SmoothAnimatedBarsDB.dotTicks[172]") == 15 and dd.eval("__log()").count("LEARN Corruption:") == 1,
       "a fight where no tick was counted teaches nothing, whatever the meter says")
+dd.execute("__mob(4); __combat = true; __cast(172, 'Cast-4')")
+for _ in range(2):
+    run(dd, 3)
+    dd.execute("__shadow()")
+dd.execute("__mob(5)")
+run(dd, 7)
+dd.execute("""__combat = false; __meter.spells = { { spellID = 172, totalAmount = 60 } }
+    __fire('PLAYER_REGEN_ENABLED')""")
+run(dd, 0.7)
+check(dd.eval("SmoothAnimatedBarsDB.dotTicks[172]") == 15 and "ticked out of sight" in dd.eval("__log()"),
+      "a DoT seen ticking, then left ticking out of sight (tabbed away): the meter has ticks the tally doesn't, so "
+      "nothing is learned (it saved 1.7 times the real tick before, a review caught it)")
 check(dd.eval("__ns.Dots.parseDirectPart('Burns the enemy for 11 Fire damage and then an additional 20 Fire damage over 15 sec.')") == 11
       and dd.eval("__ns.Dots.parseDirectPart('Rakes the target for 19 damage and an additional 39 damage over 9 sec.')") == 19
       and dd.eval("__ns.Dots.parseDirectPart('Corrupts the target, causing 36 Shadow damage over 12 sec.')") == 0
@@ -2747,12 +2759,18 @@ check(sh.eval("__healthFront() == " + SH + ".start") and sh.eval(f"{SH}.run.poin
       "(set past the start, it slid right as the "
       "shield drained, a gap at the bar's left end in game); the whole body fades in from just behind it, so its waves "
       "show lapping into the barrier")
-sh.execute("""__laps = 0
+sh.execute("""__laps, __lapMoved = 0, false
     local lap = __ns.Bars.Lap
-    __ns.Bars.Lap = function(...) __laps = __laps + 1; return lap(...) end""")
-run(sh, 3)
-check(sh.eval("__laps") >= 2 and sh.eval("(function() for _, v in ipairs(__ns.Bars.stateOf[PlayerFrame.healthbar].liquid.vel)"
-                                     " do if v ~= 0 then return true end end end)()"),
+    __ns.Bars.Lap = function(...)
+        __laps = __laps + 1
+        local vel = __ns.Bars.stateOf[PlayerFrame.healthbar].liquid.vel
+        local before = {}
+        for i, v in ipairs(vel) do before[i] = v end
+        lap(...)
+        for i, v in ipairs(vel) do if v ~= before[i] then __lapMoved = true end end
+    end""")
+run(sh, 5.2)  # laps come 1.1 to 2.5 s apart: two are sure in 5.2 s
+check(sh.eval("__laps") >= 2 and sh.eval("__lapMoved"),
       "while it holds it laps at the health's front now and then, which ripples")
 check(sh.eval("__healthClip().useParentLevel") and sh.eval(SH + ".clip.useParentLevel"),
       "both at the bar's level, under the game's text (raised over the shield, the health liquid hid the text in game)")
@@ -2829,6 +2847,138 @@ run(nc, 0.3)
 check(not nc.eval("__ns.Shield.State().clip.shown") and nc.eval("PlayerFrame.healthbar.TotalAbsorbBar.Fill.alpha") != 0
       and not any("Error" in m for m in chat(nc)),
       "without the game's calculator: no shield and no errors, the game's own absorb bar left showing")
+
+print("== Weakened Soul")
+ws = session("{ setupDone = true, heals = false, manaBuild = false }", "__player.class = 'PRIEST'")
+ws.execute("""
+    __spells[17] = { 'Power Word: Shield', 'Draws on the soul of the party member to shield them.' }
+    __spells[11426] = { 'Ice Barrier', 'Instantly shields you, absorbing 438 damage.' }
+    function __ws() return __ns.Soul.State() end
+    function __sh() return __ns.Shield.State() end
+    function __gameAbsorb() return PlayerFrame.healthbar.TotalAbsorbBar end
+    function __on(list) local n = 0 for _, q in ipairs(list) do if q.tex.shown then n = n + 1 end end return n end
+    function __mover() local _, _, mover = __ours(PlayerFrame.healthbar); return mover end
+""")
+run(ws, 0.3)
+WS = "__ws()"
+check(ws.eval("__ns.Core.db.weakenedSoul") is True and ws.eval(WS + ".bar == PlayerFrame.healthbar")
+      and not ws.eval(WS + ".frame.shown") and ws.eval(WS + ".endAt") is None,
+      "on by default, built on the player frame's health bar, nothing shown with no shield")
+ws.execute("__absorb.whole = 60; __gameAbsorb():Show()")
+run(ws, 0.3)
+check(ws.eval(f"{WS}.endAt - GetTime()") > 14 and ws.eval(f"{WS}.endAt - GetTime()") <= 15,
+      "a shield going up, as the game's own absorb bar says: 15 seconds of Weakened Soul")
+check(ws.eval(f"{WS}.glass.ashen.shown") and ws.eval(f"{WS}.glass.ashen.alpha") > 0.5
+      and ws.eval(f"{WS}.glass.ashen.parent == __sh().mover") and not ws.eval(WS + ".ash.shown"),
+      "while the shield holds, its rim is ashen, in the glass itself; no ash on the health's front under it")
+run(ws, 2)
+check(ws.eval(f"__on({WS}.glass.embers)") > 0 and ws.eval(f"{WS}.glass.embers[1].tex.masks[3] == __sh().fadeIn"),
+      "embers rise in the glass, cut to it as its body is")
+ws.execute("__gameAbsorb():Show()")
+before = ws.eval(f"{WS}.endAt")
+ws.execute("__gameAbsorb():Hide()")
+run(ws, 0.1)
+check(not ws.eval(WS + ".ash.shown") and not ws.eval(f"{WS}.glass.ashen.shown"),
+      "the shield breaking: no ash over the breaking glass (a grey block in the mockup)")
+run(ws, 0.4)
+check(ws.eval(f"__on({WS}.falling)") >= 10, "it bursts and leaves ash, drifting down off it")
+run(ws, 0.8)
+check(ws.eval(WS + ".ash.shown") and ws.eval(WS + ".ash.alpha") > 0.5
+      and ws.eval(f"{WS}.grey.points.TOPRIGHT.rel == __mover()")
+      and ws.eval(f"{WS}.grey.masks[1] == PlayerFrame.healthbar.parent.HealthBarMask"),
+      "the glass gone, the health's front is ashen: on the liquid's own front, which the client moves, cut by the "
+      "bar's mask")
+check(ws.eval(f"(function() local n = 0 for _, q in ipairs({WS}.specks) do if q.tex.shown and "
+              f"q.tex.points.CENTER.rel == __mover() then n = n + 1 end end return n end)()") >= 10,
+      "with ash lodged in it as specks, on the front")
+ash_early = ws.eval(WS + ".ash.alpha")
+ws.execute("__gameAbsorb():Show()")
+run(ws, 0.2)
+ws.execute("__gameAbsorb():Hide()")
+check(ws.eval(f"{WS}.endAt") == before, "another shield during Weakened Soul does not start it again")
+run(ws, 9.0)
+check(ws.eval(WS + ".crescent.shown") and ws.eval(WS + ".crescent.alpha") > 0.2
+      and ws.eval(WS + ".ash.alpha") < ash_early,
+      "as it wears off the ash fades and a crescent forms on the front")
+check(ws.eval("(function() for _, q in ipairs(__ws().specks) do if q.glow.shown then return true end end end)()"),
+      "the specks heat up, glowing")
+run(ws, max(0.1, ws.eval(f"{WS}.endAt - GetTime()") + 0.1))
+check(ws.eval(WS + ".rel") is not None and ws.eval(WS + ".flash.shown") and ws.eval(WS + ".flash.alpha") > 0.5
+      and ws.eval(f"__on({WS}.beams)") == 6 and not ws.eval(WS + ".ash.shown"),
+      "over: the crescent flashes white-hot with short rays, the ash gone")
+run(ws, 2)
+check(ws.eval(WS + ".endAt") is None and not ws.eval(WS + ".frame.shown"), "then nothing is left")
+
+ws.execute("__fire('UNIT_SPELLCAST_SUCCEEDED', 'player', 'Cast-9', 11426); __gameAbsorb():Show()")
+run(ws, 0.3)
+check(ws.eval(WS + ".endAt") is None, "a shield right after your own Ice Barrier is the Ice Barrier: no Weakened Soul")
+ws.execute("__gameAbsorb():Hide()")
+run(ws, 1.6)
+ws.execute("__fire('UNIT_SPELLCAST_SUCCEEDED', 'player', 'Cast-10', 17); __gameAbsorb():Show()")
+run(ws, 0.3)
+check(ws.eval(WS + ".endAt") is not None, "after your own Power Word: Shield it is")
+ws.execute("__aurasReadable = true; __playerAuras[6788] = nil")
+run(ws, 1.1)
+check(ws.eval(WS + ".endAt") is not None,
+      "out of combat, the debuff not read for a wait it was never seen in: the wait goes on (the client has answered "
+      "none for an aura that was on the player, Heals.lua)")
+ws.execute("__playerAuras[6788] = { expirationTime = GetTime() + 7, duration = 15 }")
+run(ws, 1.1)
+check(5 < ws.eval(f"{WS}.endAt - GetTime()") <= 7, "the debuff read: the wait takes the time it has left")
+ws.execute("SlashCmdList.SMOOTHANIMATEDBARS('soul')")
+check(any("Weakened Soul:" in m and "s left" in m for m in chat(ws)) and any("Started by:" in m for m in chat(ws)),
+      "/sab soul reports what it saw and is doing")
+ws.execute("__playerAuras[6788] = nil")
+run(ws, 1.1)
+check(ws.eval(WS + ".endAt") is None, "once seen, the debuff gone well before the end: taken off, so it stops")
+ws.execute("__aurasReadable = false; __gameAbsorb():Hide()")
+LISTENS_SENT = ("(function() local n = 0 for _, f in ipairs(__frames) do if f.events.UNIT_SPELLCAST_SENT then "
+                "n = n + 1 end end return n end)()")
+sent_on = ws.eval(LISTENS_SENT)
+ws.execute("__settings.weakenedSoul:SetValue(false)")
+run(ws, 0.2)
+check(not ws.eval(WS + ".frame.shown") and ws.eval(WS + ".endAt") is None and ws.eval(LISTENS_SENT) == sent_on - 1,
+      "off: gone, and its casts no longer listened to (the shield listens to its own)")
+ws.execute("__settings.weakenedSoul:SetValue(true); SlashCmdList.SMOOTHANIMATEDBARS('soul test')")
+run(ws, 2)
+check(ws.eval(WS + ".endAt") is not None and ws.eval(WS + ".ash.shown"), "/sab soul test shows it with no shield")
+check(ws.eval("""(function()
+        local s = __ws()
+        for _, r in ipairs(__regions) do
+            if r.kind == 'Texture' then
+                local f = r.parent
+                while f do
+                    if f == s.frame then
+                        if r.layer ~= 'OVERLAY' or r.sub >= 0 then return false end
+                        break
+                    end
+                    f = f.parent
+                end
+            end
+        end
+        return true
+    end)()"""), "every texture under the bar's texts, which are OVERLAY 1 at the same level (as the shield's)")
+ws.execute("local s = __ws(); s.test = nil; s.auraSeen = true; s.endAt = GetTime() + 1; s.auraIn = 0; "
+           "__aurasReadable = true; __playerAuras[6788] = nil")
+run(ws, 0.1)
+check(ws.eval(WS + ".rel") is not None and ws.eval(WS + ".flash.shown"),
+      "out of combat, the debuff gone just before the timer: it lets go, not a silent stop (a review caught it)")
+ws.execute("__aurasReadable = false")
+run(ws, 2)
+ws.execute("""local secret = function() return __secret() end
+    PlayerFrame.healthbar.TotalAbsorbBar.IsShown = secret
+    PlayerFrame.healthbar.OverAbsorbGlow.IsShown = secret""")
+run(ws, 0.2)
+ws.execute("__fire('UNIT_SPELLCAST_SENT', 'player', 'Someone Else', 'Cast-20', 17); "
+           "__fire('UNIT_SPELLCAST_SUCCEEDED', 'player', 'Cast-20', 17)")
+run(ws, 0.2)
+check(ws.eval(WS + ".exists") is None and ws.eval(WS + ".endAt") is None,
+      "where the game's absorb display is secret, your shield on someone else starts nothing")
+ws.execute("__fire('UNIT_SPELLCAST_SENT', 'player', UnitName('player'), 'Cast-21', 17); "
+           "__fire('UNIT_SPELLCAST_SUCCEEDED', 'player', 'Cast-21', 17)")
+run(ws, 0.2)
+check(ws.eval(WS + ".endAt") is not None, "and your shield on yourself starts it")
+check(not any("Error" in m for m in chat(ws)), "no errors (health and the shield stayed secret)")
 
 print("== /sab capture (gallery art)")
 cap = session()

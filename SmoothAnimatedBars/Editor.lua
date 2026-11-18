@@ -115,8 +115,11 @@ local TABS = {
           { key = "heals", label = "Heal Marker",
             desc = "Your heals over time, bandages, food and drink, ahead of your health and mana. Play Healing." },
           { key = "shield", label = "Shield",
-            desc = "A wall of light on your health bar while a shield is on you, Power Word: Shield or any other. It "
-                .. "flares as it soaks a hit and shatters when it breaks." },
+            desc = "Golden glass over the end of your health bar while a shield is on you, Power Word: Shield or any "
+                .. "other. It flares as it soaks a hit and shatters when it ends." },
+          { key = "weakenedSoul", label = "Weakened Soul",
+            desc = "After a Power Word: Shield, your health's front turns to ash and warms back to gold as Weakened "
+                .. "Soul wears off, then flashes when you can be shielded again." },
           { key = "manaBuild", label = "Mana Regen Build-Up",
             desc = "Your mana bar builds up through the five seconds after a spell, and lets go in stars." },
           { key = "rageFury", label = "Rage Fury",

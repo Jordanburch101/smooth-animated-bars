@@ -33,7 +33,11 @@ for players; `docs/DEVELOPMENT.md` covers the layout and tools; this file holds 
 - **Gallery:** `branding/gallery/` holds the README's images: animated WebP for each scenario (`hero`,
   `mage`, `rogue`, `warlock` and `rend` with the DoT marker, `priest` with the heal marker, `druid` with both, `eating`, a meal up to its buff, `mana`, the build-up to mana regenerating, `fury`, a warrior's rage building to full and spent back to 40%, `plates`, four Normal-style nameplates drawn from the captured plate art (`gallery.py`, `PLATES`), two with DoTs, and `prd`, a warrior's Personal Resource Display through a fight to furious rage and a bandage, on the same plate art, its bar sizes Edit Mode's defaults as guessed, and `party`, four party members stacked as in game, on the party art with the setup's example party and its class icons for portraits; the power mask and bar are shifted
   1.5 right and 1.9 down there (`gallery.py`, `PARTY_POWER_SHIFT`): at Forever's own offsets they sat over the gold divider in the captured art, though in
-  game the game's fill does not, so the gallery was tuned by eye to sit in the slot; the example party in the setup and the editor (`Preview.lua`, `PARTY_POWER_SHIFT`) showed the same in game and takes the same shift, the capture keeping the game's offsets), and `raid`, a ten-player raid through a pull in two groups of raid-style frames, on the raid frame art (`gallery.py`, `RAIDERS`), its tank targeted, and PNG stills (`frames.png`, `themes.png`), at full quality (`K = 3.0`, 20 fps). No GIFs.
+  game the game's fill does not, so the gallery was tuned by eye to sit in the slot; the example party in the setup and the editor (`Preview.lua`, `PARTY_POWER_SHIFT`) showed the same in game and takes the same shift, the capture keeping the game's offsets), and `raid`, a ten-player raid through a pull in two groups of raid-style frames, on the raid frame art (`gallery.py`, `RAIDERS`), its tank targeted, and `shield`, a priest's Power Word: Shield soaking five hits and shattering, no Weakened Soul (asked for; not made by
+  `gallery.py`: the mock cannot lay the shield out from the secret absorb, so it was composited from the gallery's own
+  player frame with the real `Shield.lua` and `Soul.lua` rendered where the client would place them, as the shield's
+  previews were; render it that way again if either changes), and PNG stills (`frames.png`, `themes.png`), at full
+  quality (`K = 3.0`, 20 fps). No GIFs.
   A full run takes about a quarter of an hour, so run it in the background.
 - **Frame art:** `branding/art/` is Forever's own unit frame art, captured in game with `/sab capture` and
   cut out by `tools/capture_art.py` (`/sab capture plates` and `--plates` for the nameplates' pieces, `/sab capture
@@ -110,7 +114,11 @@ Facts found while building this, which the code relies on and which are not obvi
   early; a DoT that never ticks is dropped, but only on a mob whose hits have shown their school (`schoolHitAt`;
   DoesItDie drops on any mob in view). The tooltip's numbers leave out spell and attack power, so after combat the
   damage meter's per-spell totals (`C_DamageMeter`, readable then; seen in game by DoesItDie on a warlock) teach each
-  DoT's real tick (`learnFromMeter`), blended by tick count. Not yet seen here in game: any of the ported part. The
+  DoT's real tick (`learnFromMeter`), blended by tick count. The meter counts every tick and the tally only those seen,
+  so a fight is not learned from where a DoT ticked out of sight (`Dots.LoseSight`: tabbed away, its plate gone while
+  the mob lived), a finisher's points were unknown, or the addon loaded mid-fight (a review found the first saved 1.7
+  times the real tick). Still inherited from DoesItDie: any hit of the school near a tick is taken for it, the
+  player's own Mind Flay or Drain Life too. Not yet seen here in game: any of the ported part. The
   hit's flag is readable, though (seen in game: `BLOCK_REDUCED`, and a crit
   made a Rend gush), so a crit on the target makes a bleed gush; it does not say whose hit it was. `/sab dots` counts what the target's hits show (`Dots.lua`, `noteFlag`). The player's `UNIT_SPELLCAST_*` events and spell descriptions are readable. DoesItDie reports (not verified here) that
   creature GUIDs are secret in instances, so mobs there are keyed by their nameplate. The
@@ -205,7 +213,7 @@ Facts found while building this, which the code relies on and which are not obvi
   shatters. Either way the glass holds its last place: a
   second hidden bar (`ghost`, `hold`) is fed as the run is and stops being fed when it ends, while the run drains
   and the health flows up beneath (faded while the health was still flowing up, the empty bar showed between them
-  in game), its front held back to the rim while the glass shows (`front`, `HoldBack`): let through to the health's
+  in game), the run measured from the rim while the glass shows (`RunInset`, `m.inset`): let through to the health's
   front, the last `RIM_INSET` units of green showed past the rim the moment the shield broke. Render the endings
   as the game runs them (the run easing to nothing, the glass its last size back from the health's front, which the
   breaking hit moves) and look at them frame by frame: a render that dropped the shield in one frame hid all this. What bursts or rises is spawned along a whole bar back from the rim and cut to the shield by a mask of
@@ -216,6 +224,22 @@ Facts found while building this, which the code relies on and which are not obvi
   liquid's front no longer is. While the front is moved (`Bars.Moved`) the heal marker lies side by side from the
   health's edge, past the shield, with no seam. Not yet seen in game: the endings, and
   `ABSORB` on the player (the rim's flare on a soaked hit).
+- **Weakened Soul** (`Soul.lua`, `weakenedSoul`; Forever's tooltip: 15 s, Power Word: Shield 30 s): auras are secret in
+  combat, so the wait is timed from a shield going up (`Shield.Exists`, the game's absorb display), unless the player's
+  own cast of another spell whose description says "absorb" went off within `ATTRIBUTE` (English only); out of combat
+  the debuff itself is read, which starts, corrects or ends the wait. Where the absorb display is secret, the player's
+  own shield sent at themselves (`UNIT_SPELLCAST_SENT`'s target) starts it. Drawn on the health liquid's own front
+  (`Bars.Mover`) and the health's edge (`Bars.Edge`), so it follows the client's layout; while a shield holds, in its
+  glass (`Shield.State().mover`). Chosen from four mockups (ash, a healing crack, a ghost of the glass, a sigil) and
+  refined in mockups: ash over the breaking glass was a grey block, so it waits for the burst; a ring at the release
+  read as generic, hence the crescent. Its textures are all below OVERLAY sublevel 0, as the shield's: the bar's texts are
+  OVERLAY 1 at the same level. In combat any absorb going up that is not the player's own cast (a Voidwalker's
+  Sacrifice, an item) is taken for Power Word: Shield until the debuff can be read; a shield landing on one already up
+  is missed. Out of combat a debuff read as gone ends only a wait it was once read in (as `Heals.lua`). Where the absorb
+  display is secret, both files take the player's own shield on themselves from `UNIT_SPELLCAST_SENT`'s target against
+  `UnitName("player")`; what Forever sends there for a character with a surname is not yet seen. Neither the shield nor
+  Weakened Soul is drawn on other addons' player bars (Frames Forever and ClassicUI Forever fade the game's frame out,
+  so both stay hidden there): not built yet. `/sab soul test` plays it with no shield. Seen in game and liked: the look.
 - **Auras in combat:** `C_UnitAuras.GetPlayerAuraBySpellID` is `RequiresNonSecretAura`, and in game it answered
   "none" in combat for a Rejuvenation that was on the player. So a missing aura only ends a heal that was seen
   before, out of combat (`Heals.lua`, `checkAuras`). Sitting to eat or drink has no API; `PLAYER_STARTED_MOVING`

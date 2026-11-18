@@ -563,7 +563,8 @@ local function sentTargetKey(targetName)
         local okD, dead = pcall(UnitIsDeadOrGhost, "mouseover")
         local named = type(targetName) ~= "string" or isSecret(targetName) or targetName == ""
             or nameOf("mouseover") == targetName
-        if okA and not isSecret(attackable) and attackable == true and not (okD and dead == true) and named then
+        if okA and not isSecret(attackable) and attackable == true and not (okD and not isSecret(dead) and dead == true)
+            and named then
             local key = unitKey("mouseover")
             if key then return key end
         end
@@ -884,6 +885,8 @@ local function onPlayerCast(spellID, castGUID)
     -- A finisher's tick size depends on the points spent, so learned sizes are kept per point count.
     local tickKey = spellID
     if isFinisher then tickKey = comboPoints and (spellID .. "x" .. comboPoints) or nil end
+    -- Unknown points: this cast's damage reaches the meter but no tally, so nothing is learned for the spell this fight.
+    if not tickKey then combatUntracked[spellID] = true end
 
     local now = GetTime()
     if TRAP_DOTS[name] then
@@ -1370,6 +1373,17 @@ local function isObservable(key)
     return false
 end
 
+-- DoTs that will go on ticking where the addon can't see (a table on Dots: this file is near Lua's 200 locals): the
+-- damage meter counts those ticks and the tally does not, so learning from this fight would size the DoT too big (a
+-- review caught it: one tick seen, five out of sight, saved at 1.7 times the real tick). dead: the mob died, so its
+-- DoTs stop and the meter has no more of them either.
+function Dots.LoseSight(dots, now, dead)
+    if not dots or dead then return end
+    for _, dot in pairs(dots) do
+        if now < dot.expiresAt then dot.lostSight = true end
+    end
+end
+
 local function housekeep(now)
     resolveFinisherCheck(now)
     for key, at in pairs(schoolHitAt) do
@@ -1383,6 +1397,8 @@ local function housekeep(now)
             local late = (dot.ticksSeen == 0 and dot.travel) or 0
             while dot.nextTickAt < now - TICK_MATCH_WINDOW - late and dot.nextTickAt <= dot.expiresAt do
                 dot.nextTickAt = dot.nextTickAt + dot.interval
+                -- A tick of a DoT already seen ticking, passing while the mob is out of view: the meter has it.
+                if dot.ticksSeen > 0 and not dot.lostSight and not isObservable(key) then dot.lostSight = true end
                 -- Only a tick that could have been seen counts as missed: the mob is in view, and its hits
                 -- show their school.
                 if dot.ticksSeen == 0 and isObservable(key) and (schoolHitAt[key] or -1) >= dot.appliedAt then
@@ -1462,8 +1478,10 @@ local function meterSkipReason(key, t, counted, totals, keysPerSpell)
     -- Ticks of a DoT cast before this combat, or by a trap: the casts that fed the meter aren't in this tally.
     if #t.dots == 0 then return "not cast this combat" end
     if counted.untracked[t.spellID] then return "a cast had no known target, so the meter has damage not counted here" end
+    if counted.untracked.all then return "the addon was loaded mid-fight, so the meter has casts not counted here" end
     for _, dot in ipairs(t.dots) do
         if dot.ticksSeen == 0 then return "a cast's DoT never showed a tick (out of sight, or the mob died first)" end
+        if dot.lostSight then return "a cast's DoT ticked out of sight, so the meter has ticks not counted here" end
     end
     if not totals[t.spellID] then return "no readable damage meter total" end
     if keysPerSpell[t.spellID] > 1 then return "several combo point sizes share one meter total" end
@@ -1487,8 +1505,9 @@ local function learnFromMeter(spells, counted)
         if skip then
             if skip ~= "" then trace(string.format("LEARN %s skipped: %s", name, skip)) end
         else
-            local ratio = total / (t.direct + t.descTick * t.factors)
-            if ratio < LEARN_RATIO_MIN or ratio > LEARN_RATIO_MAX then
+            local whole = t.direct + t.descTick * t.factors
+            local ratio = whole > 0 and total / whole or 0
+            if ratio ~= ratio or ratio < LEARN_RATIO_MIN or ratio > LEARN_RATIO_MAX then
                 trace(string.format("LEARN %s skipped: meter %d over %d tick(s) is %.2fx the description", name,
                     total, t.ticks, ratio))
             else
@@ -1634,6 +1653,7 @@ local EVENTS = { "PLAYER_TARGET_CHANGED", "UNIT_COMBAT", "NAME_PLATE_UNIT_ADDED"
 
 local function onEvent(_, event, ...)
     if event == "PLAYER_TARGET_CHANGED" then
+        Dots.LoseSight(dotsByTarget.target, GetTime())
         dotsByTarget.target = nil -- only used when the target's GUID is secret
         resetComboCount()         -- combo points belong to the target they were built on
         dropCastInProgress("target changed")
@@ -1671,6 +1691,10 @@ local function onEvent(_, event, ...)
         -- A plate token goes to the next mob that gets a plate: DoTs keyed by it belonged to the old one.
         local token = ...
         if type(token) == "string" and not isSecret(token) and dotsByTarget["plate:" .. token] then
+            if event == "NAME_PLATE_UNIT_REMOVED" then
+                local ok, dead = pcall(UnitIsDeadOrGhost, token)
+                Dots.LoseSight(dotsByTarget["plate:" .. token], GetTime(), ok and not isSecret(dead) and dead == true)
+            end
             dotsByTarget["plate:" .. token] = nil
             notify("changed")
         end
@@ -1745,6 +1769,7 @@ function Dots.Enable(on)
         addClientNames()
         for _, event in ipairs(EVENTS) do frame:RegisterEvent(event) end
         for _, event in ipairs(PLAYER_EVENTS) do frame:RegisterUnitEvent(event, "player") end
+        if InCombatLockdown() or UnitAffectingCombat("player") then combatUntracked.all = true end
         trace("tracking on")
     else
         frame:UnregisterAllEvents()

@@ -2742,6 +2742,19 @@ function Bars.Liquid(bar)
     return b and b.liquid
 end
 
+-- The frame a bar's liquid is drawn in: its right edge is the liquid's front, wherever Bars.Front put it (Soul.lua).
+function Bars.Mover(bar)
+    local b = StateFor(bar)
+    return b and b.live and not b.err and b.mover or nil
+end
+
+-- The health's own edge on a bar with the liquid, with the client's smoothing (our hidden bar's fill), whatever
+-- Bars.Front did to the liquid's front.
+function Bars.Edge(bar)
+    local b = StateFor(bar)
+    return b and b.live and not b.err and b.proxy:GetStatusBarTexture() or nil
+end
+
 -- The fury's liquid on a rage bar, once built.
 function Bars.FuryLiquid(bar)
     local b = StateFor(bar)

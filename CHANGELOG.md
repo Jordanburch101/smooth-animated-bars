@@ -7,30 +7,21 @@ Sections are `### New` and `### Fixed`; skip one that would be empty.
 ## 1.12.0
 
 ### New
-- **Settings for each character**: a character can now keep a look of its
-  own, so your warrior and your mage can wear different colours without
-  changing them each time you switch. Your characters still share one set of
-  settings to begin with: untick Use Account-Wide Settings on the editor's
-  new Profiles tab to give a character its own.
-- **Copy another character's settings** from the Profiles tab: pick a
-  character, or the account-wide settings, and press Copy. It replaces the
-  settings the character uses, so while it shares the account-wide ones,
-  every character sharing them takes the copy.
-- **Raid frames in the setup**: the setup has a step for them now, with an
-  example raid to try their bars and colours on.
-- **Shields on your health**: while Power Word: Shield or any other shield is
-  on you, the end of your health bar, as much as the shield will soak, turns
-  into a barrier of golden light with strands drifting through it and a bright
-  rim on your health's edge, shedding rays of light and embers past the bar.
-  Its glow spills back over your health where the two meet. The rim flares as
-  the shield soaks a hit, and the barrier wears down as it takes them. When it
-  ends, broken, run out or taken off, it cracks, strains and bursts into
-  shards of golden glass. Turn it
-  off under Shield in the editor's Combat tab.
-- **DoT marker sizes your DoTs from your real damage**: after each fight it
-  learns what your DoTs actually ticked for from the game's damage meter,
-  spell power and attack power included, so the marker and the kill icon
-  catch up with your gear. Thanks to DoesItDie, whose tracking this follows.
+- **Settings for each character**: give a character its own look by
+  unticking Use Account-Wide Settings on the editor's new Profiles tab.
+- **Copy settings** from another character, or from the account-wide ones,
+  on the Profiles tab.
+- **Shields on your health**: while a shield is on you, the end of your
+  health bar turns into a barrier of golden glass. It flares when it soaks a
+  hit and shatters when it ends. Turn it off under Shield in the editor's
+  Combat tab.
+- **Weakened Soul on your health**: after Power Word: Shield, your health's
+  edge turns to ash and slowly warms back to gold, then flashes when you can
+  be shielded again. Turn it off under Weakened Soul in the editor's Combat
+  tab.
+- **DoT marker learns your real damage**: after each fight it reads what your
+  DoTs actually did from the game's damage meter, so the marker and kill icon
+  keep up with your gear. Thanks to DoesItDie, whose tracking this follows.
 
 ### Fixed
 - A DoT that is resisted and never ticks no longer stays on the marker for

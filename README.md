@@ -25,6 +25,8 @@ skip it.
 - **Your DoTs on the target (optional):** your damage over time eats into your target's health as liquid, and a skull
   shows when it will kill the target.
 - **Your heals, food and drink:** what is still to come shows ahead of your health and mana.
+- **Shields and Weakened Soul:** a shield on you turns the end of your health into golden glass, and Weakened Soul
+  shows as ash on your health's edge until you can be shielded again.
 - **Mana regen build-up:** your mana bar shows the five-second wait after a spell.
 - **Rage Fury:** your rage bar heats up as it fills, and bursts when you spend it.
 - **An editor** with every setting beside live examples of your frames: type `/sab`, or right-click your frame.
@@ -150,6 +152,22 @@ It reads English spell text, so on other client languages it may miss your heals
   Slow stars keep rising after that, so you know you can get up.
 - **Moving or casting** stands you up and ends it.
 
+## Shields and Weakened Soul
+
+<p align="center"><img src="https://raw.githubusercontent.com/Jordanburch101/smooth-animated-bars/refs/heads/main/branding/gallery/shield.webp" alt="A priest's Power Word: Shield as golden glass over the end of the green health, shedding rays of light, flaring with each of five hits it soaks and wearing down, then straining with glowing cracks and bursting into shards of golden glass as the health flows back up"></p>
+<p align="center"><em>Priest: Power Word: Shield soaks five hits, wearing down, and shatters.</em></p>
+
+On by default, under Shield and Weakened Soul in the editor.
+
+- **Shields:** while Power Word: Shield or any other shield is on you, the end of your health turns into golden glass,
+  as much as the shield will soak. It flares when it soaks a hit and shatters when it ends.
+- **Weakened Soul:** after a Power Word: Shield lands on you, your health's edge turns to ash and warms back to gold
+  over its 15 seconds, then flashes when you can be shielded again. While the shield still holds, its rim shows the
+  same.
+- **It's timed from the shield going up,** as WoW Forever hides your debuffs from addons in combat. Out of combat it
+  reads Weakened Soul itself. In combat a shield you didn't cast yourself, such as a Voidwalker's Sacrifice, can start
+  it too.
+
 ## Mana regen build-up
 
 <p align="center"><img src="https://raw.githubusercontent.com/Jordanburch101/smooth-animated-bars/refs/heads/main/branding/gallery/mana.webp" alt="A mage's mana bar after a Fireball: motes gather into the front of the blue liquid, which turns pale while lightning starts up, then a burst of stars as the mana starts to flow back"></p>
@@ -226,6 +244,8 @@ lively the liquid is, your DoTs, and nameplates, each shown on example frames. S
 | `/sab dots` | Your DoTs on the target, and what the DoT tracking saw lately |
 | `/sab heals` | Your heals, food and drink on the way, and what the tracking saw lately |
 | `/sab mana` | The wait before your mana regenerates, and what it saw lately |
+| `/sab shield` | What the game says about shields on you, and what the shield is doing |
+| `/sab soul` / `/sab soul test` | What Weakened Soul saw and is doing, or 15 seconds of it on your health bar to see it |
 | `/sab perf` | What the liquid costs each frame, and the costliest bars. Add a note (`/sab perf 12 mobs`) to label it; results are saved on `/reload`. `/sab perf reset` starts over, `/sab perf clear` deletes the saved ones |
 
 ## Good to know

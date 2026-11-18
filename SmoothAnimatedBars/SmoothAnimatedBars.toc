@@ -22,6 +22,7 @@ Marker.lua
 Heals.lua
 HealMarker.lua
 Shield.lua
+Soul.lua
 ManaRule.lua
 SelfProbe.lua
 Adaptors\Adaptors.lua

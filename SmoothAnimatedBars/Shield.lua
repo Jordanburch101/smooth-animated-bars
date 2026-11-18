@@ -24,7 +24,7 @@
 -- gallery's 3: a rim or strands under a pixel wide vanish.
 -- Whether there is a shield (shown, and its going up and breaking) is the game's own answer, read from its absorb bar
 -- and glow (shown or not), readable on Forever (seen in game with /sab shield). Where they are secret, it shows for a
--- while after the player's own Power Word: Shield. A hit the shield soaked is UNIT_COMBAT's ABSORB on the player, whose
+-- while after the player's own Power Word: Shield on themselves. A hit the shield soaked is UNIT_COMBAT's ABSORB on the player, whose
 -- amount is secret but whose action is not. Nothing of the game's is changed but alphas: its own absorb fill and glow
 -- show the same shield, so they are transparent while ours shows.
 
@@ -546,6 +546,11 @@ local function Exists(bar)
     return (a or b) and true or false
 end
 
+-- For Soul.lua, which times Weakened Soul from shields going up, with or without the shield setting.
+Shield.Exists = Exists
+-- Where the rim stands, for what Soul.lua draws on it.
+Shield.RIM = { inset = RIM_INSET, width = RIM_W, line = RIM_LINE }
+
 -- Hidden while ours shows (0), back when it does not (1): the game's absorb fill, its tiled overlay and its glow.
 local function GameAlpha(bar, alpha)
     local segment, glow = GameParts(bar)
@@ -557,17 +562,21 @@ local function GameAlpha(bar, alpha)
     end
 end
 
-local function Feed(m)
+-- snap: set at once, with no smoothing. A shield going up does: its hidden bars are fed only while it shows, so they
+-- still hold the last shield's values (or nothing, after login), and eased from there the health's front and the glass
+-- slid in from the bar's left end (a review caught it).
+local function Feed(m, snap)
     local bar = m.bar
+    local ease = not snap and INTERPOLATION
     m.proxy:SetMinMaxValues(bar:GetMinMaxValues())
-    if INTERPOLATION then m.proxy:SetValue(bar:GetValue(), INTERPOLATION) else m.proxy:SetValue(bar:GetValue()) end
+    if ease then m.proxy:SetValue(bar:GetValue(), ease) else m.proxy:SetValue(bar:GetValue()) end
     local whole = m.ending and 0 or Absorbs(m.calc) -- an ending shield drains away, whatever is read meanwhile
     if whole == nil then return end
     m.run:SetMinMaxValues(bar:GetMinMaxValues())
-    if INTERPOLATION then m.run:SetValue(whole, INTERPOLATION) else m.run:SetValue(whole) end
+    if ease then m.run:SetValue(whole, ease) else m.run:SetValue(whole) end
     if m.ending then return end -- the ghost holds the glass's last place
     m.ghost:SetMinMaxValues(bar:GetMinMaxValues())
-    if INTERPOLATION then m.ghost:SetValue(whole, INTERPOLATION) else m.ghost:SetValue(whole) end
+    if ease then m.ghost:SetValue(whole, ease) else m.ghost:SetValue(whole) end
 end
 
 --------------------------------------------------------------------------------
@@ -625,7 +634,7 @@ end
 local function Show(m)
     if m.clip:IsShown() then return end
     m.feed = FEED_EVERY
-    Feed(m)
+    Feed(m, true)
     m.clip:Show()
     m.shed:Show()
     m.fade, m.flash, m.body = 1, 1, 1
@@ -787,6 +796,9 @@ local function Update(m, dt)
     end
     if not holding and not m.ending then return Hide(m) end
     Show(m)
+    -- Every frame, not only as it shows: a liquid built while the shield was up (the health bar's liquid turned on)
+    -- starts on the health's edge, past the rim. Nothing is done when it is already there.
+    ns.Bars.Front(m.bar, m.start)
     GameAlpha(m.bar, 0)
 
     local w, h = ns.Bars.Size(m.bar, m.width, m.height)
@@ -825,6 +837,7 @@ local player -- the shield on the player frame's health bar, once built
 local driver
 local probe = { absorbs = 0, hits = {}, casts = 0 }
 local SHIELD_NAME -- Power Word: Shield in the client's language
+local selfCast = {} -- castGUID -> true for the player's own Power Word: Shield sent at themselves
 
 local function OnUpdate(_, elapsed)
     local dt = math.min(elapsed, 0.1)
@@ -837,7 +850,7 @@ local function OnUpdate(_, elapsed)
     end
 end
 
-local function OnEvent(_, event, unit, a1, a2)
+local function OnEvent(_, event, unit, a1, a2, a3)
     if not player or not player.live or player.err then return end
     if event == "UNIT_COMBAT" then
         local action = a1
@@ -851,14 +864,18 @@ local function OnEvent(_, event, unit, a1, a2)
                 ns.Bars.StirBar(player.bar)
             end
         end
-    elseif event == "UNIT_SPELLCAST_SUCCEEDED" then
-        local spellID = a2
-        if Secret(spellID) or not SHIELD_NAME then return end
+    elseif event == "UNIT_SPELLCAST_SENT" then
+        -- unit, target, castGUID, spellID: a shield the player sends at themselves (on anyone else, nothing shows here).
+        local target, guid, spellID = a1, a2, a3
+        if Secret(target) or Secret(guid) or Secret(spellID) or not SHIELD_NAME or not guid then return end
         local ok, name = pcall(C_Spell and C_Spell.GetSpellName or GetSpellInfo, spellID)
-        if ok and name == SHIELD_NAME then
-            probe.casts = probe.casts + 1
-            player.castUntil = GetTime() + CAST_SHOWS -- shows it where the game will not say
-        end
+        if ok and name == SHIELD_NAME and target == UnitName("player") then selfCast[guid] = true end
+    elseif event == "UNIT_SPELLCAST_SUCCEEDED" then
+        local guid = a1
+        if Secret(guid) or not guid or not selfCast[guid] then return end
+        selfCast[guid] = nil
+        probe.casts = probe.casts + 1
+        player.castUntil = GetTime() + CAST_SHOWS -- shows it where the game will not say
     end
 end
 
@@ -886,6 +903,7 @@ function Shield.Apply()
     driver:SetShown(live)
     if live then
         driver:RegisterUnitEvent("UNIT_COMBAT", "player")
+        driver:RegisterUnitEvent("UNIT_SPELLCAST_SENT", "player")
         driver:RegisterUnitEvent("UNIT_SPELLCAST_SUCCEEDED", "player")
     else
         driver:UnregisterAllEvents()
