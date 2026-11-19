@@ -10,6 +10,9 @@ Sections are `### New` and `### Fixed`; skip one that would be empty.
 - An addon's debuff timer bars, drawn in the game's own aura buttons, no
   longer give an error in chat. The game keeps those bars to itself, so they
   stay as the game draws them.
+- With Better Blizzard Plates, a nameplate's name no longer shows twice. The
+  name drawn over the liquid now takes that addon's colour, size and hiding,
+  and is left to it when it raises the name above everything.
 
 ## 1.12.0
 

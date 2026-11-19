@@ -3581,6 +3581,50 @@ check(np.eval(TEXTS + ".name.shown") and np.eval("issecretvalue(" + TEXTS + ".na
 np.execute(plate_bar("nameplate1") + ":GetParent():GetParent().name.IsVisible = nil")
 run(np, 0.2)
 check(np.eval(TEXTS + ".name.shown") and np.eval(TEXTS + ".name.alpha") == 1, "and a plain answer again: fully shown")
+# Better Blizzard Plates (reported by a player: a second name behind the game's): it colours the name with
+# SetVertexColor, scales it apart from the plate, hides it with SetAlpha(0) and may move it to a frame of its own.
+np.execute(f"""local name = {plate_bar("nameplate1")}:GetParent():GetParent().name
+name:SetVertexColor(0.2, 0.6, 1); name:SetIgnoreParentScale(true); name:SetScale(1.3)""")
+run(np, 0.2)
+check(np.eval(f"""(function()
+    local mine = {TEXTS}.name
+    return mine.shown and mine.vc[1] == 0.2 and mine.vc[3] == 1 and mine:GetScale() == 1.3
+        and mine:IsIgnoringParentScale() and mine.alpha == 1
+end)()"""), "a plate addon's name colour (vertex colour) and scale, ignoring the plate's, are copied too")
+np.execute(plate_bar("nameplate1") + ":GetParent():GetParent().name:SetAlpha(0)")
+run(np, 0.2)
+check(np.eval(TEXTS + ".name.alpha") == 0, "a name a plate addon hides with its alpha is hidden in the copy as well")
+np.execute(plate_bar("nameplate1") + ":GetParent():GetParent().name:SetAlpha(__secret(0))")
+run(np, 0.2)
+check(np.eval("issecretvalue(" + TEXTS + ".name.alpha)") and not any("Error" in m for m in chat(np)),
+      "a secret alpha is handed on as it is, without an error")
+np.execute(f"""local uf = {plate_bar("nameplate1")}:GetParent():GetParent()
+uf.name:SetAlpha(1); uf.raised = CreateFrame("Frame", nil, uf)
+uf.raised:SetFrameLevel({plate_bar("nameplate1")}:GetFrameLevel() + 2); uf.name:SetParent(uf.raised)""")
+run(np, 0.2)
+check(np.eval(TEXTS + ".name.shown"), "a name a plate addon moves two levels over the bar (Better Blizzard Plates "
+      "always does), level with the liquid and under its shading, is still copied")
+np.execute(plate_bar("nameplate1") + ":GetParent():GetParent().raised:SetFrameStrata('HIGH')")
+run(np, 0.2)
+check(not np.eval(TEXTS + ".name.shown"), "one it raises to a strata over the plate's (its Raise Strata option) is left "
+      "to it, not copied under it")
+np.execute(f"""local uf = {plate_bar("nameplate1")}:GetParent():GetParent()
+uf.raised:SetFrameStrata({plate_bar("nameplate1")}:GetFrameStrata())
+uf.raised:SetFrameLevel({TEXTS}.frame:GetFrameLevel() + 1)""")
+run(np, 0.2)
+check(not np.eval(TEXTS + ".name.shown"), "and one on a frame above the copies' own level")
+np.execute(f"""local uf = {plate_bar("nameplate1")}:GetParent():GetParent()
+uf.name:SetIgnoreParentScale(false); uf.name:SetScale(1); uf.name:SetVertexColor(1, 1, 1)
+uf.name.IsVisible = function() return __secret(true) end; uf.name:SetAlpha(__secret(0)); uf.name:SetParent(uf)""")
+run(np, 0.2)
+check(np.eval("issecretvalue(" + TEXTS + ".name.alpha)") and np.eval("__reveal(" + TEXTS + ".name.alpha)") == 0,
+      "with a secret answer whether the name shows, a name hidden by its alpha (secret too) stays hidden in the copy")
+np.execute(plate_bar("nameplate1") + ":GetParent():GetParent().name.IsVisible = nil")
+np.execute(f"""local uf = {plate_bar("nameplate1")}:GetParent():GetParent()
+uf.name:SetParent(uf); uf.name:SetVertexColor(1, 1, 1); uf.name:SetIgnoreParentScale(false); uf.name:SetScale(1)""")
+run(np, 0.2)
+check(np.eval(TEXTS + ".name.shown") and np.eval(TEXTS + ".name:GetScale()") == 1
+      and not np.eval(TEXTS + ".name:IsIgnoringParentScale()"), "and copied again once it is back on the plate")
 np.execute(plate_bar("nameplate1") + ":GetParent():GetParent().name:Hide()")
 run(np, 0.2)
 check(not np.eval(TEXTS + ".name.shown"), "and goes when the game hides it (a simplified mob not targeted)")

@@ -123,14 +123,20 @@ end
 function Region:SetAlphaFromBoolean(v, ifTrue, ifFalse)
     assert(type(v) == "boolean" or issecretvalue(v), "Usage: SetAlphaFromBoolean(value [, alphaIfTrue, alphaIfFalse])")
     local on = __reveal(v)
-    self.alpha = __secret(on and (ifTrue or 1) or (ifFalse or 0))
+    self.alpha = __secret(__reveal(on and (ifTrue or 1) or (ifFalse or 0)))
 end
 -- A number, or a secret (Forever's SetAlpha takes one, from a curve, say).
 function Region:SetAlpha(a)
     assert(type(a) == "number" or issecretvalue(a), "Usage: SetAlpha(alpha)")
     self.alpha = a
 end
-function Region:SetScale(s) self.scale = s end
+function Region:SetScale(s)
+    assert(type(s) == "number" and not issecretvalue(s), "Usage: SetScale(scale)") -- a secret only untainted
+    self.scale = s
+end
+function Region:GetScale() return self.scale or 1 end
+function Region:SetIgnoreParentScale(v) self.ignoreParentScale = v and true or false end
+function Region:IsIgnoringParentScale() return self.ignoreParentScale or false end
 local STRATA = { BACKGROUND = true, LOW = true, MEDIUM = true, HIGH = true, DIALOG = true,
                  FULLSCREEN = true, FULLSCREEN_DIALOG = true, TOOLTIP = true }
 function Region:SetFrameStrata(s)
@@ -202,6 +208,8 @@ function Region:SetVertexColor(r, g, b, a)
     self.vc, self.grad = { r, g, b, 1 }, nil
     if a ~= nil then self.alpha = a end
 end
+-- One alpha per region, as SetVertexColor's fourth value and SetAlpha set the same thing.
+function Region:GetVertexColor() return self.vc[1], self.vc[2], self.vc[3], self.alpha end
 function Region:SetGradient(_, c1, c2)
     self.grad = { { c1:GetRGBA() }, { c2:GetRGBA() } }
 end

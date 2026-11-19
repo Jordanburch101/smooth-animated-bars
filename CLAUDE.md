@@ -367,6 +367,15 @@ Facts found while building this, which the code relies on and which are not obvi
   cut short instead, so the copy was wrapping all along. The cause, from Forever's API docs
   (`SimpleFontStringAPIDocumentation`): FontString has no `GetWordWrap` (its getter is `CanWordWrap`), so copying the
   wrap always failed and left the default, wrapping on; the mock had a `GetWordWrap` and now has `CanWordWrap` only.
+  A player on Better Blizzard Plates (source: github.com/Bodify/BetterBlizzPlates, `forever/`) saw a second name
+  behind the game's: that addon colours the name with `SetVertexColor`, scales it with `SetIgnoreParentScale`, hides it
+  with `SetAlpha(0)`, and always reparents it (`RaiseNameAboveHealthBar`: two levels over the bar, level with our
+  liquid and under its shading, so still copied), or to a HIGH frame with its Raise Strata option. So the copies take
+  the vertex colour (the game's own name colour is one too, `CompactUnitFrame_UpdateName`), scale (not a secret one:
+  `SetScale` takes it only untainted; the ignore-parent flag turned the other way around `SetScale`, as that addon
+  does) and alpha, and a name on a frame in another strata or above the copies' level is not copied. Seen in game on
+  the game's own plates: fine. Not yet seen with that addon; its custom font's size is still not copied (the copy takes
+  the game's text height).
   The docs also mark `GetCenter`/`GetRect` `SecretWhenAnchoringSecret`, which is why going by the name's position
   failed, and `IsShown`/`IsVisible` `SecretReturnsForAspect` Shown: a secret answer is never compared, and the copy is
   faded by it with `SetAlphaFromBoolean` (allowed when tainted; `SetShown` takes a secret only when untainted).

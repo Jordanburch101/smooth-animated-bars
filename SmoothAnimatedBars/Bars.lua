@@ -822,10 +822,36 @@ local function CopyText(mine, theirs, shown, whole, plate)
     if whole then CopyNameHeight(mine) end
     -- Each on its own, so one the client refuses cannot keep the rest from being copied.
     pcall(function() mine:SetTextColor(theirs:GetTextColor()) end)
+    -- The name's colour is a vertex colour over the text colour, the game's own (CompactUnitFrame_UpdateName: grey when
+    -- tapped, reaction, class) and plate addons' (Better Blizzard Plates): the copy stayed white over a coloured name.
+    -- Set only when it changes (a secret one every time): with no fourth value it may also reset the alpha, set below.
+    local okColor, r, g, b = pcall(theirs.GetVertexColor, theirs)
+    if okColor and (Secret(r, g, b) or r ~= mine.vr or g ~= mine.vg or b ~= mine.vb) then
+        if Secret(r, g, b) then mine.vr = nil else mine.vr, mine.vg, mine.vb = r, g, b end
+        pcall(mine.SetVertexColor, mine, r, g, b)
+    end
     pcall(function() mine:SetShadowColor(theirs:GetShadowColor()) end)
     pcall(function() mine:SetShadowOffset(theirs:GetShadowOffset()) end)
     pcall(function() mine:SetJustifyH(theirs:GetJustifyH()) end)
     pcall(function() mine:SetJustifyV(theirs:GetJustifyV()) end)
+    -- Plate addons scale the name and the health text, some ignoring the plate's own scale (Better Blizzard Plates'
+    -- name scale): the copy, at the plate's scale, showed as a second name behind the game's. GetScale can answer with a
+    -- secret (SecretReturnsForAspect Scale), which SetScale takes only untainted, so a secret one is left alone. Done as
+    -- Better Blizzard Plates does it, the flag turned the other way around SetScale: it found the size jumped otherwise.
+    local okIgnore, ignore = pcall(theirs.IsIgnoringParentScale, theirs)
+    local okScale, scale = pcall(theirs.GetScale, theirs)
+    if not (okIgnore and type(ignore) == "boolean") then ignore = mine.ignoreScale or false end
+    if not (okScale and type(scale) == "number" and not Secret(scale) and scale > 0) then scale = mine.scaleFrom or 1 end
+    if mine.ignoreScale ~= ignore or mine.scaleFrom ~= scale then
+        mine.ignoreScale, mine.scaleFrom = ignore, scale
+        if mine.SetIgnoreParentScale then
+            mine:SetIgnoreParentScale(not ignore)
+            mine:SetScale(scale)
+            mine:SetIgnoreParentScale(ignore)
+        else
+            mine:SetScale(scale)
+        end
+    end
     if whole then
         -- The name is one line, cut short to its width (wordwrap="false" in Blizzard_NamePlates.xml). The copy took
         -- wrapping from the game's name and wrapped a long name onto a second line in game, or, laid over the name's
@@ -853,15 +879,23 @@ local function CopyText(mine, theirs, shown, whole, plate)
         end
     end
     mine:SetText(theirs:GetText())
+    -- Their own alpha too: plate addons hide the name with SetAlpha(0) (Better Blizzard Plates, to draw it elsewhere or
+    -- not at all), which IsShown does not see. It can be a secret (SecretReturnsForAspect Alpha), which SetAlpha takes.
+    local okAlpha, alpha = pcall(theirs.GetAlpha, theirs)
+    if not okAlpha or (not Secret(alpha) and type(alpha) ~= "number") then alpha = 1 end
     if secret then
-        if not (mine.SetAlphaFromBoolean and pcall(mine.SetAlphaFromBoolean, mine, shown, 1, 0)) then
+        -- Their alpha as the shown one, secret or not; should the client refuse a secret there, the copy shows at full
+        -- while the game shows the name.
+        local faded = mine.SetAlphaFromBoolean and (pcall(mine.SetAlphaFromBoolean, mine, shown, alpha, 0)
+            or pcall(mine.SetAlphaFromBoolean, mine, shown, 1, 0))
+        if not faded then
             mine:Hide()
             return
         end
-        mine.fromBoolean = true
-    elseif mine.fromBoolean then
-        mine.fromBoolean = nil
-        mine:SetAlpha(1)
+    elseif Secret(alpha) then
+        mine:SetAlpha(alpha)
+    else
+        AlphaTo(mine, alpha)
     end
     mine:Show()
 end
@@ -882,7 +916,23 @@ local function SyncPlateTexts(b)
     local name = b.unitFrame and b.unitFrame.name
     if type(name) == "table" and name.GetText then
         local ok, shown = pcall(name.IsVisible, name)
-        local inside = NameInsideBar()
+        -- The game's name is the unit frame's own (Blizzard_NamePlates.xml). Plate addons move it to frames of their
+        -- own: Better Blizzard Plates always does, two levels over the bar (RaiseNameAboveHealthBar), level with the
+        -- liquid and under its shading, so the copy is still wanted; only with its Raise Strata option (a HIGH frame) is
+        -- the name over everything of ours, and a copy there would only lie under it. So the copy is left out when the
+        -- name's frame is in another strata from the bar's, or above the copies' own level.
+        local over = false
+        local okParent, parent = pcall(name.GetParent, name)
+        if okParent and type(parent) == "table" and not Secret(parent) and parent ~= b.unitFrame then
+            local okS, theirs, ours = pcall(function() return parent:GetFrameStrata(), b.bar:GetFrameStrata() end)
+            local okL, level, mine = pcall(function() return parent:GetFrameLevel(), t.frame:GetFrameLevel() end)
+            if okS and not Secret(theirs, ours) and theirs ~= ours then
+                over = true
+            elseif okL and type(level) == "number" and type(mine) == "number" and not Secret(level, mine) then
+                over = level > mine
+            end
+        end
+        local inside = not over and NameInsideBar()
         if inside == nil then inside = Inside(name, b.bar) end
         if not ok or not inside then shown = false elseif not Secret(shown) then shown = shown == true end
         CopyText(t.name, name, shown, true, plate)
