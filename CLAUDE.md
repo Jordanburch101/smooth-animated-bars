@@ -149,7 +149,7 @@ Facts found while building this, which the code relies on and which are not obvi
   Heals, food and drink (`Heals.lua`, `readHeal`/`readRest`) go the same way: English first, then each language's
   readers, built from its wording by `Locale.lua`'s `L.healReader` (the addon's own, not DoesItDie's). Checked the same
   way, against Forever's text for the lowest and highest rank of every class heal, bandages, food and drink in every
-  language, each read as the English of the same spell (`tools/harness/heal_language_cases.json`, 1144 cases). That
+  language, each read as the English of the same spell (`tools/harness/heal_language_cases.json`, 1160 cases). That
   check found English missing Greater Heal ("A slow casting spell that heals..."), Prayer of Healing and Desperate
   Prayer, and a food's buff worded "If you eat for 10 seconds"; all read now. Tranquility ("every 2 sec") and food
   restoring a share of health are read in no language. `/sab heals` logs `UNREAD` for non-English text with a number
@@ -198,7 +198,13 @@ Facts found while building this, which the code relies on and which are not obvi
   player's own raid unit is also known by GUID (`UnitIsUnit` is `SecretWhenUnitComparisonRestricted`); a hidden
   group marker looks nothing up while no heal goes anywhere (`Heals.Busy`), raid markers follow `Bars.raid.Rate`,
   and the aura check finds who's who once a pass (`unitMap`). Counted in the mock before those: 40 raid frames with
-  ten Renews out went from about 4600 widget calls a frame to 6400.
+  ten Renews out went from about 4600 widget calls a frame to 6400. A second review: the loose "Name-..." match for a member
+  had no realm guard, so in a raid a heal on an outsider with the player's first name landed on the player's own raid
+  unit (a member UnitName gives no realm for is now from the player's realm, and loose matches only where
+  `GetRealmName` cannot be read); a secret sent name is kept for nobody; a member out of sight (`UnitIsVisible`) keeps
+  a heal whose aura reads as gone; an idle group marker stops before any widget call, and an owner change on a hidden
+  marker no longer hides it again (that cleared a heal's splash just landed); `TryBuildGroup` guards both callers.
+  Forever's Chinese battleground bandages say 回复, not 恢复 (now in the cases, 1160).
 - **Shields** (`Shield.lua`, `shield`): Forever's player frame has the game's absorb display (`healthBar.TotalAbsorbBar`,
   a segment with `Fill` and `TiledFillOverlay`, and `OverAbsorbGlow` at the bar's end; Camelot `PlayerFrame.lua` wires
   them up). `UnitGetTotalAbsorbs` is `SecretReturns`, but the game's heal prediction calculator

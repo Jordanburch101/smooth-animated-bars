@@ -850,6 +850,15 @@ function UnitExists(unit)
     if type(unit) == "string" and (unit:match("^party%d$") or unit:match("^raid%d+$")) then return __units[unit] ~= nil end
     return unit == "target" and __target ~= nil
 end
+-- Whether the client has the unit in sight (Forever's docs: a plain boolean): the player, the target, plates, and a
+-- group member unless farAway is set on its __units entry.
+function UnitIsVisible(unit)
+    if unit == "player" then return true end
+    if unit == "target" then return __target ~= nil end
+    if plateUnit(unit) then return true end
+    local member = __groupUnit(unit)
+    return member ~= nil and not member.farAway
+end
 function UnitGUID(unit)
     if unit == "player" then return "Player-1-00000001" end
     if unit == "target" and __target then return __target.guid end

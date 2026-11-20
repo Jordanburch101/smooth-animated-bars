@@ -202,17 +202,23 @@ local function isPlayerName(targetName, loose)
 end
 
 -- Whether a sent target name is a group member's: the name alone, or with their realm ("Name-Realm") or the second
--- value UnitName gives (a realm, or on Forever perhaps a surname). loose: also any "Name-...", for a member whose
--- realm UnitName leaves out (the player's own).
+-- value UnitName gives (a realm, or on Forever perhaps a surname); a member UnitName gives no realm for is from the
+-- player's own. loose: also any "Name-...", only where the player's realm cannot be read (as isPlayerName), so a heal
+-- on someone outside the group from another realm is never taken for a member's of the same first name.
 local function isUnitName(unit, targetName, loose)
     local ok, name, second = pcall(UnitName, unit)
     if not readable(ok, name) or type(name) ~= "string" or name == "" then return false end
     if targetName == name then return true end
-    if type(second) == "string" and not isSecret(second) and second ~= ""
-        and (targetName == name .. "-" .. (realmPart(second) or "") or targetName == name .. " " .. second) then
+    local okRealm, realm = pcall(GetRealmName)
+    realm = okRealm and realmPart(realm)
+    if type(second) == "string" and not isSecret(second) and second ~= "" then
+        if targetName == name .. "-" .. (realmPart(second) or "") or targetName == name .. " " .. second then
+            return true
+        end
+    elseif realm and targetName == name .. "-" .. realm then
         return true
     end
-    return loose and targetName:sub(1, #name + 1) == name .. "-"
+    return loose and not realm and targetName:sub(1, #name + 1) == name .. "-"
 end
 
 local function exists(unit)
@@ -264,7 +270,10 @@ end
 -- is known only by name; with no name the cast goes to the target if the player can help it, else to the player.
 -- The second value names the group unit, for the trace.
 local function recipient(targetName)
-    if type(targetName) == "string" and not isSecret(targetName) and targetName ~= "" then
+    -- A name the client keeps secret says nothing of whose it is (a mouseover or click-cast heal could be on anyone):
+    -- not kept, rather than taken for the target's or the player's.
+    if isSecret(targetName) then return nil end
+    if type(targetName) == "string" and targetName ~= "" then
         -- Exact readings first, the player's then each member's; then the loose "Name-..." ones in the same order.
         for _, loose in ipairs({ false, true }) do
             if isPlayerName(targetName, loose) then return "player" end
@@ -387,6 +396,16 @@ local function healAura(heal, units)
     return true, ends
 end
 
+-- Whether the unit a heal went to is in sight, where its auras can be read: a member out of range answers "none" for
+-- an aura still on them. The player always is; a member when UnitIsVisible says so.
+local function inSight(who, units)
+    local unit = unitOf(who, units)
+    if unit == "player" then return true end
+    if not unit then return false end
+    local ok, seen = pcall(UnitIsVisible, unit)
+    return readable(ok, seen) and seen and true or false
+end
+
 local function inCombat()
     local ok, fighting = pcall(UnitAffectingCombat, "player")
     if readable(ok, fighting) then return fighting and true or false end
@@ -407,7 +426,7 @@ local function checkAuras(now)
             if found then
                 heal.auraSeen = true
                 if ends then heal.auraEnds = ends end
-            elseif found == false and heal.auraSeen and not inCombat() then
+            elseif found == false and heal.auraSeen and not inCombat() and inSight(heal.who, units) then
                 heals[name] = nil
                 trace("GONE " .. heal.name .. ": its aura is not on " .. whom(heal.who))
             end

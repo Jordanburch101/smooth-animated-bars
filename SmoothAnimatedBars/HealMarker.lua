@@ -563,6 +563,9 @@ local function Refresh(m)
 end
 
 local function Update(m, dt)
+    -- A group bar showing nothing while no heal goes anywhere has nothing to do, not even a look at the bar: a raid's
+    -- dozens wait here, and so do raid markers left when Raid Frames Health is turned off.
+    if (m.party or m.raid) and m.hidden and not ns.Heals.Busy() then return end
     local sight = ns.Bars.Sight(m.bar) -- a secret answer is taken as shown
     if sight == "hidden" then return Hide(m) end
     -- Faded out by another addon (an idle fade, or a unit frame addon's hidden game frame), and perhaps soon back: paused
@@ -582,15 +585,14 @@ local function Update(m, dt)
     m.since = m.since + dt
     if m.since >= REFRESH_EVERY then
         m.since = 0
-        -- A group bar showing nothing while no heal goes anywhere has nothing to read: a raid's dozens wait here.
-        if (m.party or m.raid) and m.hidden and not ns.Heals.Busy() then return end
         -- A group bar the game has put another member on: the last member's heals go at once, not gliding into this
-        -- one's health, and theirs grow in from nothing.
+        -- one's health, and theirs grow in from nothing. A marker already hidden is left so: hiding it again would
+        -- drop the splash of a heal that has just landed on the new member (Hide clears it).
         if m.party or m.raid then
             local who = Owner(m)
             if who ~= m.owner then
                 m.owner = who
-                Hide(m)
+                if not m.hidden then Hide(m) end
             end
         end
         local w, h = ns.Bars.Size(m.bar, m.width, m.height)
@@ -810,21 +812,24 @@ local function BuildGroup()
     end
 end
 
+-- BuildGroup, guarded: a failure is reported once and stops the building until a reload, so it can hold up neither
+-- every marker's update each second (OnUpdate) nor the rest of Apply (heal tracking, the driver, the player's marker).
+local function TryBuildGroup()
+    if groupErr then return end
+    local ok, err = pcall(BuildGroup)
+    if not ok then
+        groupErr = tostring(err)
+        ns.Core.Print("Error building the party and raid heal markers, which are off until a reload: " .. groupErr)
+    end
+end
+
 local function OnUpdate(_, elapsed)
     local dt = math.min(elapsed, 0.1)
     if dt <= 0 then return end
     lookIn = lookIn - dt
     if lookIn <= 0 then
         lookIn = PARTY_LOOK_EVERY
-        -- A failure here is reported once and stops the looking, so it cannot hold up every marker's update each second.
-        if not groupErr then
-            local ok, err = pcall(BuildGroup)
-            if not ok then
-                groupErr = tostring(err)
-                ns.Core.Print("Error building the party and raid heal markers, which are off until a reload: "
-                    .. groupErr)
-            end
-        end
+        TryBuildGroup()
     end
     Each(function(m)
         if not m.live or m.err or m.retired then return end
@@ -859,7 +864,7 @@ function HealMarker.Apply()
     if live then
         BuildDisplay()
         BuildExternal()
-        BuildGroup()
+        TryBuildGroup()
     end
     ns.Heals.Enable(live)
     Each(function(m)

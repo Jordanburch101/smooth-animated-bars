@@ -5737,6 +5737,166 @@
   ]
  },
  {
+  "label": "enUS Warsong Gulch Runecloth Bandage (23567)",
+  "desc": "Heals 2000 damage over 8 sec.  Usable only inside Warsong Gulch.",
+  "heal": [
+   2000,
+   8,
+   0
+  ],
+  "rest": null
+ },
+ {
+  "label": "koKR Warsong Gulch Runecloth Bandage (23567)",
+  "desc": "8초에 걸쳐 2000의 생명력을 회복합니다. 전쟁노래 협곡에서만 사용 가능합니다.",
+  "heal": [
+   2000,
+   8,
+   0
+  ],
+  "rest": null
+ },
+ {
+  "label": "frFR Warsong Gulch Runecloth Bandage (23567)",
+  "desc": "Rend 2000 points de vie en 8 sec. N'est utilisable que dans le goulet des Chanteguerres.",
+  "heal": [
+   2000,
+   8,
+   0
+  ],
+  "rest": null
+ },
+ {
+  "label": "deDE Warsong Gulch Runecloth Bandage (23567)",
+  "desc": "Heilt 8 Sek. lang 2000 Punkt(e) Schaden. Nur in der Warsongschlucht benutzbar.",
+  "heal": [
+   2000,
+   8,
+   0
+  ],
+  "rest": null
+ },
+ {
+  "label": "zhCN Warsong Gulch Runecloth Bandage (23567)",
+  "desc": "在8秒内回复2000点生命值。只能在战歌峡谷内使用。",
+  "heal": [
+   2000,
+   8,
+   0
+  ],
+  "rest": null
+ },
+ {
+  "label": "esES Warsong Gulch Runecloth Bandage (23567)",
+  "desc": "Cura 2000 p. de daño durante 8 s. Solo se puede usar en la Garganta Grito de Guerra.",
+  "heal": [
+   2000,
+   8,
+   0
+  ],
+  "rest": null
+ },
+ {
+  "label": "ruRU Warsong Gulch Runecloth Bandage (23567)",
+  "desc": "Исцеляет 2000 ед. урона в течение 8 сек. Возможно использование только в Ущелье Песни Войны.",
+  "heal": [
+   2000,
+   8,
+   0
+  ],
+  "rest": null
+ },
+ {
+  "label": "ptBR Warsong Gulch Runecloth Bandage (23567)",
+  "desc": "Cura 2000 pontos de vida ao longo de 8 s. Só pode ser usado dentro da Ravina Brado Guerreiro.",
+  "heal": [
+   2000,
+   8,
+   0
+  ],
+  "rest": null
+ },
+ {
+  "label": "enUS Highlander's Runecloth Bandage (24412)",
+  "desc": "Heals 640 damage over 8 sec.  Usable only inside Arathi Basin.",
+  "heal": [
+   640,
+   8,
+   0
+  ],
+  "rest": null
+ },
+ {
+  "label": "koKR Highlander's Runecloth Bandage (24412)",
+  "desc": "8초에 걸쳐 640의 생명력을 회복합니다. 아라시 분지에서만 사용 가능합니다.",
+  "heal": [
+   640,
+   8,
+   0
+  ],
+  "rest": null
+ },
+ {
+  "label": "frFR Highlander's Runecloth Bandage (24412)",
+  "desc": "Rend 640 points de vie en 8 sec. N'est utilisable que dans le bassin d'Arathi.",
+  "heal": [
+   640,
+   8,
+   0
+  ],
+  "rest": null
+ },
+ {
+  "label": "deDE Highlander's Runecloth Bandage (24412)",
+  "desc": "Heilt 8 Sek. lang 640 Punkt(e) Schaden. Nur im Arathibecken benutzbar.",
+  "heal": [
+   640,
+   8,
+   0
+  ],
+  "rest": null
+ },
+ {
+  "label": "zhCN Highlander's Runecloth Bandage (24412)",
+  "desc": "在8秒内回复640点生命值。只能在阿拉希盆地内使用。",
+  "heal": [
+   640,
+   8,
+   0
+  ],
+  "rest": null
+ },
+ {
+  "label": "esES Highlander's Runecloth Bandage (24412)",
+  "desc": "Cura 640 p. de daño durante 8 s. Solo se puede usar en la Cuenca de Arathi.",
+  "heal": [
+   640,
+   8,
+   0
+  ],
+  "rest": null
+ },
+ {
+  "label": "ruRU Highlander's Runecloth Bandage (24412)",
+  "desc": "Восполнение 640 ед. здоровья в течение 8 сек. Действует только в котловине Арати.",
+  "heal": [
+   640,
+   8,
+   0
+  ],
+  "rest": null
+ },
+ {
+  "label": "ptBR Highlander's Runecloth Bandage (24412)",
+  "desc": "Cura 640 pontos de vida ao longo de 8 s. Só pode ser usado dentro da Bacia Arathi.",
+  "heal": [
+   640,
+   8,
+   0
+  ],
+  "rest": null
+ },
+ {
   "label": "enUS Bloodrage (2687)",
   "desc": "Generates 10 rage at the cost of health, and then generates an additional 10 rage over 10 sec.",
   "heal": null,
