@@ -91,6 +91,97 @@ function L.comboPointsAwarded(desc)
     end
 end
 
+--------------------------------------------------------------------------------
+-- Heals, food and drink (Heals.lua). This part is the addon's own, not DoesItDie's: each language file hands
+-- L.healReader its wording and registers the readers it builds as parseHeal and parseRest (the returns of Heals.lua's
+-- own). Checked against Forever's tooltips for its heals, bandages, food and drink in every language (Wowhead,
+-- dataEnv=16); the cases are in tools/harness/heal_language_cases.json.
+--------------------------------------------------------------------------------
+
+local function first(desc, patterns)
+    for _, p in ipairs(patterns or {}) do
+        local a, b = desc:match(p)
+        if a then return a, b end
+    end
+end
+
+local function number(s)
+    return s and tonumber((s:gsub(",", "."))) or nil
+end
+
+-- spec: the language's wording, every pattern matched against the description as it is (digits as [0-9] next to
+-- multibyte text, as the DoT patterns spell them):
+--   heal   = patterns, any of which marks a heal, anchored at the text's start as the English reader's are ("^Cura",
+--            "^Rend [0-9]"): spells that cost, drain or convert health name it further in ("Vous rend 30% de vos points
+--            de vie", Last Stand; "perd 147 points de vie en 21 sec", Rend), and read anywhere they were taken for
+--            heals over time on the caster (a review found Bloodrage, Rend, Devouring Plague and Lightwell so);
+--   range  = a pattern capturing a direct heal's lowest and highest roll ("(%d+) al (%d+)");
+--   over   = patterns capturing, for a heal over time, the position where its duration stands, the seconds, and the
+--            position after them ("()durante (%d+%.?%d*) s()");
+--   after  = true where the amount comes after the duration ("Heilt das Ziel 15 Sek. lang um 830"), else it is the
+--            last number before it ("Rend 830 points de vie à la cible en 15 sec.");
+--   skip   = patterns marking text that is no heal for one target, though it reads like one: a channel healing the
+--            party "every 2 sec" (Tranquility, whose tick length a reader would take for the amount);
+--   rest   = patterns marking food or drink (the line about staying seated); such text is never a heal;
+--   health, mana = patterns capturing what food and drink restore, read only before the buff's text begins (extra:
+--            patterns marking it, "Also restores 8 Mana every 5 seconds"); restOver = patterns capturing their
+--            seconds; fed = patterns capturing how many seconds of eating bring a buff.
+function L.healReader(spec)
+    local function parseHeal(desc)
+        desc = desc:gsub("^ +", "")
+        if first(desc, spec.rest) or first(desc, spec.skip) or not first(desc, spec.heal) then return nil end
+        local direct = number((desc:match(spec.range))) or 0
+        local over, duration
+        for _, p in ipairs(spec.over) do
+            local at, secs, after = desc:match(p)
+            if at then
+                duration = number(secs)
+                if spec.after then
+                    over = number(desc:sub(after):match("([0-9]+)"))
+                else
+                    local last
+                    for n in desc:sub(1, at - 1):gmatch("([0-9]+)") do last = n end
+                    over = number(last)
+                end
+                break
+            end
+        end
+        if not (over and duration and duration > 0) then over, duration = nil, nil end
+        if not over and direct <= 0 then return nil end
+        return over, duration, direct
+    end
+    local function parseRest(desc)
+        if not first(desc, spec.rest) then return nil end
+        local duration = number((first(desc, spec.restOver)))
+        if not duration or duration <= 0 then return nil end
+        local restores = desc
+        for _, p in ipairs(spec.extra or {}) do
+            local at = restores:find(p)
+            if at then restores = restores:sub(1, at - 1) end
+        end
+        local health, mana = number((first(restores, spec.health))), number((first(restores, spec.mana)))
+        if not health and not mana then return nil end
+        return health, mana, duration, number((first(desc, spec.fed)))
+    end
+    return parseHeal, parseRest
+end
+
+-- The first registered language that reads `desc` as a heal: amount over time, its duration, the direct amount.
+function L.parseHeal(desc)
+    for _, language in ipairs(L.languages) do
+        local over, duration, direct = ask(language.parseHeal, desc)
+        if over or (type(direct) == "number" and direct > 0) then return over, duration, direct end
+    end
+end
+
+-- The first registered language that reads `desc` as food or drink: health, mana, seconds, seconds to a buff.
+function L.parseRest(desc)
+    for _, language in ipairs(L.languages) do
+        local health, mana, duration, fed = ask(language.parseRest, desc)
+        if type(duration) == "number" and (health or mana) then return health, mana, duration, fed end
+    end
+end
+
 -- Words nearly every English description has and other languages' descriptions don't ("sec" is left out: French
 -- writes it too).
 local ENGLISH_WORDS = { the = true, damage = true, ["and"] = true, ["for"] = true, over = true, of = true,
@@ -102,6 +193,7 @@ local function looksEnglish(desc)
     end
     return false
 end
+L.looksEnglish = looksEnglish
 
 -- Whether to log a description nothing read as a DoT (once per spell per session), so /sab dots shows the wording
 -- of a language that is not read yet, or not fully. Decided by the text itself, not GetLocale(): English

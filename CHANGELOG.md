@@ -4,9 +4,23 @@ Player-facing notes for each release. Write for players: what they can now
 do or see, and what was broken and now works. Leave out internal changes.
 Sections are `### New` and `### Fixed`; skip one that would be empty.
 
-## 1.12.1
+## 1.13.0
+
+### New
+- **Heal marker on party and raid frames**: your heals over time,
+  bandages and the heals you are casting on a party or raid member now show
+  ahead of their health, as they do on yours, on the party frames and on
+  raid-style frames alike. It follows the Heal Marker setting and shows
+  while their health has the liquid.
+- **Heal marker in every language**: your heals, bandages, food and drink
+  now show on French, German, Spanish, Portuguese, Russian, Korean and
+  Chinese clients too.
 
 ### Fixed
+- Greater Heal and Prayer of Healing now show on the heal marker while you
+  cast them.
+- Food whose buff says "If you eat for 10 seconds" now builds up to its buff
+  like other food.
 - An addon's debuff timer bars, drawn in the game's own aura buttons, no
   longer give an error in chat. The game keeps those bars to itself, so they
   stay as the game draws them.

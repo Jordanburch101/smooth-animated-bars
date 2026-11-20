@@ -175,10 +175,29 @@ local function parseDot(desc, comboPoints)
     end
 end
 
+-- Heals, food and drink (Locale.lua, L.healReader): the duration before the amount, "治疗目标，在15秒内恢复总计830点
+-- 生命值。", "在18秒内恢复总计59点生命值，进食时必须保持坐姿。"
+local parseHeal, parseRest = ns.locale.healReader({
+    heal = { "^治疗", "^为友方目标回复", "^施法缓慢的法术，可以为单一目标治疗", "^强大的祷言", "^立即为施法者回复",
+             "^在[0-9]+秒内恢复" },
+    range = "([0-9]+)至([0-9]+)",
+    over = { "()在([0-9]+%.?[0-9]*)秒内()" },
+    after = true,
+    skip = { "每[0-9]+秒" },
+    rest = { "坐姿" },
+    extra = { "另外", "如果" },
+    health = { "([0-9]+)点生命值" },
+    mana = { "([0-9]+)点法力值" },
+    restOver = { "在([0-9]+%.?[0-9]*)秒内" },
+    fed = { "至少([0-9]+)秒" },
+})
+
 ns.locale.register({
     tag = "zhCN",
     parseDot = parseDot,
     isFinisher = function(desc) return isFinisher(normalize(desc)) end,
     comboPointsAwarded = comboPointsAwarded,
     names = NAMES,
+    parseHeal = parseHeal,
+    parseRest = parseRest,
 })

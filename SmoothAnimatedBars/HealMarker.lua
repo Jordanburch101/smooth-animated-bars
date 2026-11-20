@@ -28,6 +28,14 @@
 -- left (a bar filling from the right, Frames Forever's lost health, shows what is missing). Their liquid is raised a
 -- level or more over the bar (Bars.lua, External.Raise), so the marker takes the same level and lies under it by
 -- sublevels, with seams, as on the player frame. The addon's own heal prediction is its own and is left as it is.
+-- The party frames' health bars get markers for the player's heals on each member (Heals.For), while the bar's liquid
+-- shows: laid out as on the player frame (the bar's mask, under the liquid by sublevels, with seams), following the unit
+-- the game puts on the bar, and updated at most PARTY_FPS times a second, as the party liquids are (Bars.lua). The
+-- game's prediction of the player's heals there (MyHealPredictionBar) is hidden while the marker shows, as on the
+-- player frame; heals from others keep the game's bar. The raid-style frames' health bars (raid frames and raid-style
+-- party frames, the player's own among them) get them too, laid out for those frames (New, RAID_LAYERS): one heal
+-- liquid, under the health liquid by draw layer, cut by masks rather than clip frames, and the button's own prediction
+-- (myHealPrediction) hidden while it shows.
 
 local _, ns = ...
 
@@ -52,6 +60,10 @@ local SPLASH_APPLIED, SPLASH_TICK = 0.6, 0.2
 -- A cast heal landing: a burst of its theme's own particles (leaves for Nature, sparks for Holy) twice over, which
 -- also charges the theme's lightning, as its liquid pours into the health.
 local SPLASH_LANDED, LANDED_BURSTS = 1.2, 2
+-- A party or raid member's marker updates at most this often, as the party liquids do (Bars.lua, PARTY_FPS).
+local PARTY_FPS = 20
+-- Seconds between looks for party and raid health bars that have the liquid and no marker yet (the frames come and go).
+local PARTY_LOOK_EVERY = 1
 
 -- A heal liquid's look by its school (Heals.lua's: Holy 2, Nature 8, "bandage", and "food" and "drink" for eating
 -- and drinking, Honey on the health and Nagrand on the mana, as they are).
@@ -123,12 +135,68 @@ local function MaskOf(bar)
     if type(mask) == "table" and mask.GetObjectType and mask:GetObjectType() == "MaskTexture" then return mask end
 end
 
+-- The unit the game shows on a party bar (party1..4; the player in Edit Mode's preview, whose heals stay on the
+-- player's own bars), or nil.
+local function PartyUnit(bar)
+    local unit = bar.unit
+    if type(unit) ~= "string" or Secret(unit) or unit == "player" then return nil end
+    return unit
+end
+
+-- Whether Edit Mode is open: its preview puts the player on every raid-style frame.
+local function EditMode()
+    local f = rawget(_G, "EditModeManagerFrame")
+    if type(f) ~= "table" or type(f.IsEditModeActive) ~= "function" then return false end
+    local ok, on = pcall(f.IsEditModeActive, f)
+    return ok and on == true
+end
+
+-- The unit a raid-style frame's bar shows, as its liquid follows it (Bars.raid.Follow: the button's displayedUnit), or
+-- nil (none yet, or Edit Mode's preview). The player's own frame among them shows the player's heals.
+local function RaidUnit(bar)
+    local b = ns.Bars.stateOf[bar]
+    local unit = b and b.unit
+    if type(unit) ~= "string" or Secret(unit) or EditMode() then return nil end
+    return unit
+end
+
+-- The unit a group marker's bar shows now: a party frame's or a raid-style frame's.
+local function GroupUnit(m)
+    if m.party then return PartyUnit(m.bar) end
+    if m.raid then return RaidUnit(m.bar) end
+end
+
+-- Whose heals a marker shows, as Heals.KeyOf: the player's, or the group member's on its bar now.
+local function Owner(m)
+    if not (m.party or m.raid) then return "player" end
+    local unit = GroupUnit(m)
+    return unit and ns.Heals.KeyOf(unit)
+end
+
 --------------------------------------------------------------------------------
 -- One marker
 --------------------------------------------------------------------------------
 
+-- A raid-style frame's marker (spec.raid). The client sorts the textures of every frame at the button's level by draw
+-- layer together, and a clipping frame is drawn outside that sorting (Bars.lua, Bars.raid): so no frame of the marker
+-- clips, a square mask of ours cuts it to the bar (motes too, the frames touch) and another to the part past the
+-- health's edge, and its one liquid draws in BACKGROUND 3..7, above the button's background (BACKGROUND 0) and under
+-- the health liquid (BORDER -4..0), so the health's front lies over it with no seam; its motes join the health
+-- liquid's in BORDER 2, 3. There is room there for one heal liquid, not two: every heal on the frame shares it, in the
+-- first one's colour.
+local RAID_LAYERS = { ARTWORK = { "BACKGROUND", 0 }, OVERLAY = { "BORDER", -1 } }
+
+local function SquareMask(frame)
+    local mask = frame:CreateMaskTexture()
+    mask:SetTexture(ns.Bars.raid.MASK, "CLAMPTOBLACKADDITIVE", "CLAMPTOBLACKADDITIVE")
+    return mask
+end
+
 -- spec: { bar = the health bar, mask = its mask or nil, source = function() returning max (may be secret),
--- total, list (as Heals.Player's), visible = function() whether to show, raised = a flat bar's (one level up) }.
+-- total, list (as Heals.Player's), visible = function() whether to show, raised = a flat bar's (one level up),
+-- raid = a raid-style frame's (above), prediction = the game's prediction of the player's heals, where not on the bar,
+-- tight = cut at the bar's own edges, no room for motes above and below (the editor's example raid, whose frames
+-- touch, as its own liquid is) }.
 local function New(spec)
     local bar = spec.bar
     local w, h = ns.Bars.Size(bar, 1, 1)
@@ -143,12 +211,17 @@ local function New(spec)
     -- The bar's length, with room for the motes above and below: healing past the bar's end is cut off.
     m.clip = CreateFrame("Frame", nil, bar)
     AtParentLevel(m.clip, bar)
-    m.clip:SetPoint("TOPLEFT", bar, "TOPLEFT", 0, SPILL)
-    m.clip:SetPoint("BOTTOMRIGHT", bar, "BOTTOMRIGHT", 0, -SPILL)
-    m.clip:SetClipsChildren(true)
+    local spill = spec.tight and 0 or SPILL
+    m.clip:SetPoint("TOPLEFT", bar, "TOPLEFT", 0, spill)
+    m.clip:SetPoint("BOTTOMRIGHT", bar, "BOTTOMRIGHT", 0, -spill)
+    m.clip:SetClipsChildren(not spec.raid)
     m.clip:Hide()
+    if spec.raid then
+        spec.mask = SquareMask(m.clip)
+        spec.mask:SetAllPoints(bar)
+    end
 
-    for i = 1, LIQUIDS do
+    for i = 1, spec.raid and 1 or LIQUIDS do
         local d = { value = 0, shown = 0, idle = 0 }
         -- The running total up to this liquid: its fill's right edge is where this liquid ends.
         d.run = HiddenBar(m.clip)
@@ -161,7 +234,7 @@ local function New(spec)
         d.from = i == 1 and edge or m.liquids[i - 1].fill
         d.pool = CreateFrame("Frame", nil, m.clip)
         AtParentLevel(d.pool, m.clip)
-        d.pool:SetClipsChildren(true)
+        d.pool:SetClipsChildren(not spec.raid)
         d.pool:Hide()
         d.mover = CreateFrame("Frame", nil, d.pool)
         AtParentLevel(d.mover, d.pool)
@@ -170,19 +243,33 @@ local function New(spec)
         d.mover:SetWidth(w)
         d.liquid = ns.Liquid.New(d.mover, math.max(w, 1) + ROOM, math.max(h, 1), ns.Themes.Get(DEFAULT_THEME),
             ns.Bars.EffectOptions(bar)) -- the bar's own effects, where it has its own
+        if spec.raid then
+            -- The pool's cut, as a mask (Layer places it): from a little under the health's edge to the bar's end.
+            d.poolMask = SquareMask(m.clip)
+            d.liquid:SetLayerMap(RAID_LAYERS)
+        end
         if spec.mask then
             local free = {}
-            for _, mote in ipairs(d.liquid.motes) do free[mote.tex] = true end
+            if not spec.raid then
+                for _, mote in ipairs(d.liquid.motes) do free[mote.tex] = true end
+            end
             for _, t in ipairs(d.liquid.textures) do
                 if not free[t] then t:AddMaskTexture(spec.mask) end
+            end
+            if d.poolMask then
+                for _, mote in ipairs(d.liquid.motes) do free[mote.tex] = true end
+                for _, t in ipairs(d.liquid.textures) do
+                    if not free[t] then t:AddMaskTexture(d.poolMask) end
+                end
             end
         end
         m.liquids[i] = d
     end
 
     -- The seams, made after the pools so they lie above them. Each is a bar wide, ending on the edge its liquid
-    -- starts from, drawn from the front of the liquid before it. Liquid.lua's rows give the slice count.
-    for _, d in ipairs(m.liquids) do
+    -- starts from, drawn from the front of the liquid before it. Liquid.lua's rows give the slice count. A raid-style
+    -- frame's marker needs none (its layers order it) and has none.
+    for _, d in ipairs(spec.raid and {} or m.liquids) do
         local s = { rows = {}, tips = {}, colorA = CreateColor(1, 1, 1, 0), colorB = CreateColor(1, 1, 1, 1) }
         s.mover = CreateFrame("Frame", nil, m.clip)
         AtParentLevel(s.mover, m.clip)
@@ -233,22 +320,29 @@ local function Layer(m)
     if under == m.under then return end
     m.under = under
     for i, d in ipairs(m.liquids) do
-        d.liquid:SetSublevelOffset(under and UNDER[i] or 0)
+        -- A raid-style frame's liquid is ordered by its layer map, not by sublevels.
+        d.liquid:SetSublevelOffset((under and not m.spec.raid) and UNDER[i] or 0)
         d.pool:ClearAllPoints()
         d.pool:SetPoint("TOPLEFT", d.from, "TOPRIGHT", under and -OVERLAP or 0, SPILL)
-        if under or i == LIQUIDS then
+        if under or i == #m.liquids then
             d.pool:SetPoint("BOTTOMRIGHT", m.clip, "BOTTOMRIGHT")
         else
             d.pool:SetPoint("BOTTOMRIGHT", d.fill, "BOTTOMRIGHT", 0, -SPILL)
+        end
+        if d.poolMask then
+            d.poolMask:ClearAllPoints()
+            d.poolMask:SetPoint("TOPLEFT", d.from, "TOPRIGHT", under and -OVERLAP or 0, 0)
+            d.poolMask:SetPoint("BOTTOMRIGHT", m.bar, "BOTTOMRIGHT")
         end
     end
 end
 
 -- The game's prediction of the player's own heals: its fill, or nil. The player frame's is a bar with a Fill, the
--- Personal Resource Display's a texture on the bar.
-local function GamePrediction(bar)
+-- Personal Resource Display's a texture on the bar, a raid-style frame's a texture on its button (spec.prediction).
+local function GamePrediction(m)
+    local bar = m.bar
     local own = bar.MyHealPredictionBar
-    local fill = type(own) == "table" and own.Fill or bar.myHealPrediction
+    local fill = m.spec.prediction or (type(own) == "table" and own.Fill) or bar.myHealPrediction
     if type(fill) == "table" and fill.SetAlpha and fill.GetAlpha then return fill end
 end
 
@@ -256,7 +350,7 @@ end
 -- addon's bar is its own: whatever prediction it draws is left alone, whatever its fields are called.
 local function GameFill(m, alpha)
     if m.spec.external then return end
-    local fill = GamePrediction(m.bar)
+    local fill = GamePrediction(m)
     if not fill then return end
     local now = fill:GetAlpha() -- a secret if the game set it from one, which cannot be compared
     if Secret(now) or now ~= alpha then fill:SetAlpha(alpha) end
@@ -345,13 +439,13 @@ end
 
 -- The heals by school, oldest first (the list is), as at most LIQUIDS groups { school, heal }: a school after
 -- the last one with a liquid of its own joins that one.
-local function Groups(list)
+local function Groups(list, n)
     local bySchool, groups = {}, {}
     for _, entry in ipairs(list) do
         local school = entry.school or 0
         local g = bySchool[school]
         if not g then
-            g = groups[LIQUIDS]
+            g = groups[n]
             if not g then
                 g = { school = school, heal = 0 }
                 groups[#groups + 1] = g
@@ -370,7 +464,7 @@ local function Refresh(m)
     m.landed, m.burst, m.calm = false, nil, nil
     if not spec.visible() then return false end
     local max, total, list = spec.source()
-    local groups = (list and #list > 0 and total > 0) and Groups(list) or {}
+    local groups = (list and #list > 0 and total > 0) and Groups(list, #m.liquids) or {}
     -- With nothing left on the way, the liquids still glide away into the health (a cast heal landing) before
     -- the marker hides.
     if #groups == 0 then
@@ -428,8 +522,10 @@ local function Refresh(m)
     -- The liquid nearest the bar's front pours into it (Bars.Inflow); while gliding away, nothing does.
     local first = m.liquids[1]
     ns.Bars.Inflow(m.bar, #groups > 0 and first.pool:IsShown() and first.liquid or nil)
-    -- A meal with a buff builds up in the bar's own liquid and lets go once, when the buff is reached.
-    local progress, startedAt = ns.Heals.Charge(m.name)
+    -- A meal with a buff builds up in the bar's own liquid and lets go once, when the buff is reached. Only the player
+    -- eats: a party member's bar has none.
+    local progress, startedAt
+    if not (m.party or m.raid) then progress, startedAt = ns.Heals.Charge(m.name) end
     if progress and #groups > 0 then
         if startedAt ~= m.chargeFor then m.chargeFor, m.released = startedAt, false end
         if progress < 1 then
@@ -475,28 +571,35 @@ local function Update(m, dt)
     if sight == "faded" then
         m.landed, m.burst, m.calm = false, nil, true
         m.since = REFRESH_EVERY -- read again the moment it shows
-        local progress, startedAt = ns.Heals.Charge(m.name)
+        local progress, startedAt
+        if not (m.party or m.raid) then progress, startedAt = ns.Heals.Charge(m.name) end
         if progress and progress >= 1 and not (m.released and m.chargeFor == startedAt) then
             m.chargeFor, m.released = startedAt, true
             ns.Bars.Sate(m.bar)
         end
         return
     end
-    m.feed = m.feed + dt
-    if m.feed >= FEED_EVERY then
-        m.feed = 0
-        Feed(m, true)
-    end
     m.since = m.since + dt
     if m.since >= REFRESH_EVERY then
         m.since = 0
+        -- A group bar showing nothing while no heal goes anywhere has nothing to read: a raid's dozens wait here.
+        if (m.party or m.raid) and m.hidden and not ns.Heals.Busy() then return end
+        -- A group bar the game has put another member on: the last member's heals go at once, not gliding into this
+        -- one's health, and theirs grow in from nothing.
+        if m.party or m.raid then
+            local who = Owner(m)
+            if who ~= m.owner then
+                m.owner = who
+                Hide(m)
+            end
+        end
         local w, h = ns.Bars.Size(m.bar, m.width, m.height)
         if (w ~= m.width or h ~= m.height) and w >= 1 and h >= 1 then
             m.width, m.height = w, h
             for _, d in ipairs(m.liquids) do
                 d.run:SetWidth(w)
                 d.mover:SetWidth(w)
-                d.seam.mover:SetWidth(w)
+                if d.seam then d.seam.mover:SetWidth(w) end
                 d.liquid:SetSize(w + ROOM, h)
             end
         end
@@ -504,7 +607,13 @@ local function Update(m, dt)
         Raise(m)
         Layer(m)
     end
+    -- Nothing showing: nothing to keep up until the next read (a raid's dozens of markers mostly wait here).
     if not m.clip:IsShown() then return end
+    m.feed = m.feed + dt
+    if m.feed >= FEED_EVERY then
+        m.feed = 0
+        Feed(m, true)
+    end
     GameFill(m, 0)
 
     for _, d in ipairs(m.liquids) do
@@ -527,7 +636,7 @@ local function Update(m, dt)
             if step then d.liquid:Update(step, m.width) end
         end
     end
-    DrawSeams(m)
+    if not m.spec.raid then DrawSeams(m) end
 end
 
 --------------------------------------------------------------------------------
@@ -540,13 +649,17 @@ local extra = {} -- the Personal Resource Display's, by bar: its health, its pow
                  -- other addons' player bars
 local retired = {} -- other addons' markers replaced when their bar was added again as the other kind, never shown again
 local previews = {} -- the preview frames' (Preview.lua), fed their example heals
+local group = {} -- the party frames' and the raid-style frames' health bars', by bar
 local MANA = Enum and Enum.PowerType and Enum.PowerType.Mana or 0
 local driver
+local lookIn = 0 -- seconds to the next look for party bars without a marker
+local groupErr   -- an error building group markers, once reported
 
 local function Each(fn)
     if player then fn(player) end
     if mana then fn(mana) end
     for _, m in pairs(extra) do fn(m) end
+    for _, m in pairs(group) do fn(m) end
     for _, m in ipairs(previews) do fn(m) end
 end
 
@@ -580,12 +693,15 @@ local function SourceFor(m, read, maxOf)
 end
 
 -- name: what the marker shows, "health" or "mana" (Heals.lua's resources); label: whose, for messages. external: for
--- another addon's bar, its mask and a function for its liquid's levels above the bar.
-local function BuildOn(bar, name, read, visible, label, external)
+-- another addon's bar, its mask and a function for its liquid's levels above the bar. opts: { raid = true and
+-- prediction = the game's prediction of the player's heals on its button, for a raid-style frame's bar; tight = true }.
+local function BuildOn(bar, name, read, visible, label, external, opts)
     if type(bar) ~= "table" or not bar.GetStatusBarTexture then return nil end
     local flatMask = ns.Bars.PlateMask(bar)
     local spec = { bar = bar, mask = flatMask or MaskOf(bar), visible = visible, raised = flatMask ~= nil }
     if external then spec.mask, spec.up, spec.external = external.mask, external.up, true end
+    if opts and opts.raid then spec.mask, spec.raid, spec.prediction = nil, true, opts.prediction end
+    if opts and opts.tight then spec.tight = true end
     -- A raised marker shows only over the bar's own liquid: without it, the game's fill is at the bar's level, under
     -- the bar's dark background.
     if spec.raised then spec.visible = function() return ns.Bars.IsLive(bar) and visible() end end
@@ -656,12 +772,76 @@ local function BuildExternal()
     end
 end
 
+-- The party frames' and the raid-style frames' health bars: a marker on each once it has the liquid (whose mask, layers
+-- and effects it takes), following the member on the bar. The frames are made when they first show, and raid frames
+-- are made on demand, so this is tried again now and then (OnUpdate).
+local function BuildGroup()
+    for _, kind in ipairs({ "party", "raid" }) do
+        for _, found in ipairs(ns.Bars.FindAll(kind .. "Health")) do
+            local bar = found.bar
+            if not group[bar] and ns.Bars.Liquid(bar) then
+                local m
+                local function unit() return m and GroupUnit(m) end
+                local function read()
+                    local u = unit()
+                    if not u then return 0, {} end
+                    return ns.Heals.For(u)
+                end
+                local function visible()
+                    local u = unit()
+                    if not u or not ns.Bars.IsLive(bar) then return false end
+                    local ok, dead = pcall(UnitIsDeadOrGhost, u)
+                    return not (ok and not Secret(dead) and dead)
+                end
+                local opts
+                if kind == "raid" then
+                    local b = ns.Bars.stateOf[bar]
+                    local member = b and b.spot.member
+                    opts = { raid = true, prediction = type(member) == "table" and member.myHealPrediction or nil }
+                end
+                m = BuildOn(bar, "health", read, visible, kind .. " health", nil, opts)
+                if m then
+                    m[kind], m.every, m.wait = true, 1 / PARTY_FPS, 0
+                    m.live = ns.Core.Get("heals") and true or false
+                    group[bar] = m
+                end
+            end
+        end
+    end
+end
+
 local function OnUpdate(_, elapsed)
     local dt = math.min(elapsed, 0.1)
     if dt <= 0 then return end
+    lookIn = lookIn - dt
+    if lookIn <= 0 then
+        lookIn = PARTY_LOOK_EVERY
+        -- A failure here is reported once and stops the looking, so it cannot hold up every marker's update each second.
+        if not groupErr then
+            local ok, err = pcall(BuildGroup)
+            if not ok then
+                groupErr = tostring(err)
+                ns.Core.Print("Error building the party and raid heal markers, which are off until a reload: "
+                    .. groupErr)
+            end
+        end
+    end
     Each(function(m)
         if not m.live or m.err or m.retired then return end
-        local ok, err = pcall(Update, m, dt)
+        local step = dt
+        -- A party or raid member's marker at most PARTY_FPS times a second, a raid frame's at the raid liquids' rate
+        -- (Bars.raid.Rate: slower the more show), with the time since its last update.
+        if m.every then
+            m.wait = m.wait + dt
+            local every = m.every
+            if m.raid then
+                local fps = ns.Bars.raid.Rate()
+                if type(fps) == "number" and fps > 0 then every = 1 / fps end
+            end
+            if m.wait < every then return end
+            step, m.wait = math.min(m.wait, 0.1), 0
+        end
+        local ok, err = pcall(Update, m, step)
         if not ok then
             m.err = tostring(err)
             pcall(Hide, m)
@@ -679,13 +859,14 @@ function HealMarker.Apply()
     if live then
         BuildDisplay()
         BuildExternal()
+        BuildGroup()
     end
     ns.Heals.Enable(live)
     Each(function(m)
         m.live = live
         if not live then Hide(m) end
     end)
-    local any = live and (player or mana or next(extra) or previews[1]) and true or false
+    local any = live and (player or mana or next(extra) or next(group) or previews[1]) and true or false
     if any and not driver then
         driver = CreateFrame("Frame")
         driver:SetScript("OnUpdate", OnUpdate)
@@ -696,8 +877,10 @@ end
 -- A marker on a preview frame's health bar (Preview.lua, the editor's and the setup's), shown while the bar shows and
 -- the heals setting is on. source: function() returning the heals still to come as Heals.Player does (total, list of
 -- { school, heal }), in the bar's own range. Named "preview", so the player's real heals and meals never reach it.
-function HealMarker.Preview(bar, source)
-    local m = BuildOn(bar, "preview", source, function() return bar:IsVisible() end, "preview")
+-- tight: cut at the bar's edges (HealMarker New, spec.tight).
+function HealMarker.Preview(bar, source, tight)
+    local m = BuildOn(bar, "preview", source, function() return bar:IsVisible() end, "preview", nil,
+        tight and { tight = true } or nil)
     if not m then return nil end
     previews[#previews + 1] = m
     HealMarker.Apply()
@@ -717,20 +900,25 @@ function HealMarker.ApplyOptions()
     end)
 end
 
-ns.Heals.Listen(function(event, arg)
+-- Each marker hears of the heals that went to whoever it shows: the player's, or its party member's.
+ns.Heals.Listen(function(event, arg, who)
     Each(function(m) m.since = REFRESH_EVERY end) -- read again on the next frame
     if event == "applied" then
         local name = arg == "mana" and "mana" or "health"
-        Each(function(m) if m.name == name then m.landed = true end end)
+        Each(function(m)
+            if m.name == name and Owner(m) == (who or "player") then m.landed = true end
+        end)
     elseif event == "landed" then
-        Each(function(m) if m.name == "health" then m.burst = arg end end)
+        Each(function(m)
+            if m.name == "health" and Owner(m) == (who or "player") then m.burst = arg end
+        end)
     end
 end)
 
--- For the tests and the gallery: the markers on the player frame's health and mana bars (nil until built), and the
--- Personal Resource Display's by bar.
+-- For the tests and the gallery: the markers on the player frame's health and mana bars (nil until built), the
+-- Personal Resource Display's by bar, and the party and raid-style frames' by bar.
 function HealMarker.State()
-    return player, mana, extra
+    return player, mana, extra, group
 end
 
 -- For /sab heals.
@@ -744,8 +932,10 @@ function HealMarker.Debug()
         for _, d in ipairs(m.liquids) do
             if d.pool:IsShown() then shown[#shown + 1] = d.themeKey or DEFAULT_THEME end
         end
-        local game = GamePrediction(m.bar)
-        out[#out + 1] = string.format("Heal marker (%s): on, %s, liquids %s%s, mask %s%s%s", m.label or m.name,
+        local game = GamePrediction(m)
+        local label = m.label or m.name
+        if m.party or m.raid then label = label .. " on " .. (GroupUnit(m) or "no member") end
+        out[#out + 1] = string.format("Heal marker (%s): on, %s, liquids %s%s, mask %s%s%s", label,
             m.clip:IsShown() and "showing" or "hidden", #shown > 0 and table.concat(shown, " then ") or "none",
             m.under and " under the bar's liquid" or " over the game's fill", m.spec.mask and "yes" or "no",
             m.name == "health" and (", game's own prediction " .. (not game and "not found"

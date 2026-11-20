@@ -113,7 +113,8 @@ local TABS = {
           { key = "dotKillIcon", label = "Kill Icon",
             desc = "The game's skull on your target's portrait when your DoTs will finish it off." },
           { key = "heals", label = "Heal Marker",
-            desc = "Your heals over time, bandages, food and drink, ahead of your health and mana. Play Healing." },
+            desc = "Your heals over time, bandages, food and drink, ahead of your health and mana, and your heals on "
+                .. "your party and raid ahead of theirs. Play Healing." },
           { key = "shield", label = "Shield",
             desc = "Golden glass over the end of your health bar while a shield is on you, Power Word: Shield or any "
                 .. "other. It flares as it soaks a hit and shatters when it ends." },

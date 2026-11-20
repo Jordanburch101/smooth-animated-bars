@@ -133,10 +133,29 @@ local function parseDot(desc, comboPoints)
     end
 end
 
+-- Heals, food and drink (Locale.lua, L.healReader): the duration before the amount, "15초에 걸쳐 대상의 생명력을 총
+-- 830만큼 회복시킵니다.", "18초에 걸쳐 총 59의 생명력이 회복됩니다. 음식을 먹으려면 앉아 있어야 합니다."
+local parseHeal, parseRest = ns.locale.healReader({
+    heal = { "^대상의 생명력을", "^[0-9]+초에 걸쳐 대상의 생명력을", "^[0-9]+초에 걸쳐 [0-9]+의 생명력을",
+             "^[0-9]+초에 걸쳐 생명력을", "^강력한 기원으로", "^즉시 시전자의 생명력을" },
+    range = "([0-9]+) 에서 ([0-9]+)",
+    over = { "()([0-9]+%.?[0-9]*)초에 걸쳐()" },
+    after = true,
+    skip = { "[0-9]+초마다" },
+    rest = { "앉아" },
+    extra = { "추가로", "만약", "꾸준히" },
+    health = { "([0-9]+)의 생명력" },
+    mana = { "([0-9]+)의 마나" },
+    restOver = { "([0-9]+%.?[0-9]*)초에 걸쳐" },
+    fed = { "([0-9]+)초 이상 먹" },
+})
+
 ns.locale.register({
     tag = "koKR",
     parseDot = parseDot,
     isFinisher = function(desc) return isFinisher(normalize(desc)) end,
     comboPointsAwarded = comboPointsAwarded,
     names = NAMES,
+    parseHeal = parseHeal,
+    parseRest = parseRest,
 })

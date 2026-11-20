@@ -192,10 +192,30 @@ local function parseDot(desc, comboPoints)
     end
 end
 
+-- Heals, food and drink (Locale.lua, L.healReader): the duration before the amount, "Heilt das Ziel 15 Sek. lang um 830
+-- Schadenspunkt(e).", "Heilt ein befreundetes Ziel um 89 bis 103 und über 21 Sek. um weitere 91.", "Stellt im Verlauf
+-- von 18 Sek. 59 Punkt(e) Gesundheit wieder her. Ihr müsst beim Essen sitzen bleiben." ("Heilig", Holy, is no heal.)
+local parseHeal, parseRest = ns.locale.healReader({
+    heal = { "^Heilt", "^Euer Ziel um [0-9]", "^Ein langsam zu wirkender Zauber, der ein einzelnes Ziel",
+             "^Ein mächtiges Gebet" },
+    range = "(%d+) bis (%d+)",
+    over = { "()(%d+[,%.]?%d*) Sek%.? lang()", "()über (%d+[,%.]?%d*) Sek()", "()im Verlauf von (%d+[,%.]?%d*) Sek()" },
+    after = true,
+    skip = { "alle [0-9]+ Sek" },
+    rest = { "sitzen" },
+    extra = { "außerdem", "Wenn Ihr" },
+    health = { "(%d+) Punkt%(e%) Gesundheit", "(%d+) Gesundheit" },
+    mana = { "(%d+) Punkt%(e%) Mana", "(%d+) Mana" },
+    restOver = { "im Verlauf von (%d+[,%.]?%d*) Sek", "(%d+[,%.]?%d*) Sek%.? lang" },
+    fed = { "mindestens (%d+) Sekunden", "(%d+) Sekunden lang esst" },
+})
+
 ns.locale.register({
     tag = "deDE",
     parseDot = parseDot,
     isFinisher = isFinisher,
     comboPointsAwarded = comboPointsAwarded,
     names = NAMES,
+    parseHeal = parseHeal,
+    parseRest = parseRest,
 })

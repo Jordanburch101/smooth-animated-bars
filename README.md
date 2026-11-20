@@ -128,7 +128,7 @@ Personal Resource in the editor.
 <p align="center"><em>Druid: Moonfire on the target, Rejuvenation ticking, and Healing Touch landing.</em></p>
 
 On by default, under Heal Marker in the editor. The health your own heals will still restore shows ahead of your
-health:
+health, and ahead of your party and raid members' health on the party and raid-style frames:
 
 - **Colours:** gold for priest and paladin heals, green for druid and shaman heals and bandages. Two at once show
   side by side.
@@ -137,10 +137,12 @@ health:
 - **Bandages** tick every second. If damage interrupts one, the rest drops away.
 - **It uses your spells' tooltips,** as WoW Forever hides your health and each heal's size from addons. Healing past
   full is cut off at the end of the bar.
-- **Your own heals on yourself only.** Heals from others depend on their gear, so they keep the game's bar. Yours
-  replace the game's flat teal bar while they show.
+- **Your own heals only,** on yourself, your party and your raid. Heals from others depend on their gear, so they keep the
+  game's bar. Yours replace the game's flat teal bar while they show. On party and raid members it shows while
+  their health has the liquid. Raid-style frames show all your heals on someone in one colour, the first heal's.
 
-It reads English spell text, so on other client languages it may miss your heals, food or drink.
+It reads spell text in English, French, German, Spanish, Portuguese, Russian, Korean and Chinese. Tranquility and
+food that restores a share of your health each second don't show.
 
 ## Food and drink
 

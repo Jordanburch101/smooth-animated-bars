@@ -154,10 +154,29 @@ local function parseDot(desc, comboPoints)
     end
 end
 
+-- Heals, food and drink (Locale.lua, L.healReader): "Rend 830 points de vie à la cible en 15 sec.", "Soigne une cible
+-- amie pour 89 à 103 puis pour 91 points supplémentaires pendant 21 sec.", "Rend 59 points de vie en 18 sec. Vous devez
+-- rester assis pendant que vous mangez."
+local parseHeal, parseRest = ns.locale.healReader({
+    heal = { "^Soigne", "^Rend [0-9]", "^Rend instantanément", "^Une longue incantation qui rend",
+             "^Puissante prière qui restitue" },
+    range = "(%d+) à (%d+)",
+    over = { "()en (%d+[,%.]?%d*) sec()", "()pendant (%d+[,%.]?%d*) sec()" },
+    skip = { "toutes les" },
+    rest = { "assis" },
+    extra = { "Rend aussi", "Augmente aussi", "Si vous" },
+    health = { "(%d+) points de vie" },
+    mana = { "(%d+) points de mana" },
+    restOver = { "en (%d+[,%.]?%d*) sec" },
+    fed = { "(%d+) secondes à manger" },
+})
+
 ns.locale.register({
     tag = "frFR",
     parseDot = parseDot,
     isFinisher = isFinisher,
     comboPointsAwarded = comboPointsAwarded,
     names = NAMES,
+    parseHeal = parseHeal,
+    parseRest = parseRest,
 })

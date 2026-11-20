@@ -144,8 +144,21 @@ Facts found while building this, which the code relies on and which are not obvi
   English; the fixed cases are in `tools/harness/language_cases.json`. Wowhead shows some numbers as formulas
   (Rupture), and its text has non-breaking spaces (U+00A0) that `%s` does not match, so every reader turns them into
   plain spaces first. In plain Lua 5.1, `%s`/`%p` follow the C locale and can match bytes inside Cyrillic letters, so
-  `Locale_ruRU.lua` lists ASCII bytes. The poison coatings, traps and `Heals.lua` still read English only.
-  `/sab dots` logs `NOT READ` for non-English text nothing read.
+  `Locale_ruRU.lua` lists ASCII bytes. The poison coatings, traps and Weakened Soul's "absorb" still read English
+  only. `/sab dots` logs `NOT READ` for non-English text nothing read.
+  Heals, food and drink (`Heals.lua`, `readHeal`/`readRest`) go the same way: English first, then each language's
+  readers, built from its wording by `Locale.lua`'s `L.healReader` (the addon's own, not DoesItDie's). Checked the same
+  way, against Forever's text for the lowest and highest rank of every class heal, bandages, food and drink in every
+  language, each read as the English of the same spell (`tools/harness/heal_language_cases.json`, 1144 cases). That
+  check found English missing Greater Heal ("A slow casting spell that heals..."), Prayer of Healing and Desperate
+  Prayer, and a food's buff worded "If you eat for 10 seconds"; all read now. Tranquility ("every 2 sec") and food
+  restoring a share of health are read in no language. `/sab heals` logs `UNREAD` for non-English text with a number
+  that nothing read. Not tried on any non-English client. A review found the first readers, which looked for a health
+  word anywhere, taking spells that cost, drain or convert health for heals over time on the caster (Bloodrage, Last
+  Stand, Rend's "perd 147 points de vie en 21 sec", Devouring Plague in every language, Lightwell): each language's
+  heal patterns are now anchored at the text's start, as English's are, and the cases include 609 readings of 75
+  spells that are no heal (damage over time, drains, costs, buffs, potions), each read as English reads it. Potions
+  and Holy Strength's proc still read as a direct heal in some languages; instant, they show nothing.
 - **Rogue poisons** (`Dots.lua`, `onPoisonCombat`): a coating procs on weapon strikes, so no cast event says when it
   lands. DoesItDie's saved log on Forever has `HIT (amount hidden) school 8`: the amount is secret but the school is
   not, so a Nature hit on a mob while the weapon carries a poison with damage over time is taken as its tick. The
@@ -165,6 +178,27 @@ Facts found while building this, which the code relies on and which are not obvi
   and `OtherHealPredictionBar`, Mainline `PlayerFrame.xml`), a flat teal bar seen in game on a priest's Lesser
   Heal. At the bar's level it draws over the liquid, so `HealMarker.lua` keeps `MyHealPredictionBar.Fill`
   transparent while the heal marker shows; the other one (heals from others) is left alone.
+- **Heals on party members** (`Heals.lua`, `HealMarker.lua`, `BuildParty`; asked for on CurseForge): who a heal goes
+  to comes from `UNIT_SPELLCAST_SENT`'s target name matched against `UnitName("partyN")` (alone, `Name-Realm`, or with
+  UnitName's second value), or with no name from the target (`UnitIsUnit("target", "partyN")`). A member's heals are
+  kept by GUID (name where it is secret), so they stay with them when the party's tokens move; a party bar whose
+  member changes drops its marker at once (`Owner`). Out of combat a member's heal follows its aura
+  (`C_UnitAuras.GetAuraDataBySpellName(unit, name, "HELPFUL|PLAYER")`, `RequiresNonSecretAura` in Forever's docs,
+  as the player's). Markers update at the party liquids' 20 fps and show only while the bar's liquid is live; the
+  game's `MyHealPredictionBar` there is hidden while they show, as on the player frame. Not yet seen in game: any of
+  it, in particular the sent name for a member with a surname or from another realm, party names in an instance, and
+  the aura lookup. Raid-style frames (`raidHealth`) get one too, recipients matched over raid1..40 as well, a raid unit
+  that is the player counting as the player, and none in Edit Mode (its preview puts the player on every frame). Laid
+  out for those frames (`HealMarker.lua`, `RAID_LAYERS`): no clip frames (drawn outside the layer sort there, see Raid
+  frames), square masks to the bar and to past the health's edge, and one heal liquid in BACKGROUND 3..7, between the
+  button's background (BACKGROUND 0) and the health liquid (BORDER -4..0), so no seam; there is no room for a second.
+  The button's `myHealPrediction` (BORDER 5) is hidden while it shows. Not yet seen in game either. From a review: a
+  member from another realm with the player's first name gets a heal sent at their Name-Realm (exact readings for
+  the whole group before the loose "Name-...", and the player's only for their own realm, `GetRealmName`); the
+  player's own raid unit is also known by GUID (`UnitIsUnit` is `SecretWhenUnitComparisonRestricted`); a hidden
+  group marker looks nothing up while no heal goes anywhere (`Heals.Busy`), raid markers follow `Bars.raid.Rate`,
+  and the aura check finds who's who once a pass (`unitMap`). Counted in the mock before those: 40 raid frames with
+  ten Renews out went from about 4600 widget calls a frame to 6400.
 - **Shields** (`Shield.lua`, `shield`): Forever's player frame has the game's absorb display (`healthBar.TotalAbsorbBar`,
   a segment with `Fill` and `TiledFillOverlay`, and `OverAbsorbGlow` at the bar's end; Camelot `PlayerFrame.lua` wires
   them up). `UnitGetTotalAbsorbs` is `SecretReturns`, but the game's heal prediction calculator

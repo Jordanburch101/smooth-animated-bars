@@ -468,6 +468,12 @@ __player.class, __player.faction = "PALADIN", "Alliance"
 __player.name, __player.realm = "Testchar", "Mockrealm"
 -- Like the client, UnitName gives no realm for your own character; GetRealmName has it. On Forever
 -- the second value is the character's surname: set __player.surname for that.
+-- A party or raid member's unit (party1..4, raid1..40): its __units entry, or nil. A raid unit can be the player's own
+-- (isMe: UnitIsUnit with "player" says so).
+function __groupUnit(unit)
+    if type(unit) ~= "string" or not (unit:match("^party%d$") or unit:match("^raid%d+$")) then return nil end
+    return __units[unit]
+end
 function UnitName(unit)
     if unit == "player" then return __player.name, __player.surname end
     if __identitySecret[unit] then return __secret() end
@@ -475,6 +481,9 @@ function UnitName(unit)
     local u = (unit == "mouseover" or unit == "softenemy" or (type(unit) == "string" and unit:match("^nameplate%d+$")))
         and __units[unit]
     if u then return u.name end
+    -- A party or raid member: { name, realm } on __units.partyN or raidN; the realm only for one from another realm.
+    local member = __groupUnit(unit)
+    if member then return member.name, member.realm end
 end
 -- Units whose identity is secret (in an instance or battleground): __identitySecret[unit] = true. Their names are
 -- secret, and so is the width of a menu title showing one (see __openUnitMenu).
@@ -838,7 +847,7 @@ end
 function UnitExists(unit)
     if unit == "player" then return true end
     if plateUnit(unit) then return true end
-    if type(unit) == "string" and unit:match("^party%d$") then return __units[unit] ~= nil end
+    if type(unit) == "string" and (unit:match("^party%d$") or unit:match("^raid%d+$")) then return __units[unit] ~= nil end
     return unit == "target" and __target ~= nil
 end
 function UnitGUID(unit)
@@ -846,6 +855,8 @@ function UnitGUID(unit)
     if unit == "target" and __target then return __target.guid end
     local u = plateUnit(unit)
     if u then return u.guid end
+    local member = __groupUnit(unit)
+    if member then return member.isMe and "Player-1-00000001" or member.guid end
 end
 function UnitIsDead(unit)
     local u = plateUnit(unit)
@@ -856,11 +867,19 @@ function UnitIsDeadOrGhost(unit)
     if unit == "player" then return __player.dead or false end
     return UnitIsDead(unit)
 end
--- The target: friendly when __target.friendly is set; "player" when it is you.
+-- The target: friendly when __target.friendly is set; "player" when it is you; a party member when __target.unit
+-- names them (party1..4).
 function UnitIsUnit(a, b)
     if a == b then return true end
-    local function me(u) return u == "player" or (u == "target" and __target ~= nil and __target.isPlayer) end
-    return me(a) and me(b)
+    local function me(u)
+        local member = __groupUnit(u)
+        return u == "player" or (u == "target" and __target ~= nil and __target.isPlayer) or (member ~= nil and member.isMe)
+    end
+    if me(a) and me(b) then return true end
+    local function member(x, y)
+        return x == "target" and __target ~= nil and __target.unit ~= nil and __target.unit == y
+    end
+    return member(a, b) or member(b, a)
 end
 function UnitCanAssist(_, unit)
     if unit == "player" then return true end
@@ -914,6 +933,18 @@ C_UnitAuras = {
         assert(type(id) == "number", "GetPlayerAuraBySpellID needs a spell ID")
         if not __aurasReadable then return __secret() end
         return __playerAuras[id]
+    end,
+    -- A unit's aura by name (Forever's docs: unit, spellName, filter; RequiresNonSecretAura, as the player's lookup):
+    -- a party member's from __units[unit].auras[name] = { expirationTime = ..., fromPlayer = bool }, secret unless
+    -- __aurasReadable is set. A "PLAYER" filter keeps only the player's own.
+    GetAuraDataBySpellName = function(unit, name, filter)
+        assert(type(unit) == "string" and type(name) == "string", "Usage: GetAuraDataBySpellName(unit, spellName [, filter])")
+        assert(filter == nil or type(filter) == "string", "GetAuraDataBySpellName: filter must be a string")
+        if not __aurasReadable then return __secret() end
+        local u = __units[unit]
+        local aura = u and u.auras and u.auras[name]
+        if aura and filter and filter:find("PLAYER") and not aura.fromPlayer then return nil end
+        return aura
     end,
     GetUnitAuras = function(unit, filter)
         assert(type(unit) == "string" and type(filter) == "string", "Usage: GetUnitAuras(unit, filter)")

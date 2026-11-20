@@ -168,10 +168,28 @@ local function parseDot(desc, comboPoints)
     end
 end
 
+-- Heals, food and drink (Locale.lua, L.healReader): "Излечение цели на 830 ед. в течение 15 сек.", "Восполняет 59 ед.
+-- здоровья за 18 сек. Действие прерывается, если встать с места." Digits as [0-9] and literal spaces, next to Cyrillic text.
+local parseHeal, parseRest = ns.locale.healReader({
+    heal = { "^Исцел", "^Излеч", "^Восполн", "^Мгновенное исцеление",
+             "^Медленно накладываемое заклинание, которое излечивает", "^Действенная молитва восстанавливает" },
+    range = "([0-9]+) в ([0-9]+)",
+    over = { "()в течение ([0-9]+[,%.]?[0-9]*) сек()" },
+    skip = { "раз в" },
+    rest = { "с места" },
+    extra = { "Дополнительн", "Также", "По истечении" },
+    health = { "([0-9]+) ед%. здоровья" },
+    mana = { "([0-9]+) ед%. маны" },
+    restOver = { "за ([0-9]+[,%.]?[0-9]*) сек" },
+    fed = { "По истечении ([0-9]+) сек" },
+})
+
 ns.locale.register({
     tag = "ruRU",
     parseDot = parseDot,
     isFinisher = function(desc) return isFinisher(normalize(desc)) end,
     comboPointsAwarded = comboPointsAwarded,
     names = NAMES,
+    parseHeal = parseHeal,
+    parseRest = parseRest,
 })

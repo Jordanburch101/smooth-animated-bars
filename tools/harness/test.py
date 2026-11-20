@@ -408,6 +408,18 @@ check(lua.eval(HEALER + ".clip.shown") and lua.eval(HEALER + ".liquids[1].pool.s
 run(lua, 2.5)
 check(lua.eval(HEALER + ".liquids[2].pool.shown") and lua.eval(HEALER + ".liquids[2].themeKey") == "bandage",
       "then a bandage's green joins it")
+PARTY_HEALER = ED + ".examples.party.members[1].healer"
+check(lua.eval(PARTY_HEALER + ".clip.shown") and lua.eval(PARTY_HEALER + ".liquids[1].themeKey") == "holy",
+      "and on the party's examples too, a little behind (they play slower while the frames are edited)")
+RAID_HEALER = ED + ".examples.raid.members[1].healer"
+check(not lua.eval(RAID_HEALER + ".clip.shown"), "but not on the raid's, whose health is off to start with")
+lua.execute("__settings.raidHealth:SetValue(true)")
+run(lua, 2.5)
+check(lua.eval(RAID_HEALER + ".clip.shown"), "and on theirs once Raid Frames Health is on")
+check(lua.eval(f"{RAID_HEALER}.clip.points.TOPLEFT.y == 0 and {RAID_HEALER}.clip.points.BOTTOMRIGHT.y == 0")
+      and lua.eval(f"{PARTY_HEALER}.clip.points.TOPLEFT.y > 0"),
+      "cut at the raid example's bar edges, as its liquid is (the frames touch); the party's has room for its motes")
+lua.execute("__settings.raidHealth:SetValue(false)")
 lua.execute("__settings.heals:SetValue(false)")
 run(lua, 0.3)
 check(not lua.eval(HEALER + ".clip.shown"), "and none with the heal marker off")
@@ -793,6 +805,95 @@ pf.execute("__ns.Editor.Close()")
 pf.execute("SlashCmdList.SMOOTHANIMATEDBARS('debug')")
 check(any("party1 health" in m and "live yes" in m for m in chat(pf)), "/sab debug lists the party bars by their unit")
 check(not any("Error" in m for m in chat(pf)), "no errors")
+# The heal marker on the party's health: the player's own heals on each member, kept by the member's GUID.
+hp = session()
+hp.execute("""
+    __units.party1 = { isOtherPlayer = true, class = 'MAGE', power = 0, name = 'Alys', guid = 'Player-1-00000002' }
+    __units.party2 = { isOtherPlayer = true, class = 'WARRIOR', power = 1, name = 'Borin', realm = 'Otherrealm',
+                       guid = 'Player-2-00000003' }
+    for i = 1, 2 do
+        local f = PartyFrame['MemberFrame' .. i]
+        for _, b in ipairs({ f.HealthBarContainer.HealthBar, f.ManaBar }) do b:SetMinMaxValues(0, __secret()); b:SetValue(__secret()) end
+        f:Show()
+    end
+    __fire('GROUP_ROSTER_UPDATE')
+    __spells[139] = { 'Renew', 'Heals the target of 830 damage over 15 sec.' }
+    __spells[2061] = { 'Flash Heal', 'Heals a friendly target for 193 to 237.' }
+    __spells[746] = { 'First Aid', 'Heals 66 damage over 6 sec.' }
+    function __pbar(i) return PartyFrame['MemberFrame' .. i].HealthBarContainer.HealthBar end
+    function __pm(i) return select(4, __ns.HealMarker.State())[__pbar(i)] end
+    function __for(unit) return (__ns.Heals.For(unit)) end
+    function __instant(id, guid, name)
+        __fire('UNIT_SPELLCAST_SENT', 'player', name, guid, id)
+        __fire('UNIT_SPELLCAST_SUCCEEDED', 'player', guid, id)
+    end
+""")
+run(hp, 1.2)
+check(hp.eval("__pm(1) ~= nil and __pm(2) ~= nil") and not hp.eval("__pm(1).clip.shown or __pm(2).clip.shown")
+      and hp.eval("__pm(1).spec.mask == PartyFrame.MemberFrame1.HealthBarContainer.HealthBarMask"),
+      "a heal marker on each party member's health once it has the liquid, cut by its mask, nothing shown without heals")
+hp.execute("__instant(139, 'Cast-1', 'Alys'); __renewAt = __now")
+run(hp, 0.3)
+check(hp.eval("__for('party1')") == 830 and hp.eval("__for('party2')") == 0 and hp.eval("(__ns.Heals.Player())") == 0,
+      "Renew sent at a member by name: on the way to them, not to the player or anyone else")
+check(hp.eval("__pm(1).clip.shown and __pm(1).liquids[1].pool.shown") and hp.eval("__pm(1).liquids[1].themeKey") == "holy"
+      and not hp.eval("__pm(2).clip.shown") and not hp.eval("__ns.HealMarker.State().clip.shown"),
+      "and shows on their bar alone, in the healer's colour (a paladin's Holy)")
+check(hp.eval("__pbar(1).MyHealPredictionBar.Fill:GetAlpha()") == 0 and hp.eval("__pbar(2).MyHealPredictionBar.Fill:GetAlpha()") == 1,
+      "the game's prediction of your heals hidden on that bar while the marker shows, left on the others")
+hp.execute("""__fire('UNIT_SPELLCAST_SENT', 'player', 'Borin-Otherrealm', 'Cast-2', 2061)
+    __fire('UNIT_SPELLCAST_START', 'player', 'Cast-2', 2061)""")
+run(hp, 0.3)
+casting = hp.eval("__for('party2')")
+check(casting == 193 and hp.eval("__pm(2).clip.shown"),
+      f"a heal being cast on a member from another realm, by Name-Realm: shown on their bar while cast ({casting})")
+hp.execute("__fire('UNIT_SPELLCAST_STOP', 'player', 'Cast-2', 2061); __fire('UNIT_SPELLCAST_SUCCEEDED', 'player', 'Cast-2', 2061)")
+run(hp, 0.3)
+check(hp.eval("__for('party2')") == 0 and hp.eval("__for('party1')") == 830, "and gone once it lands, Renew still on the first")
+hp.execute("""__target = { name = 'Borin', guid = 'Player-2-00000003', friendly = true, unit = 'party2' }
+    __fire('UNIT_SPELLCAST_SENT', 'player', '', 'Cast-3', 746)
+    __fire('UNIT_SPELLCAST_CHANNEL_START', 'player', 'Cast-3', 746)""")
+run(hp, 0.3)
+check(hp.eval("__for('party2')") == 66 and hp.eval("__pm(2).liquids[1].themeKey") == "bandage",
+      "a bandage on a member sent with no name goes to the targeted member, in the bandage's look")
+hp.execute("__fire('UNIT_SPELLCAST_CHANNEL_STOP', 'player', 'Cast-3', 746); __target = nil")
+hp.execute("__instant(139, 'Cast-4', 'Stranger')")
+run(hp, 0.3)
+check(hp.eval("__for('party2')") == 0 and hp.eval("(__ns.Heals.Player())") == 0 and hp.eval("__for('party1')") == 830,
+      "a heal on someone outside the party is not kept, and does not land on a member or you")
+# The party's tokens move round (someone leaves, the game renumbers): the heal stays with its member.
+hp.execute("""__units.party1, __units.party2 = __units.party2, __units.party1
+    __fire('GROUP_ROSTER_UPDATE')""")
+run(hp, 0.3)
+check(hp.eval("__for('party2')") == 830 and hp.eval("__for('party1')") == 0
+      and hp.eval("__pm(2).clip.shown") and not hp.eval("__pm(1).clip.shown"),
+      "the members change places: the Renew follows Alys onto her new bar")
+hp.execute("__aurasReadable = true; __units.party2.auras = { Renew = { expirationTime = __now + 4, fromPlayer = true } }")
+run(hp, 0.7)
+left = hp.eval("__for('party2')")
+check(0 < left <= 332, f"out of combat, the member's Renew seen on them: its aura ends sooner, so fewer ticks to come ({left})")
+hp.execute("__units.party2.auras = {}")
+run(hp, 0.7)
+check(hp.eval("__for('party2')") == 0 and any("GONE Renew: its aura is not on party2" in m for m in hp.eval("__ns.Heals.Debug(30)").values()),
+      "and dropped once it is gone from them (dispelled), as on you")
+hp.execute("__aurasReadable = false; __instant(139, 'Cast-5', 'Borin'); __fire('PLAYER_DEAD')")
+run(hp, 0.3)
+check(hp.eval("__for('party1')") == 830, "your death does not take the Renew off a member: it keeps ticking")
+hp.execute("""__units.party3 = { isOtherPlayer = true, name = 'Testchar', realm = 'Otherrealm', guid = 'Player-2-00000009' }
+    __instant(139, 'Cast-6', 'Testchar-Otherrealm')""")
+check(hp.eval("__for('party3')") == 830 and hp.eval("(__ns.Heals.Player())") == 0,
+      "a member from another realm with your first name: a heal sent at Name-Realm is theirs, not yours")
+hp.execute("__instant(139, 'Cast-7', 'Testchar-Mockrealm')")
+check(hp.eval("(__ns.Heals.Player())") == 830, "and Name-YourRealm is yours")
+hp.execute("__units.party3 = nil")
+check(any("party1: health on the way 830 (Renew 830)" in m for m in hp.eval("__ns.Heals.Debug(5)").values())
+      and any("Heal marker (party health on party1)" in m for m in hp.eval("__ns.HealMarker.Debug()").values()),
+      "/sab heals lists each member's heals and their markers")
+hp.execute("__settings.heals:SetValue(false)")
+run(hp, 0.3)
+check(not hp.eval("__pm(1).clip.shown") and hp.eval("__pbar(1).MyHealPredictionBar.Fill:GetAlpha()") == 1,
+      "Heal Marker off: the party's markers go and the game's prediction comes back")
+check(not any("Error" in m for m in chat(hp)), "no errors")
 # A member frame only there after login, and the pool handing the frames out in other places by then (it does each time
 # the party frame is shown): the new frame gets the liquid when the group changes, and no bar gets two.
 late = session(setup="__hidden = PartyFrame.MemberFrame1; PartyFrame.MemberFrame1 = nil")
@@ -811,7 +912,10 @@ check(late.eval(f"(select(2, __liquid({PARTY_HEALTH.format(2)})))") > 0 and not 
       "a member frame missing at login: nothing reported, built when the group changes, wherever the pool puts it")
 check(all(late.eval(f"""(function()
     local n = 0
-    for _, f in ipairs(__frames) do if f.parent == {b} and f.SetValue then n = n + 1 end end
+    local heal = select(4, __ns.HealMarker.State())[{b}] -- the heal marker's own hidden bar is on the health bar too
+    for _, f in ipairs(__frames) do
+        if f.parent == {b} and f.SetValue and not (heal and f == heal.proxy) then n = n + 1 end
+    end
     return n
 end)()""") == 1 for b in [PARTY_HEALTH.format(i) for i in range(1, 5)] + [PARTY_POWER.format(i) for i in range(1, 5)]),
       "one liquid on each of the eight bars")
@@ -1064,6 +1168,115 @@ check(all(rf.eval(f"(select(2, __liquid({b})))") == 0 and rf.eval(f"{b}.fill.alp
 check(rf.eval("(select(2, __liquid(CompactRaidFrame2.powerBar)))") > 0
       and rf.eval("(select(2, __liquid(CompactRaidGroup1Member1.powerBar)))") > 0,
       "and power keeps its liquid with health off, on frames made later too")
+# The heal marker on raid-style frames: a raid-style party, the player's own frame first, then two members.
+rh = session()
+rh.execute("""
+    __units.party1 = { isOtherPlayer = true, class = 'MAGE', power = 0, name = 'Alys', guid = 'Player-1-00000002' }
+    __units.party2 = { isOtherPlayer = true, class = 'WARRIOR', power = 1, name = 'Borin', guid = 'Player-1-00000003' }
+    function __raidFrame(name, unit)
+        local f = CreateFrame("Button", name, UIParent)
+        f.w, f.h, f.unit, f.displayedUnit = 98, 44, unit, unit
+        f.healthBar = CreateFrame("StatusBar", name .. "HealthBar", f)
+        f.healthBar.w, f.healthBar.h = 96, 42
+        f.healthBar:SetMinMaxValues(0, __secret()); f.healthBar:SetValue(__secret())
+        -- The game's prediction of your heals: a texture on the button (CompactUnitFrame.xml, BORDER 5).
+        f.myHealPrediction = f:CreateTexture(nil, "BORDER", nil, 5)
+        f:Show()
+        return f
+    end
+    __raidFrame("CompactPartyFrameMember1", "player")
+    __raidFrame("CompactPartyFrameMember2", "party1")
+    __raidFrame("CompactPartyFrameMember3", "party2")
+    __spells[139] = { 'Renew', 'Heals the target of 830 damage over 15 sec.' }
+    __spells[746] = { 'First Aid', 'Heals 66 damage over 6 sec.' }
+    function __rbar(i) return _G['CompactPartyFrameMember' .. i].healthBar end
+    function __rm(i) return select(4, __ns.HealMarker.State())[__rbar(i)] end
+    function __instant(id, guid, name)
+        __fire('UNIT_SPELLCAST_SENT', 'player', name, guid, id)
+        __fire('UNIT_SPELLCAST_SUCCEEDED', 'player', guid, id)
+    end
+""")
+rh.execute("__settings.raidHealth:SetValue(true)")
+run(rh, 1.3)
+check(all(rh.eval(f"__rm({i}) ~= nil and __rm({i}).raid == true") for i in (1, 2, 3))
+      and not rh.eval("__rm(1).clip.shown or __rm(2).clip.shown"),
+      "with raid health on, a heal marker on each raid-style frame's health, nothing shown without heals")
+rh.execute("""__lookups = 0
+    local keyOf = __ns.Heals.KeyOf
+    __ns.Heals.KeyOf = function(...) __lookups = __lookups + 1; return keyOf(...) end""")
+run(rh, 0.6)
+check(rh.eval("__lookups") == 0, "with no heal going anywhere, the markers look nothing up (a raid's dozens wait idle)")
+rh.execute("__instant(139, 'Cast-1', 'Alys')")
+run(rh, 0.4)
+check(rh.eval("(__ns.Heals.For('party1'))") == 830 and rh.eval("__rm(2).clip.shown and __rm(2).liquids[1].pool.shown")
+      and not rh.eval("__rm(3).clip.shown") and not rh.eval("__rm(1).clip.shown"),
+      "a Renew on a member shows on their raid-style frame alone")
+check(rh.eval("CompactPartyFrameMember2.myHealPrediction:GetAlpha()") == 0
+      and rh.eval("CompactPartyFrameMember3.myHealPrediction:GetAlpha()") == 1,
+      "the button's own prediction of your heals hidden on that frame while it shows")
+check(rh.eval("""(function()
+    local m = __rm(2)
+    if #m.liquids ~= 1 or m.liquids[1].seam ~= nil then return false end
+    if m.clip.clipsChildren or m.liquids[1].pool.clipsChildren then return false end
+    local d, n = m.liquids[1], 0
+    local motes = {}
+    for _, mote in ipairs(d.liquid.motes) do motes[mote.tex] = true end
+    for _, t in ipairs(d.liquid.textures) do
+        local square = t.masks and t.masks[1] and t.masks[1].file:find("Square$")
+        if not square then return false end
+        if d.liquid.drawLayers[t][1] == "OVERLAY" then -- bubbles and motes
+            if t.layer ~= "BORDER" or t.sub > 3 then return false end
+            if motes[t] and t.masks[2] then return false end -- motes may fly back over the health
+        else
+            if t.layer ~= "BACKGROUND" or t.sub < 1 or t.masks[2] ~= d.poolMask then return false end
+            n = n + 1
+        end
+    end
+    return n > 0 and d.poolMask.points.TOPLEFT.rel == d.from
+end)()"""), "laid out for raid frames: one heal liquid in BACKGROUND, over the button's background and under the "
+      "health liquid, its motes in BORDER under the game's prediction; cut by square masks to the bar and to past the "
+      "health's edge, no clip frame and no seam")
+rh.execute("""__fire('UNIT_SPELLCAST_SENT', 'player', '', 'Cast-2', 746)
+    __fire('UNIT_SPELLCAST_CHANNEL_START', 'player', 'Cast-2', 746)""")  # a bandage on yourself, no target
+run(rh, 0.4)
+check(rh.eval("__rm(1).clip.shown") and rh.eval("__rm(1).liquids[1].themeKey") == "bandage"
+      and rh.eval("__ns.HealMarker.State().clip.shown"),
+      "your own raid-style frame shows your heals, as your player frame does")
+rh.execute("__instant(139, 'Cast-3', 'Borin')")
+run(rh, 0.4)
+check(rh.eval("__rm(3).liquids[1].themeKey") == "holy", "a heal on the other member on theirs")
+# In a raid: raid units, the player's own among them, and the raid frames handed from member to member.
+rh.execute("""
+    __units.raid1 = { isOtherPlayer = true, class = 'PRIEST', name = 'Cael', guid = 'Player-1-00000004' }
+    __units.raid2 = { isMe = true }
+    __units.raid3 = { isOtherPlayer = true, class = 'MAGE', name = 'Alys', guid = 'Player-1-00000002' }
+    __raidFrame("CompactRaidFrame1", "raid1")
+    __raidFrame("CompactRaidFrame2", "raid2")
+    function __rr(i) return select(4, __ns.HealMarker.State())[_G['CompactRaidFrame' .. i].healthBar] end
+""")
+run(rh, 1.3)
+rh.execute("__instant(139, 'Cast-4', 'Cael')")
+run(rh, 0.4)
+check(rh.eval("__rr(1) ~= nil and __rr(1).clip.shown") and rh.eval("(__ns.Heals.For('raid1'))") == 830
+      and rh.eval("(__ns.Heals.For('raid3'))") == rh.eval("(__ns.Heals.For('party1'))") > 0,
+      "a Renew on a raid member by name shows on their raid frame; one on a member in your party is theirs by raid unit too")
+check(rh.eval("__rr(2).clip.shown") and rh.eval("(__ns.Heals.For('raid2'))") == rh.eval("(__ns.Heals.Player())"),
+      "your own raid unit is you: your heals on your raid frame")
+rh.execute("__units.raid4 = { guid = 'Player-1-00000001' }")  # UnitIsUnit no help (secret in game): the GUID is yours
+check(rh.eval("(__ns.Heals.KeyOf('raid4'))") == "player", "and known by its GUID where UnitIsUnit gives no answer")
+rh.execute("CompactRaidFrame1.displayedUnit = 'raid3'; CompactRaidFrame1.unit = 'raid3'")
+run(rh, 0.3)
+check(rh.eval("__rr(1).clip.shown") and rh.eval("__rr(1).owner") == "Player-1-00000002",
+      "a raid frame handed to another member shows theirs")
+rh.execute("EditModeManagerFrame = { IsEditModeActive = function() return true end }")
+run(rh, 0.3)
+check(not rh.eval("__rr(1).clip.shown or __rr(2).clip.shown"),
+      "none in Edit Mode, whose preview puts you on every frame")
+rh.execute("EditModeManagerFrame = nil; __settings.raidHealth:SetValue(false)")
+run(rh, 0.3)
+check(not rh.eval("__rr(1).clip.shown") and rh.eval("CompactRaidFrame1.myHealPrediction:GetAlpha()") == 1,
+      "Raid Frames Health off: no marker, the game's prediction back")
+check(not any("Error" in m for m in chat(rh)), "no errors")
 rf.execute("__settings.raidPower:SetValue(false)")
 run(rf, 0.2)
 check(all(rf.eval(f"(select(2, __liquid({b})))") == 0 and rf.eval(f"{b}.fill.alpha") == 1 for b in POWER),
@@ -2322,6 +2535,45 @@ check(any("Heal marker (mana)" in m for m in chat(fd)) and any("REST Drink" in m
 check(fd.eval("(__ns.Heals.parseRest('Restores 2148 health and 4410 mana over 30 sec.'))") == 2148
       and fd.eval("(__ns.Heals.parseRest('Heals the target for 32 over 12 sec.'))") is None,
       "food text read; a heal is not food")
+print("== heals in other languages")
+# Forever's own text for its heals, bandages, food and drink in every language (Wowhead's tooltip API, dataEnv=16), each
+# read as the English text of the same spell is (heal_language_cases.json).
+with open(os.path.join(HERE, "heal_language_cases.json"), encoding="utf-8") as f:
+    HEAL_CASES = json.load(f)
+wrong = []
+for case in HEAL_CASES:
+    fd.globals()["__desc"] = case["desc"]
+    heal = fd.eval("{ __ns.Heals.readHeal(__desc) }")
+    rest = fd.eval("{ __ns.Heals.readRest(__desc) }")
+    got_heal = [heal[i] for i in range(1, 4)]
+    got_rest = [rest[i] for i in range(1, 5)]
+    got_heal = got_heal if any(v is not None for v in got_heal) else None
+    got_rest = got_rest if any(v is not None for v in got_rest) else None
+    if got_heal != case["heal"] or got_rest != case["rest"]:
+        wrong.append(f"{case['label']}: {got_heal} / {got_rest}, wanted {case['heal']} / {case['rest']}")
+check(not wrong, f"Forever's heal, food and drink text in every language, and spells that are none (damage over time,"
+      f" health drains and costs, Lightwell, potions): {len(HEAL_CASES)} cases"
+      + "".join("\n         " + w for w in wrong[:20]))
+check(fd.eval("(__ns.Heals.readHeal('Heals 66 damage over 6 sec.'))") == 66
+      and fd.eval("(__ns.Heals.readHeal('Rend 830\\194\\160points de vie à la cible en 15\\194\\160sec.'))") == 830,
+      "non-breaking spaces read as spaces")
+fd.execute("""
+    __units.party1 = { isOtherPlayer = true, class = 'MAGE', power = 0, name = 'Alys', guid = 'Player-1-00000002' }
+    __spells[139] = { 'Rénovation', 'Rend 830 points de vie à la cible en 15 sec.' }
+    __spells[2061] = { 'Soins rapides', 'Rend 184 à 223 points de vie à une cible alliée.' }
+    __spells[9998] = { 'Chose étrange', 'Fait 12 choses étranges.' }
+    __fire('UNIT_SPELLCAST_SENT', 'player', 'Alys', 'Cast-F1', 139)
+    __fire('UNIT_SPELLCAST_SUCCEEDED', 'player', 'Cast-F1', 139)
+    __fire('UNIT_SPELLCAST_SENT', 'player', '', 'Cast-F2', 2061)
+    __fire('UNIT_SPELLCAST_START', 'player', 'Cast-F2', 2061)
+    __fire('UNIT_SPELLCAST_SENT', 'player', '', 'Cast-F3', 9998)
+    __fire('UNIT_SPELLCAST_SUCCEEDED', 'player', 'Cast-F3', 9998)
+""")
+check(fd.eval("(__ns.Heals.For('party1'))") == 830 and fd.eval("(__ns.Heals.Player())") == 184,
+      "on a French client: a Renew on a party member and a Flash Heal cast on yourself, read and shown")
+check(any("UNREAD Chose étrange" in m for m in fd.eval("__ns.Heals.Debug(40)").values()),
+      "French text nothing reads goes to /sab heals, to teach the readers")
+fd.execute("__fire('UNIT_SPELLCAST_STOP', 'player', 'Cast-F2', 2061); __fire('UNIT_SPELLCAST_FAILED', 'player', 'Cast-F2', 2061)")
 print("== a meal's buff")
 FED_FOOD = "Restores 61 health over 18 sec. Must remain seated while eating. If you spend at least 10 seconds eating you will become well fed and gain 4 Stamina for 15 min."
 mb = session("{ setupDone = true }", "__player.class = 'DRUID'; __player.power = 0")

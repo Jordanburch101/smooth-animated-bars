@@ -254,18 +254,51 @@ local function SetFraction(bar, frac)
     ns.Bars.Stir(bar.state)
 end
 
--- The row of a scene t seconds into it, looped.
+-- The row of a scene t seconds into it, looped, and its place in the scene.
 local function RowAt(scene, t)
-    local at, found = t % scene.loop, scene.rows[1]
-    for _, row in ipairs(scene.rows) do
-        if row[1] <= at then found = row end
+    local at, found, index = t % scene.loop, scene.rows[1], 1
+    for i, row in ipairs(scene.rows) do
+        if row[1] <= at then found, index = row, i end
     end
-    return found
+    return found, index
 end
 
 -- A group's member i (party, raid, nameplates) in one of the frames' scenes, each a little behind the one before.
 local function GroupRow(name, t, i)
     return RowAt(SCENES[name], t - i * 0.35)
+end
+
+-- The heals a group's member i has on the way in a scene (the heal scene's), t seconds into it, as the player's are.
+local function GroupHeals(name, t, i)
+    local scene = SCENES[name]
+    if not (scene and scene.heals) then return {} end
+    local _, index = RowAt(scene, t - i * 0.35)
+    return scene.heals[index] or {}
+end
+
+-- A group example's members show the player's heals on each in the heal scene, as the real frames do: the scene's heals,
+-- given in points of the player's 271 health, at the same share of the member's, while key (the frames' health
+-- setting) gives them the liquid. tight: cut at the bar's edges, for frames that touch. Returns Heal(member, heals) to
+-- hand a member the heals coming now.
+local function GroupHealers(members, key, tight)
+    for _, m in ipairs(members) do
+        m.heals = {}
+        local scale = m.health.max / 271
+        m.healer = ns.HealMarker.Preview(m.health, function()
+            local list, total = {}, 0
+            for k, heal in ipairs(m.heals) do
+                list[k] = { school = heal[1], heal = heal[2] * scale }
+                total = total + list[k].heal
+            end
+            return total, list
+        end, tight)
+    end
+    return function(m, coming)
+        if not ns.Core.Get(key) then coming = {} end
+        local applied = #coming > #m.heals
+        m.heals = coming
+        if applied and m.healer then ns.HealMarker.Landed(m.healer) end
+    end
 end
 
 -- The editor shows every example at once, and only the one being edited plays at full speed: the others' clocks run
@@ -540,12 +573,14 @@ function Preview.CreateParty(parent, as, stacked)
         holder.bars[#holder.bars + 1] = members[i].health
         holder.bars[#holder.bars + 1] = members[i].power
     end
+    local Heal = (as or "party") == "party" and GroupHealers(members, "partyHealth") or function() end
     local t, step = 0, 0
     local function Play(i)
         local row = PARTY_SCRIPT[i]
         for n, m in ipairs(members) do
             SetFraction(m.health, row[2 * n])
             SetFraction(m.power, row[2 * n + 1])
+            Heal(m, {})
         end
     end
     Play(1)
@@ -557,6 +592,7 @@ function Preview.CreateParty(parent, as, stacked)
                 local row = GroupRow(holder.scene, t, n)
                 SetFraction(m.health, row[2])
                 SetFraction(m.power, row[3])
+                Heal(m, GroupHeals(holder.scene, t, n))
             end
             return
         end
@@ -660,11 +696,13 @@ function Preview.CreateRaid(parent)
         holder.bars[#holder.bars + 1] = m.health
         holder.bars[#holder.bars + 1] = m.power
     end
+    local Heal = GroupHealers(members, "raidHealth", true) -- the frames touch: no motes over the next one
     local t, step = 0, -1
     local function Play(n)
         for i, m in ipairs(members) do
             SetFraction(m.health, RAID_HEALTH[(n + i * 3) % #RAID_HEALTH + 1])
             SetFraction(m.power, RAID_POWER[(n + i * 5) % #RAID_POWER + 1])
+            Heal(m, {})
         end
     end
     holder.scene = "fight"
@@ -675,6 +713,7 @@ function Preview.CreateRaid(parent)
                 local row = GroupRow(holder.scene, t, i)
                 SetFraction(m.health, row[2])
                 SetFraction(m.power, row[3])
+                Heal(m, GroupHeals(holder.scene, t, i))
             end
             return
         end
