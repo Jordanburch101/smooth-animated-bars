@@ -177,7 +177,28 @@ Facts found while building this, which the code relies on and which are not obvi
 - **Heal prediction:** Forever's player frame has the game's own heal prediction (`healthBar.MyHealPredictionBar`
   and `OtherHealPredictionBar`, Mainline `PlayerFrame.xml`), a flat teal bar seen in game on a priest's Lesser
   Heal. At the bar's level it draws over the liquid, so `HealMarker.lua` keeps `MyHealPredictionBar.Fill`
-  transparent while the heal marker shows; the other one (heals from others) is left alone.
+  transparent while the heal marker shows. The other one (heals from others) is taken over too, see Other players'
+  heals.
+- **Other players' heals** (`HealMarker.lua`, `m.others`, asked for): Forever's heal prediction calculator, filled with
+  `UnitGetDetailedHealPrediction(unit, "player", calc)`, gives `GetIncomingHeals()` as amount, amountFromHealer,
+  amountFromOthers, clamped, all secret (the calculator's own docs). amountFromOthers lays out a hidden StatusBar after
+  the player's own heals (`OTHERS_LINGER` after the game's bar goes, the run eased to nothing). Being secret it cannot
+  say whether anything is coming, so the liquid shows while the game shows its own bar for others' heals
+  (`OtherHealPredictionBar` on the player and party frames, the `otherHealPrediction` texture on raid-style frames and
+  the Personal Resource Display, hidden by the game at nothing: `CompactUnitFrameUtil_UpdateFillBar`, Mainline
+  `UnitFrameHealPredictionBars_Update`); a secret answer fades the liquid by it (`SetAlphaFromBoolean`). That bar's fill
+  is transparent meanwhile, so the game's predictions are all ours while the marker shows. In Forever's code the
+  prediction is `UnitGetIncomingHeals`, which in the modern client counts heals being cast, not heals over time; not
+  yet seen in game what Forever counts. Drawn under the player's heal liquids: BORDER 3..7 on unit frames
+  (`OTHERS_LAYERS`; their ARTWORK sublevels are spent), with a seam of the nearest front before it; BACKGROUND 1..5 on
+  raid-style frames (`OTHERS_RAID_LAYERS`). A resting party or raid marker is woken by `UNIT_HEAL_PREDICTION` for its
+  member. One look for every other healer (`OTHERS_THEME`, Tidal in silvery teal): the amount is one sum. Not yet
+  seen in game: any of it, whether the game's bar's shown state is readable on each frame, and the cost. Seen in game in
+  a dungeon: looks good. From a review: the amount is never truth-tested (`x and secret or y` tests it), the calculator
+  is asked only while the game's bar shows, and when it gives nothing the game's bar is left showing
+  (`m.othersBroken`); a woken marker that hides rests again (`Hide` clears `othersWake`), and only `player`, `partyN`
+  and `raidN` events wake any. On raid-style frames the player's heal liquid's body, clouds and swirls tie with others'
+  sublevels where others' pool reaches back under it (no sublevels are free there); accepted.
 - **Heals on party members** (`Heals.lua`, `HealMarker.lua`, `BuildParty`; asked for on CurseForge): who a heal goes
   to comes from `UNIT_SPELLCAST_SENT`'s target name matched against `UnitName("partyN")` (alone, `Name-Realm`, or with
   UnitName's second value), or with no name from the target (`UnitIsUnit("target", "partyN")`). A member's heals are
@@ -605,6 +626,14 @@ Facts found while building this, which the code relies on and which are not obvi
   colours it: set after, a bar handed over with the setting on (after a `/reload`) failed to set up and kept its own
   fill (seen in game). Seen in game and right on FlareUI's bars after that.
 - **Toc changes** (a new file) need a full game restart; `/reload` does not pick them up.
+- **No realm since build 71037** (reported by another addon's author; Forever's patch of 2026-11-21): `GetRealmName()`
+  returns `""`. An empty realm is no answer, never a realm: a character without a surname keeps its one saved
+  "Name - X" profile (`SmoothAnimatedBars.lua`, `KnownKey`; names are unique across the region), else takes the
+  ruleset as a surnamed one does, and keeps that one if the realm reads again. Before the fix such a character had
+  switched to the account-wide settings (its key "Name - ", not in `ownSettings`); settings made under "Name - " then
+  move to its new key. Heal recipients fall back to the loose "Name-..." match (`Heals.lua`, `realmPart`), after the
+  exact ones. The mock keeps a realm by default, as the profile tests key by it; the no-realm tests set it to `""`.
+  Seen in game after the fix: fine on characters with surnames.
 - **Capture:** `/sab capture` uses `Screenshot()` and the `screenshotFormat` CVar (TGA, put back after).
   The screenshot is the full render resolution (an ultrawide 3440x1440 here), and the red "?" target
   portrait once fooled the marker search, which now looks only at the top of the screen. The game's tooltip

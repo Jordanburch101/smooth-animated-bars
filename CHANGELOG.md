@@ -15,6 +15,11 @@ Sections are `### New` and `### Fixed`; skip one that would be empty.
 - **Heal marker in every language**: your heals, bandages, food and drink
   now show on French, German, Spanish, Portuguese, Russian, Korean and
   Chinese clients too.
+- **Other players' heals on the heal marker**: a heal another player is
+  casting on you, a party member or a raid member now shows as a silvery
+  teal liquid after your own heals, sized by the game's own prediction.
+  While the heal marker shows, it takes the place of the game's flat heal
+  prediction bars.
 
 ### Fixed
 - Greater Heal and Prayer of Healing now show on the heal marker while you
@@ -27,6 +32,9 @@ Sections are `### New` and `### Fixed`; skip one that would be empty.
 - With Better Blizzard Plates, a nameplate's name no longer shows twice. The
   name drawn over the liquid now takes that addon's colour, size and hiding,
   and is left to it when it raises the name above everything.
+- A character without a surname that has its own settings no longer
+  switches to the account-wide settings after the game's November 2026
+  patch, which stopped telling addons the realm.
 
 ## 1.12.0
 

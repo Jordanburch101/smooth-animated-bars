@@ -175,10 +175,13 @@ local function playerSchool()
     return CLASS_SCHOOLS[class] or SCHOOLS.Holy
 end
 
--- A realm as it stands in "Name-Realm": without its spaces.
+-- A realm as it stands in "Name-Realm": without its spaces. Nothing (since client build 71037 GetRealmName gives "")
+-- is no realm.
 local function realmPart(realm)
-    if type(realm) ~= "string" or isSecret(realm) or realm == "" then return nil end
-    return (realm:gsub(" ", ""))
+    if type(realm) ~= "string" or isSecret(realm) then return nil end
+    realm = realm:gsub(" ", "")
+    if realm == "" then return nil end
+    return realm
 end
 
 -- Whether a sent target name is the player's: the first name alone, or with Forever's surname (UnitName's

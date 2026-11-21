@@ -902,7 +902,17 @@ before_alys = hp.eval("__for('party2')")
 hp.execute("__instant(139, 'Cast-8', 'Alys-Otherrealm')")
 check(hp.eval("__for('party2')") == before_alys,
       "a heal on someone outside the group from another realm is not taken for the member of that first name")
-hp.execute("__units.party3 = nil")
+# Since client build 71037 GetRealmName gives "": the loose "Name-..." readings take over, after the exact ones.
+hp.execute("__player.realm = ''; __fire('PLAYER_DEAD')")
+check(hp.eval("(__ns.Heals.Player())") == 0, "(your death takes your own Renew off)")
+hp.execute("__instant(139, 'Cast-9', 'Testchar-Otherrealm')")
+check(hp.eval("(__ns.Heals.Player())") == 0 and hp.eval("__for('party3')") == 830,
+      "no realm: a member from another realm with your first name still gets a heal sent at their Name-Realm")
+hp.execute("__instant(139, 'Cast-10', 'Testchar-Mockrealm')")
+check(hp.eval("(__ns.Heals.Player())") == 830, "no realm: a heal sent at Name-YourRealm is still yours")
+hp.execute("__player.realm = '   '; __fire('PLAYER_DEAD'); __instant(139, 'Cast-11', 'Testchar-Mockrealm')")
+check(hp.eval("(__ns.Heals.Player())") == 830, "a realm of only spaces counts as none too")
+hp.execute("__player.realm = 'Mockrealm'; __units.party3 = nil")
 check(any("party1: health on the way 830 (Renew 830)" in m for m in hp.eval("__ns.Heals.Debug(5)").values())
       and any("Heal marker (party health on party1)" in m for m in hp.eval("__ns.HealMarker.Debug()").values()),
       "/sab heals lists each member's heals and their markers")
@@ -1579,6 +1589,30 @@ pr = session("{ setupDone = true }", "__player.surname = 'Hootsman'; "
              "Enum.GameRule = { HardcoreRuleset = 1, RPRuleset = 2, PvPRuleset = 3 }; "
              "C_GameRules = { IsGameRuleActive = function(rule) return rule ~= 1 end }")
 check(pr.eval("__ns.Core.ProfileKey()") == "Testchar Hootsman - RP-PVP", "an RP-PvP ruleset too")
+# Since client build 71037 GetRealmName gives "": a character without a surname keeps its one saved profile, or
+# else takes the ruleset, never "Name - ".
+NO_REALM = ("__player.realm = ''; Enum.GameRule = { HardcoreRuleset = 1, RPRuleset = 2, PvPRuleset = 3 }; "
+            "C_GameRules = { IsGameRuleActive = function() return false end }")
+pr = session("{ setupDone = true, global = { healthColor = 'arcane' }, "
+             "profiles = { ['Testchar - Mockrealm'] = { healthColor = 'fel' }, ['Testchar - '] = {} }, "
+             "ownSettings = { ['Testchar - Mockrealm'] = true } }", NO_REALM)
+check(pr.eval("__ns.Core.ProfileKey()") == "Testchar - Mockrealm" and pr.eval(DB + ".healthColor") is None
+      and pr.eval("__ns.Core.db.healthColor") == "fel",
+      f"no realm: a character keeps its saved 'Name - Realm' profile ({pr.eval('__ns.Core.ProfileKey()')})")
+pr = session("{ setupDone = true }", NO_REALM)
+check(pr.eval("__ns.Core.ProfileKey()") == "Testchar - Normal", "no realm and no saved profile: keyed by the ruleset")
+pr = session("{ setupDone = true, profiles = { ['Testchar - A'] = {}, ['Testchar - B'] = {} } }", NO_REALM)
+check(pr.eval("__ns.Core.ProfileKey()") == "Testchar - Normal", "no realm and two saved profiles: neither is guessed")
+pr = session("{ setupDone = true, global = { healthColor = 'arcane' }, profiles = { ['Testchar - '] = { healthColor = 'fel' } }, "
+             "ownSettings = { ['Testchar - '] = true } }", NO_REALM)
+check(pr.eval("__ns.Core.ProfileKey()") == "Testchar - Normal" and pr.eval("__ns.Core.db.healthColor") == "fel"
+      and pr.eval(DB + ".ownSettings['Testchar - Normal']") is True and pr.eval(DB + ".profiles['Testchar - ']") is None
+      and pr.eval(DB + ".ownSettings['Testchar - ']") is None,
+      "settings made under 'Name - ' before this fix move to the ruleset's key, kept")
+pr = session("{ setupDone = true, global = { healthColor = 'arcane' }, profiles = { ['Testchar - Normal'] = { healthColor = 'fel' } }, "
+             "ownSettings = { ['Testchar - Normal'] = true } }")
+check(pr.eval("__ns.Core.ProfileKey()") == "Testchar - Normal" and pr.eval("__ns.Core.db.healthColor") == "fel",
+      "the realm readable again: a character keeps the settings it made while it was not")
 
 print("== setup wizard")
 wz = session("nil", "__combat = true")
@@ -2448,8 +2482,8 @@ hm.execute("__send(2061, 'Cast-4', ''); __fire('UNIT_SPELLCAST_START', 'player',
 run(hm, 0.3)
 check(hm.eval("__heal()") == renew() + 193, f"Flash Heal being cast on yourself: its lowest roll shows ({hm.eval('__heal()')})")
 OWN, OTHERS = "PlayerFrame.healthbar.MyHealPredictionBar.Fill.alpha", "PlayerFrame.healthbar.OtherHealPredictionBar.Fill.alpha"
-check(hm.eval(OWN) == 0 and hm.eval(OTHERS) == 1,
-      "the game's own prediction of your heals is hidden under the marker; others' heals keep theirs")
+check(hm.eval(OWN) == 0 and hm.eval(OTHERS) == 0,
+      "the game's predictions are hidden while the marker shows, yours and others' alike (the marker takes both over)")
 hm.execute("__fire('UNIT_SPELLCAST_INTERRUPTED', 'player', 'Cast-4', 2061)")
 run(hm, 0.3)
 check(hm.eval("__heal()") == renew(), "interrupted: gone")
@@ -2584,6 +2618,128 @@ check(any("Heal marker (mana)" in m for m in chat(fd)) and any("REST Drink" in m
 check(fd.eval("(__ns.Heals.parseRest('Restores 2148 health and 4410 mana over 30 sec.'))") == 2148
       and fd.eval("(__ns.Heals.parseRest('Heals the target for 32 over 12 sec.'))") is None,
       "food text read; a heal is not food")
+print("== other players' heals")
+# What the game predicts others will heal you for (the heal prediction calculator's amountFromOthers, secret), shown as a
+# liquid of its own after yours while the game shows its own bar for them, which the marker takes over.
+oh = session()
+oh.execute("""
+    function __m() return (__ns.HealMarker.State()) end
+    function __o() return __m().others end
+    __OTHERS = PlayerFrame.healthbar.OtherHealPredictionBar
+    function __heal_other(unit, amount, region)
+        __incoming[unit] = { others = amount }
+        if amount > 0 then region:Show() else region:Hide() end -- as the game does (UpdateFillBar)
+        __fire('UNIT_HEAL_PREDICTION', unit)
+    end
+""")
+run(oh, 0.3)
+check(oh.eval("__o() ~= nil") and not oh.eval("__m().clip.shown") and oh.eval("__o().themeKey") == "others",
+      "the player frame's marker has a liquid for others' heals, nothing shown while nobody heals you")
+oh.execute("__heal_other('player', 150, __OTHERS)")
+run(oh, 0.3)
+check(oh.eval("__m().clip.shown and __o().pool.shown") and oh.eval("issecretvalue(__o().run.value)")
+      and oh.eval("__o().run.max") is not None,
+      "a heal another player is casting on you: their liquid shows, laid out by the game's secret amount")
+check(oh.eval("__OTHERS.Fill.alpha") == 0 and oh.eval("PlayerFrame.healthbar.MyHealPredictionBar.Fill.alpha") == 0,
+      "and the game's bar for others' heals is taken over (transparent) while it shows")
+check(oh.eval("""(function()
+    local d = __o()
+    local motes = {}
+    for _, mote in ipairs(d.liquid.motes) do motes[mote.tex] = true end
+    for _, t in ipairs(d.liquid.textures) do
+        if not motes[t] and d.liquid.drawLayers[t][1] == "ARTWORK" and t.layer ~= "BORDER" then return false end
+    end
+    return d.seam ~= nil and d.seam.mover.shown
+end)()"""), "drawn in BORDER, under your heal liquids' ARTWORK, with a seam of the health's front over its start")
+oh.execute("__heal_other('player', 0, __OTHERS)")
+run(oh, 0.2)
+lingered = oh.eval("__o().pool.shown")
+run(oh, 0.6)
+check(lingered and not oh.eval("__o().pool.shown") and not oh.eval("__m().clip.shown")
+      and oh.eval("__OTHERS.Fill.alpha") == 1,
+      "the heal landed: their liquid drains into the health for a moment, then the game's bar is given back")
+oh.execute("""__OTHERS.IsShown = function() return __secret(true) end
+    __incoming.player = { others = 90 }
+    __fire('UNIT_HEAL_PREDICTION', 'player')""")
+run(oh, 0.3)
+check(oh.eval("__o().pool.shown") and oh.eval("issecretvalue(__o().pool.alpha)"),
+      "where the game's answer is secret, their liquid shows faded by it (SetAlphaFromBoolean), never compared")
+oh.execute("__OTHERS.IsShown = nil; __OTHERS:Hide(); __incoming.player = nil")
+run(oh, 0.8)
+check(not oh.eval("__o().pool.shown"), "and goes with it")
+# The calculator giving nothing while your own Renew shows: the game's bar for others' heals is left to show them.
+oh.execute("""__udhp = UnitGetDetailedHealPrediction
+    UnitGetDetailedHealPrediction = function() error("no prediction") end
+    __spells[139] = { 'Renew', 'Heals the target of 830 damage over 15 sec.' }
+    __fire('UNIT_SPELLCAST_SENT', 'player', 'Testchar', 'Cast-O1', 139)
+    __fire('UNIT_SPELLCAST_SUCCEEDED', 'player', 'Cast-O1', 139)
+    __OTHERS:Show()""")
+run(oh, 0.3)
+check(oh.eval("__m().clip.shown") and not oh.eval("__o().pool.shown") and oh.eval("__OTHERS.Fill.alpha") == 1,
+      "the calculator giving no answer: with your own heal showing, the game's bar for others' heals is left showing")
+oh.execute("UnitGetDetailedHealPrediction = __udhp; __OTHERS:Hide(); __fire('PLAYER_DEAD')")
+run(oh, 2)
+check(oh.eval("(__ns.Heals.Player())") == 0 and not oh.eval("__m().clip.shown"), "(your Renew gone)")
+# A party member, their marker resting until the game says heals on them changed.
+oh.execute("""
+    __units.party1 = { isOtherPlayer = true, class = 'MAGE', name = 'Alys', guid = 'Player-1-00000002' }
+    local f = PartyFrame.MemberFrame1
+    for _, b in ipairs({ f.HealthBarContainer.HealthBar, f.ManaBar }) do b:SetMinMaxValues(0, __secret()); b:SetValue(__secret()) end
+    f:Show()
+    __fire('GROUP_ROSTER_UPDATE')
+    __PBAR = f.HealthBarContainer.HealthBar
+    function __pm() return select(4, __ns.HealMarker.State())[__PBAR] end
+""")
+run(oh, 1.3)
+oh.execute("__heal_other('party1', 120, __PBAR.OtherHealPredictionBar)")
+run(oh, 0.3)
+check(oh.eval("__pm().clip.shown and __pm().others.pool.shown") and oh.eval("__PBAR.OtherHealPredictionBar.Fill.alpha") == 0,
+      "another player healing a party member: their marker wakes and shows it, the game's bar taken over")
+oh.execute("__heal_other('party1', 0, __PBAR.OtherHealPredictionBar)")
+run(oh, 0.8)
+check(not oh.eval("__pm().clip.shown") and oh.eval("__PBAR.OtherHealPredictionBar.Fill.alpha") == 1
+      and oh.eval("__pm().othersWake") is None, "and rests again after, no longer woken")
+oh.execute("__fire('UNIT_HEAL_PREDICTION', 'nameplate1'); __fire('UNIT_HEAL_PREDICTION', 'target')")
+check(oh.eval("__pm().othersWake") is None, "heals changing on a nameplate or the target wake no group marker")
+oh.execute("__PBAR:Hide(); __fire('UNIT_HEAL_PREDICTION', 'party1')")
+woken = oh.eval("__pm().othersWake")
+run(oh, 0.3)
+check(woken and oh.eval("__pm().othersWake") is None and not oh.eval("__pm().clip.shown"),
+      "a hidden party bar woken by others' heals rests again at once")
+oh.execute("__PBAR:Show()")
+run(oh, 0.3)
+debug = [m for m in oh.eval("__ns.HealMarker.Debug()").values() if "(health)" in m]
+check(debug and "others' heals: game bar hidden, calculator secret" in debug[0],
+      "/sab heals says what the game shows of others' heals")
+# A raid-style frame: their liquid under the player's in BACKGROUND, over the button's background.
+oh.execute("""
+    local f = CreateFrame("Button", "CompactPartyFrameMember2", UIParent)
+    f.w, f.h, f.unit, f.displayedUnit = 98, 44, 'party1', 'party1'
+    f.healthBar = CreateFrame("StatusBar", "CompactPartyFrameMember2HealthBar", f)
+    f.healthBar.w, f.healthBar.h = 96, 42
+    f.healthBar:SetMinMaxValues(0, __secret()); f.healthBar:SetValue(__secret())
+    f.myHealPrediction = f:CreateTexture(nil, "BORDER", nil, 5)
+    f.otherHealPrediction = f:CreateTexture(nil, "BORDER", nil, 5)
+    f.otherHealPrediction:Hide()
+    f:Show()
+    function __rm() return select(4, __ns.HealMarker.State())[f.healthBar] end
+""")
+oh.execute("__settings.raidHealth:SetValue(true)")
+run(oh, 1.3)
+oh.execute("__heal_other('party1', 120, CompactPartyFrameMember2.otherHealPrediction)")
+run(oh, 0.3)
+check(oh.eval("""(function()
+    local d = __rm().others
+    if not (d and d.pool.shown) or CompactPartyFrameMember2.otherHealPrediction.alpha ~= 0 then return false end
+    for _, t in ipairs(d.liquid.textures) do
+        local layer = d.liquid.drawLayers[t][1]
+        if layer == "ARTWORK" and (t.layer ~= "BACKGROUND" or t.sub < 1 or t.sub > 5) then return false end
+        if not (t.masks and t.masks[1]) then return false end
+    end
+    return d.seam == nil
+end)()"""), "on a raid-style frame: BACKGROUND 1..5 under your heal's front and over the button's background, cut by "
+      "masks, no seam, the button's own bar taken over")
+check(not any("Error" in m for m in chat(oh)), "no errors")
 print("== heals in other languages")
 # Forever's own text for its heals, bandages, food and drink in every language (Wowhead's tooltip API, dataEnv=16), each
 # read as the English text of the same spell is (heal_language_cases.json).

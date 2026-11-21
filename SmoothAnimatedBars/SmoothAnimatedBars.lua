@@ -314,11 +314,49 @@ local function RulesetName()
     return "Normal"
 end
 
+-- A key a character without a surname was saved under: its one "Name - Realm" (or "Name - Ruleset") profile. Names are
+-- unique across Forever's region, so a single match is this character's; none or several, nil. Second, whether there
+-- is a "Name - " one, made while the realm read "" by versions before this one knew it for no answer.
+local function KnownKey(name)
+    local found
+    local function look(t)
+        for key in pairs(t) do
+            if type(key) == "string" and key ~= found and key:sub(1, #name + 3) == name .. " - "
+                and key:sub(#name + 4):match("%S") then
+                if found then return false end
+                found = key
+            end
+        end
+        return true
+    end
+    local stray = root.profiles[name .. " - "] ~= nil or root.ownSettings[name .. " - "] ~= nil
+    if not (look(root.profiles) and look(root.ownSettings)) then return nil, stray end
+    return found, stray
+end
+
 local function CharacterKey()
     local name, surname = UnitName("player")
     name = type(name) == "string" and name or "Unknown"
-    local realm = GetRealmName() or "Unknown"
-    if type(surname) ~= "string" or surname == "" then return name .. " - " .. realm end
+    -- Since client build 71037 GetRealmName gives "": no answer, never a realm.
+    local realm = GetRealmName()
+    if type(realm) ~= "string" or not realm:match("%S") then realm = nil end
+    if type(surname) ~= "string" or surname == "" then
+        -- "Name - Realm" while the realm reads and it has a profile there; else the one it has (made while the realm
+        -- did not read, kept if it reads again); else the realm's, or with none the ruleset's, as a surname's.
+        local key = realm and name .. " - " .. realm
+        if key and (root.profiles[key] ~= nil or root.ownSettings[key] ~= nil) then return key end
+        local known, stray = KnownKey(name)
+        if known then return known end
+        key = key or name .. " - " .. (RulesetName() or "Unknown")
+        if stray and root.profiles[key] == nil and root.ownSettings[key] == nil then
+            -- Settings made under "Name - " move to the key it will have from now on.
+            local old = name .. " - "
+            root.profiles[key], root.profiles[old] = root.profiles[old], nil
+            root.ownSettings[key], root.ownSettings[old] = root.ownSettings[old], nil
+        end
+        return key
+    end
+    realm = realm or "Unknown"
     local consts = Constants and Constants.CharacterNameSeparatorConsts
     local sep = consts and consts.CHARACTERNAME_SURNAME_SEPARATOR or " "
     return name .. sep .. surname .. " - " .. (RulesetName() or realm)

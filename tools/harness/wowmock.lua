@@ -730,10 +730,12 @@ do
     PlayerFrame.healthbar.AnimatedLossBar = loss
     loss:Hide()
     -- The client's prediction of the player's own heals and others' (PlayerFrame.xml): bar segments with a Fill.
+    -- The game hides each while it has nothing to show (CompactUnitFrameUtil_UpdateFillBar's way).
     for _, key in ipairs({ "MyHealPredictionBar", "OtherHealPredictionBar" }) do
         local segment = CreateFrame("Frame", nil, PlayerFrame.healthbar)
         segment.Fill = segment:CreateTexture(nil, "BORDER")
         PlayerFrame.healthbar[key] = segment
+        segment:Hide()
     end
     -- Its absorb segments (a Fill, and a tiled overlay on the shield's) and the glow at the bar's end when the shield
     -- is more than the missing health (PlayerFrame.xml). The game hides the shield's segment when it has no width.
@@ -789,6 +791,9 @@ do
     prd.HealthBarsContainer.healthBar.myHealPrediction =
         prd.HealthBarsContainer.healthBar:CreateTexture(nil, "BORDER", nil, 5)
     prd.HealthBarsContainer.healthBar.myHealPrediction:Hide() -- hidden="true" until the game has a heal to show
+    prd.HealthBarsContainer.healthBar.otherHealPrediction =
+        prd.HealthBarsContainer.healthBar:CreateTexture(nil, "BORDER", nil, 5)
+    prd.HealthBarsContainer.healthBar.otherHealPrediction:Hide()
     prd.PowerBar:SetStatusBarColor(0.1, 0.25, 1)
     prd.AlternatePowerBar:SetStatusBarColor(0, 0, 1)
     for _, bar in ipairs({ prd.HealthBarsContainer.healthBar, prd.PowerBar, prd.AlternatePowerBar }) do
@@ -822,6 +827,7 @@ for i = 1, 4 do
         local segment = CreateFrame("Frame", nil, f.HealthBarContainer.HealthBar)
         segment.Fill = segment:CreateTexture(nil, "BORDER")
         f.HealthBarContainer.HealthBar[key] = segment
+        segment:Hide()
     end
     f.ManaBar = KeyedStatusBar(name .. ".ManaBar", f, 74, 7)
     f.ManaBar.ManaBarMask = f.ManaBar:CreateMaskTexture()
@@ -1020,20 +1026,37 @@ function Calculator:GetDamageAbsorbs()
     end
     return __secret(__absorb.toMissing), __secret(__absorb.clamped)
 end
+-- Incoming heals the client predicts, by unit: __incoming[unit] = { healer = n, others = n }, the healer being the
+-- player. Back secret: the whole, the healer's (zero with no healer unit given, as Forever's docs say), everyone
+-- else's, and whether clamped.
+__incoming = {}
+function Calculator:SetIncomingHealClampMode(mode)
+    assert(type(mode) == "number" and not issecretvalue(mode), "SetIncomingHealClampMode: an enum value")
+    self.incomingMode = mode
+end
+function Calculator:GetIncomingHeals()
+    assert(self.filled, "GetIncomingHeals before UnitGetDetailedHealPrediction")
+    local i = __incoming[self.unit] or {}
+    local mine, others = i.healer or 0, i.others or 0
+    if self.healer == nil then mine, others = 0, mine + others end
+    return __secret(mine + others), __secret(mine), __secret(others), __secret(false)
+end
 function CreateUnitHealPredictionCalculator()
     return setmetatable({ mode = Enum.UnitDamageAbsorbClampMode.MissingHealth }, Calculator)
 end
 function UnitGetDetailedHealPrediction(unit, healer, calc)
     assert(type(unit) == "string" and getmetatable(calc) == Calculator,
         "Usage: UnitGetDetailedHealPrediction(unit, healerUnit, calculator)")
-    calc.filled = true
+    assert(healer == nil or type(healer) == "string", "UnitGetDetailedHealPrediction: healerUnit is a unit token")
+    calc.filled, calc.unit, calc.healer = true, unit, healer
 end
 function UnitPower() return __secret() end
 function UnitPowerMax() return __secret() end
 -- The client's own StatusBar smoothing (Forever).
 Enum = { StatusBarInterpolation = { Immediate = 0, ExponentialEaseOut = 1 }, LuaCurveType = { Linear = 0, Step = 1 },
          InputDeviceInterfaceType = { Mkb = 0, Gamepad = 1 },
-         UnitDamageAbsorbClampMode = { MissingHealth = 0, MissingHealthWithoutIncomingHeals = 1, MaximumHealth = 2 } }
+         UnitDamageAbsorbClampMode = { MissingHealth = 0, MissingHealthWithoutIncomingHeals = 1, MaximumHealth = 2 },
+         UnitIncomingHealClampMode = { MissingHealth = 0, MaximumHealth = 1 } }
 
 -- Curves (C_CurveUtil): plain points, evaluated on a value the client keeps secret into another secret, which widgets
 -- take (Region:SetAlpha). UnitPowerPercent evaluates one on the unit's share of its power, __powerPercent[unit]

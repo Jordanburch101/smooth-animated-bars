@@ -90,7 +90,9 @@ On by default, under Heal Marker in the editor. The health your own heals will s
 *   **Heals over time** (Renew, Rejuvenation, Regrowth) count down tick by tick.
 *   **Bandages** tick every second. If damage interrupts one, the rest drops away.
 *   **It uses your spells' tooltips,** as WoW Forever hides your health and each heal's size from addons. Healing past full is cut off at the end of the bar.
-*   **Your own heals only,** on yourself, your party and your raid. Heals from others depend on their gear, so they keep the game's bar. Yours replace the game's flat teal bar while they show. On party and raid members it shows while their health has the liquid. Raid-style frames show all your heals on someone in one colour, the first heal's.
+*   **On yourself, your party and your raid.** On party and raid members it shows while their health has the liquid. Raid-style frames show all your heals on someone in one colour, the first heal's.
+*   **Other players' heals** show too, as a silvery teal liquid after yours, while another player is casting a heal on someone. The size is the game's own prediction, the same one its flat bar shows.
+*   **It takes over the game's bars:** the game's flat prediction bars for your heals and others' stay hidden while the marker shows.
 
 It reads spell text in English, French, German, Spanish, Portuguese, Russian, Korean and Chinese. Tranquility and food that restores a share of your health each second don't show.
 
