@@ -291,7 +291,10 @@ end
 
 -- A game FontString's text, colour and whether it shows onto ours; all may be secret (a target's name in an instance),
 -- and are only handed on.
-local function CopyText(src, dst)
+-- ownAlpha: the text's own alpha copied too, for a text we never fade ourselves (the bars' texts, whose frames we fade):
+-- Health Bar Text Forever fades the game's bar texts to alpha 0 and draws its own, and our copies showed the game's
+-- again (seen in game, the target's "3,040 / 3,040" with that addon's percentage gone).
+local function CopyText(src, dst, ownAlpha)
     if not (src and dst) then return end
     if not dst.fontCopied then
         dst.fontCopied = true
@@ -304,6 +307,11 @@ local function CopyText(src, dst)
         local r, g, b = src:GetTextColor()
         dst:SetTextColor(r, g, b)
     end)
+    if ownAlpha then
+        -- May be secret, which SetAlpha takes.
+        local ok, a = pcall(src.GetAlpha, src)
+        if ok and (Secret(a) or type(a) == "number") then pcall(dst.SetAlpha, dst, a) end
+    end
     local ok, shown = pcall(src.IsShown, src)
     if not ok then return end
     if Secret(shown) then
@@ -861,14 +869,15 @@ local function Build(st)
     st.f = f
     Anchor(st)
     -- The game's bars' texts, onto ours.
-    st.texts = {}
+    st.texts, st.textCopy, st.others = {}, {}, {}
     for _, kind in ipairs({ "health", "power" }) do
         local game, ours = st.bars[kind], f[kind]
         local centre, left, right = BarTexts(game)
         for _, p in ipairs({ { centre, ours.text }, { left, ours.left }, { right, ours.right } }) do
             if type(p[1]) == "table" and p[1].GetText then
                 PlaceText(p[1], p[2], ours)
-                st.texts[#st.texts + 1] = p
+                st.texts[#st.texts + 1] = { p[1], p[2], true }
+                st.textCopy[p[1]] = p[2]
             else
                 p[2]:Hide()
             end
@@ -973,10 +982,44 @@ local function Hand(st)
     end
 end
 
+-- Texts other addons put on the game's bars (Health Bar Text Forever: bar:CreateFontString on each, the target of
+-- target's too, where the game has none), faded with the bars under ours (seen in game: that addon's text gone from a
+-- taller target of target). Each is copied onto our bar, found as they come (an addon may add its own after ours is
+-- built), placed as theirs is against our copy of the game text it hangs on (that addon puts its side texts on the
+-- game's LeftText and RightText) or else our bar, in its own font and size (it sets 8 on the small frames).
+function TallFrames.OtherTexts(st)
+    for kind, game in pairs(st.bars) do
+        local ours = st.f[kind]
+        local ok, regions = pcall(function() return { game:GetRegions() } end)
+        if ok and ours and ours.text then
+            for _, r in ipairs(regions) do
+                local okType, objType = pcall(r.GetObjectType, r)
+                if okType and objType == "FontString" and not st.textCopy[r] then
+                    local dst = st.others[r]
+                    if not dst then
+                        dst = ours.text:GetParent():CreateFontString(nil, "OVERLAY", "TextStatusBarText")
+                        dst.fontCopied = true
+                        st.others[r] = dst
+                        local okP, point, rel, relPoint, x, y = pcall(r.GetPoint, r, 1)
+                        if not okP or type(point) ~= "string" or Secret(point) or Secret(x) or Secret(y) then
+                            point, rel, relPoint, x, y = "CENTER", nil, "CENTER", 0, 0
+                        end
+                        local to = (rel ~= nil and st.textCopy[rel]) or ours
+                        dst:SetPoint(point, to, relPoint or point, x or 0, y or 0)
+                    end
+                    pcall(function() dst:SetFont(r:GetFont()) end)
+                    CopyText(r, dst, true)
+                end
+            end
+        end
+    end
+end
+
 -- The copies from the game's frame, each poll while ours shows.
 local function Copy(st)
     local f = st.f
-    for _, p in ipairs(st.texts) do CopyText(p[1], p[2]) end
+    for _, p in ipairs(st.texts) do CopyText(p[1], p[2], p[3]) end
+    TallFrames.OtherTexts(st)
     local nameSrc = st.spec.name(st.gf)
     CopyText(nameSrc, f.nameText)
     -- A new name the game shows is a new face too, whatever event was missed (a secret name is never compared).

@@ -940,19 +940,47 @@ local function CopyText(mine, theirs, shown, whole, plate)
     mine:Show()
 end
 
+-- Texts other addons put on a bar raised over a DoT marker (Over), besides the game's own (named): Health Bar Text
+-- Forever (github.com/Pirson-s-Addons/HealthBarTextForever) draws its own on the target's health bar
+-- (bar:CreateFontString) and fades the game's to alpha 0, so the copies of the game's showed nothing and its text lay
+-- under the raised liquid (reported by a player). Every other FontString on the bar is copied too, each into a copy of
+-- its own made the first time it is seen.
+function Bars.CopyOtherTexts(b, named)
+    local t = b.texts
+    local ok, regions = pcall(function() return { b.bar:GetRegions() } end)
+    if not ok then return end
+    t.other = t.other or {}
+    for _, r in ipairs(regions) do
+        local okType, kind = pcall(r.GetObjectType, r)
+        if not named[r] and okType and kind == "FontString" and r.GetText then
+            local mine = t.other[r]
+            if not mine then
+                mine = t.frame:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+                t.other[r] = mine
+            end
+            local okShown, shown = pcall(r.IsShown, r)
+            if not okShown then shown = false elseif not Secret(shown) then shown = shown == true end
+            CopyText(mine, r, shown, false, false)
+        end
+    end
+end
+
 local function SyncPlateTexts(b)
     local t = b.texts
     if not t then return end
     local plate = b.spot.plate
+    local named = {}
     for i, key in ipairs(b.spot.texts or PLATE_TEXTS) do
         local theirs = b.bar[key]
         if type(theirs) == "table" and theirs.GetText then
+            named[theirs] = true
             local ok, shown = pcall(theirs.IsShown, theirs)
             -- A secret answer goes on as it is; a truth test on it would raise an error in the client.
             if not ok then shown = false elseif not Secret(shown) then shown = shown == true end
             CopyText(t[i], theirs, shown, false, plate)
         end
     end
+    if not b.spot.flat then Bars.CopyOtherTexts(b, named) end
     local name = b.unitFrame and b.unitFrame.name
     if type(name) == "table" and name.GetText then
         local ok, shown = pcall(name.IsVisible, name)

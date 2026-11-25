@@ -4,6 +4,15 @@ Player-facing notes for each release. Write for players: what they can now
 do or see, and what was broken and now works. Leave out internal changes.
 Sections are `### New` and `### Fixed`; skip one that would be empty.
 
+## 1.14.1
+
+### Fixed
+- With the DoT Marker on, text another addon puts on the target's health bar
+  (such as Health Bar Text Forever's) was hidden under the liquid.
+- With Bar Height, text another addon puts on your frames' bars (such as
+  Health Bar Text Forever's) disappeared, and the game's own text could show
+  in its place.
+
 ## 1.14.0
 
 ### New

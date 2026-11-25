@@ -1668,6 +1668,27 @@ check(tf.eval(ST + ".target.shown") and tf.eval(ST + ".target.f.health.h") == 26
       and tf.eval("TargetFrame.TargetFrameContainer.alpha") == 0 and tf.eval("TargetFrame.TargetFrameContent.TargetFrameContentMain.alpha") == 0,
       "the target's taller too: ours shows and the game's art and name are faded")
 check(tf.eval(ST + ".target.f.points.BOTTOMLEFT.rel == TargetFrame"), "the target's grows upward too")
+# Health Bar Text Forever: the game's bar text faded to alpha 0, its own on the bar, a side one on the game's LeftText,
+# one hidden till the mouse is over the bar (alpha 0). Seen in game: the game's text back on ours, that addon's gone.
+tf.execute("""local bar = TargetFrame.healthbar
+    bar.TextString:SetText('3,040 / 3,040'); bar.TextString:Show(); bar.TextString:SetAlpha(0)
+    __hbtf = bar:CreateFontString(nil, 'OVERLAY', 'TextStatusBarText')
+    __hbtf:SetPoint('CENTER', bar, 'CENTER', 0, 0); __hbtf:SetFont('Fonts\\\\FRIZQT__.TTF', 8, ''); __hbtf:SetText('3,040 / 3,040')
+    __hbtfPct = bar:CreateFontString(nil, 'OVERLAY', 'TextStatusBarText')
+    __hbtfPct:SetPoint('LEFT', bar.TextString, 'LEFT', 0, 0); __hbtfPct:SetText('100%'); __hbtfPct:SetAlpha(0)""")
+run(tf, 0.3)
+OTHERS = ST + ".target.others"
+check(tf.eval(ST + ".target.f.health.text.alpha") == 0, "the game's bar text faded by another addon: our copy of it too")
+check(tf.eval(OTHERS + "[__hbtf].text") == "3,040 / 3,040" and tf.eval(OTHERS + "[__hbtf].shown")
+      and tf.eval(OTHERS + "[__hbtf].alpha") == 1 and tf.eval(OTHERS + "[__hbtf].fontSize") == 8
+      and tf.eval(OTHERS + "[__hbtf].points.CENTER.rel == " + ST + ".target.f.health"),
+      "another addon's text on the game's bar (Health Bar Text Forever's) is copied onto ours, in its own size")
+check(tf.eval(OTHERS + "[__hbtfPct].points.LEFT.rel == " + ST + ".target.f.health.text")
+      and tf.eval(OTHERS + "[__hbtfPct].alpha") == 0,
+      "one hung on the game's text hangs on our copy of it, and one it hides (till the mouse is over) stays hidden")
+tf.execute("__hbtfPct:SetAlpha(1)")
+run(tf, 0.3)
+check(tf.eval(OTHERS + "[__hbtfPct].alpha") == 1, "shown again with theirs")
 tf.execute("TargetFrame.buffsOnTop = true")
 run(tf, 0.3)
 check(tf.eval(ST + ".target.f.points.TOPLEFT.rel == TargetFrame") and tf.eval(ST + ".target.f.points.BOTTOMLEFT") is None,
@@ -2500,6 +2521,25 @@ TARGET_COPY = """(function()
     return false
 end)()"""
 check(dm.eval(TARGET_COPY), "its health text copied a level above it (the game's is under the raised liquid)")
+# Health Bar Text Forever: its own texts on the bar (CreateFontString on it), the game's faded to alpha 0. Reported: its
+# text under the raised liquid on the target frame alone.
+dm.execute("""local bar = TargetFrame.healthbar
+    __hbtf = bar:CreateFontString(nil, 'OVERLAY', 'TextStatusBarText')
+    __hbtf:SetPoint('CENTER', bar, 'CENTER'); __hbtf:SetText('87%'); __hbtf:Show()
+    bar.TextString:SetAlpha(0)""")
+run(dm, 0.2)
+OTHER_COPY = """(function()
+    local bar, found, extra = TargetFrame.healthbar, nil, 0
+    for _, r in ipairs(__regions) do
+        if r.kind == "FontString" and r.over == __hbtf then found = r end
+        if r.kind == "FontString" and r.over and r.over ~= __hbtf and r.over ~= bar.TextString
+            and r.parent == __ns.Bars.stateOf[bar].texts.frame and r.shown then extra = extra + 1 end
+    end
+    return found and found.shown and found.text == '87%' and found.parent.level == bar:GetFrameLevel() + 2
+        and extra == 0 and true or false
+end)()"""
+check(dm.eval(OTHER_COPY), "another addon's text on the bar (Health Bar Text Forever's) is copied over the raised liquid too, "
+      "and nothing else of the bar's")
 check(dm.eval("issecretvalue(__m().killBar.max)") and dm.eval("__m().killBar.value") == 90 and dm.eval("__m().window.shown")
       and dm.eval("__m().window.points.CENTER.rel == TargetFrame.TargetFrameContainer.Portrait")
       and dm.eval("__m().window.clipsChildren"),

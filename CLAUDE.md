@@ -151,7 +151,11 @@ Facts found while building this, which the code relies on and which are not obvi
   (`TextString`/`LeftText`/`RightText`, put on the bar by `SetBarText`) one more up (`Bars.lua`, `Over`); on another
   addon's target bar the liquid goes one past its `level`. The target's heal prediction and absorb bars are child
   frames one level up too, so they now tie with the liquid's front. Seen in game on the target frame: the front over
-  the DoTs every time. Not yet seen: other addons' target bars. The kill icon is the
+  the DoTs every time. Not yet seen: other addons' target bars. Reported by a player: Health Bar Text Forever
+  (github.com/Pirson-s-Addons/HealthBarTextForever) puts its own texts on the target's health bar
+  (`bar:CreateFontString`) and fades the game's to alpha 0, so under the raised liquid its text was hidden and the copies
+  of the game's showed nothing. Every other FontString on a raised bar is copied too (`Bars.CopyOtherTexts`); seen in game
+  with that addon: working. The kill icon is the
   atlas `UI-HUD-UnitFrame-Target-HighLevelTarget_Icon` (Forever's `TargetFrame.xml`).
 - **Other client languages** (`Locale.lua`, `Locale_<tag>.lua`, ported from DoesItDie 0.9.3 without its options
   translations): English patterns run first, then every language in toc order, whatever `GetLocale()` says
@@ -717,7 +721,13 @@ Facts found while building this, which the code relies on and which are not obvi
   answers `GetLeft`/`GetWidth` in its own units, so carried icons and glows are now taken into the frame's units by
   their effective scales (`ScaleTo`); the mock answers a placed region's position (`sx`, `sy`) in its own units too.
   Seen in game after that: the badge in its place.
-  Texts the game anchors to a carried icon are faded and drawn beside our copy of it (`follow`: the PvP timer). Seen
+  Texts the game anchors to a carried icon are faded and drawn beside our copy of it (`follow`: the PvP timer).
+  Seen in game with Health Bar Text Forever: it fades the game's bar texts to alpha 0 and draws its own on the bars
+  (`bar:CreateFontString`), so on taller frames our copies brought the game's text back and its own vanished with the
+  faded bars (the target of target's, where the game has none, entirely). The bar texts' copies take their own alpha
+  (never faded by us; their frames are), and every other FontString on the game's bars is copied onto ours, placed
+  against our copy of the game text it hangs on, in its own font and size (`TallFrames.OtherTexts`); seen in game
+  with that addon: working. Seen
   in game: heals on taller frames working (the heal marker). Not yet seen in game: the rest of that, and whether the
   client lets ours anchor to the game's masks. The full list of what
   the game's frames show and what is still missing is `docs/TALLER_BARS_GOALS.md`. Left as the game's: the rest loop,
