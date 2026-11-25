@@ -467,6 +467,9 @@ local function PlateColor(b)
     return { c[1] * PLATE_SHADE, c[2] * PLATE_SHADE, c[3] * PLATE_SHADE }
 end
 
+-- Bars of our taller frames (TallFrames.lua puts each here before handing it over): bar -> true.
+Bars.tall = {}
+
 -- The bar's own colour: health green (a flat bar's its own, unless unflat), or the game's colour for the unit's power
 -- type (a preview bar, and the Personal Resource Display's mana under a druid's form, name their power type).
 GameColor = function(b, unflat)
@@ -474,7 +477,10 @@ GameColor = function(b, unflat)
     if (b.spot.raid or b.spot.raidLook) and b.kind == "health" and not unflat then return Bars.raid.Color(b), "HEALTH" end
     -- Another addon's bar with Your Colours on Their Bars (externalColors): Game Colour is the game's, as on its own
     -- frames, not the bar's (FlareUI's player bar in its class colour stayed tan under Game Colour, seen in game).
-    if b.spot.external and not unflat and ns.Core.Get("externalColors") then
+    -- So too on our own taller frames' bars (TallFrames.lua, Bars.tall), which stand for the game's: their own colour is
+    -- the StatusBar's untinted white over the game's art, and Game Colour (the default) drew a white liquid, grey on the
+    -- frame (reported by players after setting a Bar Height).
+    if b.spot.external and not unflat and (ns.Core.Get("externalColors") or Bars.tall[b.bar]) then
         b.plateSecret = nil
         return GameColor(b, true)
     end

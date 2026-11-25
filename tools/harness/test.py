@@ -1689,6 +1689,11 @@ check(tf.eval(OTHERS + "[__hbtfPct].points.LEFT.rel == " + ST + ".target.f.healt
 tf.execute("__hbtfPct:SetAlpha(1)")
 run(tf, 0.3)
 check(tf.eval(OTHERS + "[__hbtfPct].alpha") == 1, "shown again with theirs")
+# Reported by players: grey bars after setting a Bar Height. Game Colour (the default) took our bar's own untinted white.
+FILL = "string.format('%.2f %.2f %.2f', unpack(__ns.Bars.stateOf[{}].liquid.theme.fillB))"
+check(tf.eval(FILL.format(ST + ".player.f.health")) == tf.eval(FILL.format("PlayerFrame.healthbar"))
+      and tf.eval(FILL.format(ST + ".player.f.power")) != "1.00 1.00 1.00",
+      "with Game Colour a taller frame's liquid takes the game's colours, as at the game's heights, not a white one")
 tf.execute("TargetFrame.buffsOnTop = true")
 run(tf, 0.3)
 check(tf.eval(ST + ".target.f.points.TOPLEFT.rel == TargetFrame") and tf.eval(ST + ".target.f.points.BOTTOMLEFT") is None,

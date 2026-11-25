@@ -727,7 +727,12 @@ Facts found while building this, which the code relies on and which are not obvi
   faded bars (the target of target's, where the game has none, entirely). The bar texts' copies take their own alpha
   (never faded by us; their frames are), and every other FontString on the game's bars is copied onto ours, placed
   against our copy of the game text it hangs on, in its own font and size (`TallFrames.OtherTexts`); seen in game
-  with that addon: working. Seen
+  with that addon: working. Reported by players: grey bars after setting a Bar Height; not seen here, as this account has Your Colours on Their
+  Bars on (`externalColors`), which already took the game's colours there. Our bars are
+  handed over as another addon's are, whose Game Colour is the bar's own colour (`PlateColor`), and ours is the
+  StatusBar's untinted white over the game's art, so the default drew a white liquid (in the mock too, power even under
+  Class Color). Our bars are listed in `Bars.tall`, and there Game Colour is the game's (`GameColor`), as with Your
+  Colours on Their Bars; seen in game with that setting off: right. Seen
   in game: heals on taller frames working (the heal marker). Not yet seen in game: the rest of that, and whether the
   client lets ours anchor to the game's masks. The full list of what
   the game's frames show and what is still missing is `docs/TALLER_BARS_GOALS.md`. Left as the game's: the rest loop,

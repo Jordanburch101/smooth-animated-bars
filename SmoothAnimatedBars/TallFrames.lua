@@ -968,6 +968,8 @@ local function Hand(st)
                           mask = bar[kind == "health" and "HealthBarMask" or "ManaBarMask"] }
         -- Who it shows, as the game puts it on its bars (UnitFrame_SetUnit): the heal marker reads a party bar's unit.
         bar.unit = st.unit
+        -- Game Colour on it is the game's, as on the frame it stands for (Bars.lua, GameColor).
+        ns.Bars.tall[bar] = true
         local ok, err = pcall(ns.Bars.AddBar, bar, st.unit, kind, options, key)
         if not ok and not st.reported then
             st.reported = true

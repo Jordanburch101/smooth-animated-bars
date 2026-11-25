@@ -12,6 +12,8 @@ Sections are `### New` and `### Fixed`; skip one that would be empty.
 - With Bar Height, text another addon puts on your frames' bars (such as
   Health Bar Text Forever's) disappeared, and the game's own text could show
   in its place.
+- With Bar Height and Game Colour (the default), the bars could show grey
+  instead of the game's colours.
 
 ## 1.14.0
 
