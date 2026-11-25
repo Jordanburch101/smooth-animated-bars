@@ -4,6 +4,37 @@ Player-facing notes for each release. Write for players: what they can now
 do or see, and what was broken and now works. Leave out internal changes.
 Sections are `### New` and `### Fixed`; skip one that would be empty.
 
+## 1.14.0
+
+### New
+- **Bar Height**: the health and power bars of your player, target, focus,
+  pet, target of target and party frames can be made taller, with a slider for
+  each on that frame's page in the editor. A taller frame is drawn from the
+  game's own frame art. The player, target and focus frames grow upward, so the
+  debuffs and cast bar below them stay clear (with Buffs on Top, the target and
+  focus grow downward instead); the pet, target of target and party members
+  grow downward, the party members only as far as the gap between them.
+  Taller frames keep what the game shows on its bars: incoming heals,
+  shields and heal absorbs, the mana a cast will cost, the heal marker
+  (on party members too), the Shield, Weakened Soul and your combo points.
+- **Other healers' heals in their own colours**: a heal another priest or
+  paladin is casting on you or your group now shows in the Holy look, and a
+  druid's or shaman's in Nature's spring green, instead of always the silvery
+  teal. When healers of both kinds heal the same player, it stays teal.
+- **Animation Speed and Wave Intensity**: two sliders on the editor's
+  Effects tab. Speed makes everything in the liquid move slower or faster,
+  from 25% to 200%; the bar still follows your health at the game's pace.
+  Wave Intensity sets how far the liquid's front bulges and ripples, from a
+  flat front at 0% to twice as dramatic at 200%. A bar with its own effects
+  has its own sliders too.
+
+### Fixed
+- Heals of 1,000 or more (Holy Light rank 8 and up, the top ranks of
+  Greater Heal, Healing Touch and Healing Wave, the biggest bandages, food and
+  drink) now show on the heal marker, in every client language. Amounts with
+  a thousands separator went unread or read short.
+- Your own raid-style frame could turn black until a reload.
+
 ## 1.13.0
 
 ### New

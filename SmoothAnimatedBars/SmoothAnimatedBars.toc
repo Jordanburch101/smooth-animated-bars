@@ -30,6 +30,7 @@ Adaptors\ClassicUIForever.lua
 SmoothAnimatedBars.lua
 Options.lua
 Preview.lua
+TallFrames.lua
 Editor.lua
 Capture.lua
 Wizard.lua

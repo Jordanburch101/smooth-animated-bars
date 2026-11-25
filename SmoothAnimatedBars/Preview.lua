@@ -16,9 +16,13 @@ ns.Preview = Preview
 
 local QUESTION_MARK = 134400 -- INV_Misc_QuestionMark, the target's stand-in portrait
 
--- Forever's frames, 232 x 100, in frame units from the top-left (y down is negative).
+-- Forever's frames, in frame units from the top-left (y down is negative), each 232 x 100 unless its size says.
 -- Target: the health bar sits 3 above its container, which ends at the frame's left middle + (147, -9);
--- the mana bar hangs below the container's right end (+4, -1).
+-- the mana bar hangs below the container's right end (+4, -1). The focus is the target's template.
+-- The small frames, the pet's (Mainline PetFrame.xml) and the targets of target (TargetFrame.xml's
+-- TargetofTargetFrameTemplate), are one art at 120 x 49, laid out alike once Camelot's PetFrame.lua and TargetFrame.lua
+-- have moved their bars: the portrait 37 across at (5, 5), the name beside it, health 70 x 11 from the frame's middle
+-- right, power under it 3 to the left (77 wide on the pet, 78 on the targets of target), with the party frame's masks.
 local LAYOUT = {
     player = {
         art = "UI-HUD-UnitFrame-Player-PortraitOn",
@@ -41,8 +45,31 @@ local LAYOUT = {
         power = { x = 17, y = -60, w = 134, h = 10, fillAtlas = "UI-HUD-UnitFrame-Target-PortraitOn-Bar-Mana",
                   maskAtlas = "UI-HUD-UnitFrame-Target-PortraitOn-Bar-Mana-Mask", maskX = -61, maskY = 3 },
     },
+    tot = {
+        size = { 120, 49 },
+        art = "UI-HUD-UnitFrame-TargetofTarget-PortraitOn",
+        portrait = { point = "TOPLEFT", x = 5, y = -5, size = 37, mask = "CircleMask" },
+        name = { point = "TOPLEFT", x = 44, y = -6, w = 68 },
+        -- The masks' places from the anchors (health -28, 3; power -27, 4) left the part they let through 1.4 above the
+        -- art's slots and the power's 2 left of its own, under the gold divider (seen in the editor), as on the party
+        -- frame (PARTY_POWER_SHIFT, by eye there); the game keeps its fill in the slot. So each is centred on its slot,
+        -- measured on the game's sheet: health x 46..114, y 19..28; power x 46..114, y 31..36.
+        health = { x = 45, y = -17.5, w = 70, h = 11, fillAtlas = "UI-HUD-UnitFrame-TargetofTarget-PortraitOn-Bar-Health",
+                   maskAtlas = "UI-HUD-UnitFrame-Party-PortraitOn-Bar-Health-Mask", maskX = -28, maskY = 2.1 },
+        power = { x = 42, y = -29.5, w = 78, h = 7, fillAtlas = "UI-HUD-UnitFrame-TargetofTarget-PortraitOn-Bar-Mana",
+                  maskAtlas = "UI-HUD-UnitFrame-Party-PortraitOn-Bar-Mana-Mask", maskX = -26.1, maskY = 3.6 },
+    },
 }
+LAYOUT.focus = LAYOUT.target
+LAYOUT.pet = setmetatable({ power = setmetatable({ w = 77 }, { __index = LAYOUT.tot.power }) }, { __index = LAYOUT.tot })
 Preview.LAYOUT = LAYOUT
+
+-- A layout's frame size.
+local function SizeOf(L)
+    local size = L.size
+    if size then return size[1], size[2] end
+    return 232, 100
+end
 
 -- Values as fractions of the bar, looped: { seconds, player health, player power, target health,
 -- target power }. A new target arrives at full health at the end of each loop.
@@ -70,11 +97,15 @@ local DOTS = {
     {},
 }
 
+-- A rogue's combo points on the target at each row of SCRIPT (Preview.Create's combo): built up, and spent by the
+-- finisher that takes the power at the fifth row. A scene with one number keeps it throughout.
+local POINTS = { 0, 1, 3, 5, 0, 1, 0, 0 }
+
 -- Scenes the frames can play instead (the editor's buttons): the fight above, the player taking a beating, being healed
 -- back up, and spending power and getting it back. Each is rows as SCRIPT's, looped, with the DoTs only in the fight.
 local SCENES = {
-    fight = { rows = SCRIPT, dots = DOTS, loop = LOOP },
-    damage = { loop = 6.0, rows = {
+    fight = { rows = SCRIPT, dots = DOTS, points = POINTS, loop = LOOP },
+    damage = { loop = 6.0, points = 3, rows = {
         { 0.0, 1.00, 0.60, 1.00, 0.90 },
         { 0.8, 0.82, 0.60, 1.00, 0.90 },
         { 1.6, 0.64, 0.60, 1.00, 0.90 },
@@ -84,7 +115,7 @@ local SCENES = {
     } },
     -- A Renew (Holy, school 2) ticking the health back up, then a bandage (Nature-green) joining it, each shown ahead
     -- of the health by the heal marker while the heals setting is on: { school, health still to come of the 271 }.
-    heal = { loop = 7.6, rows = {
+    heal = { loop = 7.6, points = 2, rows = {
         { 0.0, 0.30, 0.60, 1.00, 0.90 },
         { 0.6, 0.30, 0.60, 1.00, 0.90 },
         { 1.6, 0.42, 0.60, 1.00, 0.90 },
@@ -103,7 +134,7 @@ local SCENES = {
         { { "bandage", 20 } },
         {},
     } },
-    power = { loop = 6.4, rows = {
+    power = { loop = 6.4, points = { 0, 1, 3, 5, 5, 0, 0 }, rows = {
         { 0.0, 1.00, 1.00, 1.00, 1.00 },
         { 0.8, 1.00, 0.72, 1.00, 0.80 },
         { 1.6, 1.00, 0.45, 1.00, 0.60 },
@@ -123,6 +154,7 @@ local SIDES = {
     focus  = { unit = "focus", frame = "focus", name = "Your Focus" },
     pet    = { unit = "pet", frame = "pet", name = "Your Pet" },
     tot    = { unit = "targettarget", frame = "tot", name = "Target of Target" },
+    party  = { unit = "party1", frame = "party", name = "" },
 }
 
 local function Atlas(tex, name, useSize)
@@ -137,7 +169,7 @@ local function PowerInfo(unit)
 end
 
 --------------------------------------------------------------------------------
--- Pieces, each placed on a 232 x 100 frame f (shared with Capture.lua)
+-- Pieces, each placed on a frame f of its layout's size (shared with Capture.lua)
 --------------------------------------------------------------------------------
 
 function Preview.Portrait(f, which)
@@ -145,7 +177,7 @@ function Preview.Portrait(f, which)
     local portrait = f:CreateTexture(nil, "BACKGROUND", nil, 1)
     portrait:SetSize(p.size, p.size)
     portrait:SetPoint(p.point, p.x, p.y)
-    if which == "target" then
+    if which ~= "player" then
         portrait:SetTexture(QUESTION_MARK)
     elseif SetPortraitTexture then
         SetPortraitTexture(portrait, "player")
@@ -164,9 +196,10 @@ function Preview.Portrait(f, which)
 end
 
 function Preview.Art(f, which)
+    local L = LAYOUT[which]
     local art = f:CreateTexture(nil, "BACKGROUND", nil, 2)
-    Atlas(art, LAYOUT[which].art, true)
-    art:SetPoint("CENTER")
+    Atlas(art, L.art, true)
+    if L.artAt then art:SetPoint("TOPLEFT", L.artAt[1], -L.artAt[2]) else art:SetPoint("CENTER") end
     return art
 end
 
@@ -200,11 +233,261 @@ function Preview.PlaceMask(mask, spec, rel, x, y)
 end
 
 --------------------------------------------------------------------------------
+-- Taller bars (/sab tall, a test): the frame art cut into slices of the game's own atlas and laid out again, each
+-- bar's slot stretched by repeating a band from its middle, the portrait ring cut out and put back over the panel.
+--------------------------------------------------------------------------------
+-- In frame units from the frame's top-left (y down), measured on the capture (branding/art): a mirrored art's (the
+-- target's, portrait on the right) x from the frame's right edge, so all read as the player's. ring: the portrait ring's centre and outer radius. top,
+-- bottom: the panel's edges. health, power: a row in the middle of each slot and how far either side of it the band
+-- repeated to stretch it reaches. clean: where the panel is free of the ring (to the atlas's far end). The ring hides
+-- the panel's end, which the capture never shows, so it is drawn again from the dark block beside the ring (from
+-- strip to clean): its top border (top to stripTop), a band (stripMid) stretched down the middle, its bottom border
+-- (stripBottom to bottom), each carried on under the ring by its first column stretched. opaque: where each bar's mask
+-- lets the liquid through, from the bar's top, measured on the captured masks: the slot, inside the art's borders.
+local TALL = {
+    player = { ring = { 53.62, 50.26, 33.76 }, top = 25.6, bottom = 74.6, health = { 53, 2.5 }, power = { 66.5, 2 },
+               clean = 88, strip = 82.5, stripTop = 30, stripMid = { 30, 32 }, stripBottom = 70.5,
+               opaque = { health = { 3.75, 16.88 }, power = { 2.24, 10.19 } } },
+    target = { ring = { 53.62, 50.26, 33.15 }, top = 23.6, bottom = 72.4, health = { 51, 2.5 }, power = { 64.75, 2 },
+               clean = 87.5, strip = 82.5, stripTop = 28.5, stripMid = { 29, 31 }, stripBottom = 68, mirror = true,
+               opaque = { health = { 3.61, 16.75 }, power = { 1.11, 9.05 } } },
+}
+-- The small frames' art (LAYOUT.tot, the pet's too) was measured on the game's own sheet rather than a capture:
+-- uiunitframec60.blp, from github.com/Adrestie/mod-forever-ui (data/art/interface/foreverui/hud), its atlas at the
+-- coordinates in that repo's UIAtlas_04_unit_frames.lua, generated from the Forever client (1.60.1); the same sheet
+-- gives the player's and target's measurements above within a few tenths. Its masks are the party frame's, so their
+-- opaque bands are the party capture's (branding/art/party-*-mask.png), where LAYOUT.tot puts the masks.
+TALL.tot = { ring = { 23, 23, 21.7 }, top = 3.6, bottom = 39, health = { 23.5, 1.5 }, power = { 33.5, 1 },
+             clean = 46, strip = 41, stripTop = 6, stripMid = { 6.5, 8.5 }, stripBottom = 36,
+             opaque = { health = { 1.20, 11.01 }, power = { 0.51, 7.56 } } }
+TALL.focus, TALL.pet = TALL.target, TALL.tot
+Preview.TALL = TALL -- for the real frames (TallFrames.lua)
+-- The ring keeps its size while it covers the panel's end above and below by this much, and grows past that.
+local TALL_COVER = 2
+
+-- An atlas's place on a frame (232 x 100 unless w and h say) that centres it at its own size (Preview.Art), or puts
+-- its top-left at at ({ x, y }), and its texture coordinates.
+local function AtlasPlace(name, w, h, at)
+    w, h = w or 232, h or 100
+    local get = C_Texture and C_Texture.GetAtlasInfo
+    local ok, info = pcall(get or error, name)
+    if not (ok and type(info) == "table" and info.width and info.height and info.width > 0 and info.height > 0) then
+        return nil
+    end
+    return { name = name, w = info.width, h = info.height, x0 = at and at[1] or w / 2 - info.width / 2,
+             y0 = at and at[2] or h / 2 - info.height / 2,
+             l = info.leftTexCoord or 0, r = info.rightTexCoord or 1, t = info.topTexCoord or 0,
+             b = info.bottomTexCoord or 1, file = info.file or info.filename }
+end
+Preview.AtlasPlace = AtlasPlace
+
+-- A texture for the next slice on host (the frame itself for its art, a glow's frame for a glow): its slices are kept
+-- (host.slices, host.sliceUsed of them in use) and reused each time the frame is laid out again, in host.layer
+-- (BACKGROUND unless it says) at sublevel 0.
+local function SliceTexture(host)
+    host.slices = host.slices or {}
+    host.sliceUsed = host.sliceUsed + 1
+    local tex = host.slices[host.sliceUsed]
+    if not tex then
+        tex = host:CreateTexture(nil, host.layer or "BACKGROUND", nil, 0)
+        host.slices[host.sliceUsed] = tex
+    end
+    return tex
+end
+
+-- The part of atlas A from (sx0, sy0) to (sx1, sy1) drawn from (dx0, dy0) to (dx1, dy1) on f, in frame units, on the
+-- texture Take() gives; whatever of it lies past the atlas is left out (and then Take is not called). The slice is the
+-- atlas's file (by ID) with texture coordinates, as FlareUI slices Forever's unit frame art: in game SetAtlas and then
+-- SetTexCoord drew nothing at all (seen in the editor, every slice and the ring missing).
+local function Slice(f, A, Take, sx0, sx1, sy0, sy1, dx0, dx1, dy0, dy1)
+    local kx, ky = (dx1 - dx0) / (sx1 - sx0), (dy1 - dy0) / (sy1 - sy0)
+    local ax1, ay1 = A.x0 + A.w, A.y0 + A.h
+    if sx0 < A.x0 then dx0, sx0 = dx0 + (A.x0 - sx0) * kx, A.x0 end
+    if sx1 > ax1 then dx1, sx1 = dx1 - (sx1 - ax1) * kx, ax1 end
+    if sy0 < A.y0 then dy0, sy0 = dy0 + (A.y0 - sy0) * ky, A.y0 end
+    if sy1 > ay1 then dy1, sy1 = dy1 - (sy1 - ay1) * ky, ay1 end
+    if sx1 - sx0 < 0.01 or sy1 - sy0 < 0.01 or dx1 - dx0 < 0.01 or dy1 - dy0 < 0.01 then return nil end
+    local tex = Take()
+    if not (A.file and tex:SetTexture(A.file) ~= false) then return nil end
+    tex:ClearAllPoints()
+    tex:Show()
+    local u, v = A.r - A.l, A.b - A.t
+    tex:SetTexCoord(A.l + (sx0 - A.x0) / A.w * u, A.l + (sx1 - A.x0) / A.w * u,
+                    A.t + (sy0 - A.y0) / A.h * v, A.t + (sy1 - A.y0) / A.h * v)
+    tex:SetSize(dx1 - dx0, dy1 - dy0)
+    tex:SetPoint("TOPLEFT", f, "TOPLEFT", dx0, -dy0)
+    return tex
+end
+
+-- A glow over the art (the game's in-combat and status flashes) has the art's outline but no panel of its own beside the
+-- ring, and spreads past the ring's edge by about this much.
+local GLOW_PAD = 4
+
+-- Atlas A (its place on f in frame units) laid out on f as frame art of layout which with the health slot dh taller and
+-- the power slot dp, its textures on host (f itself for the art). A glow (glow true) is laid out the same way, with
+-- no panel's end drawn under the ring, and its ring cut wider (GLOW_PAD) but not past where the panel begins. Returns
+-- how it placed things.
+local function Lay(f, host, which, dh, dp, A, glow)
+    local g, L = TALL[which], LAYOUT[which]
+    local W, H = SizeOf(L)
+    host.sliceUsed = 0
+    local function Take() return SliceTexture(host) end
+    local D = dh + dp
+    local mirror = g.mirror
+    -- x as measured (a mirrored art's from its right edge) to the frame's, for a span x0..x1.
+    local function X(x0, x1)
+        if mirror then return W - x1, W - x0 end
+        return x0, x1
+    end
+    local function Piece(take, sx0, sx1, sy0, sy1, dx0, dx1, dy0, dy1)
+        local a, b = X(sx0, sx1)
+        local c, d = X(dx0, dx1)
+        return Slice(f, A, take, a, b, sy0, sy1, c, d, dy0, dy1)
+    end
+    local cx, cy, R = g.ring[1], g.ring[2], g.ring[3]
+    local ncy = cy + D / 2
+    local s = math.max(1, (math.max(ncy - g.top, g.bottom + D - ncy) + TALL_COVER) / R)
+    local ncx = cx + R - R * s -- the ring's side by the bars stays where it was
+
+    -- The panel clear of the ring, row by row: as it is down to the health slot's middle, a band from there repeated
+    -- for dh, the rest down to the power slot's middle dh lower, its band for dp, and the rest D lower.
+    local far = mirror and (W - A.x0) or (A.x0 + A.w) -- the atlas's far end, as measured
+    local rows = {}
+    local function band(y, half, at, d)
+        local done = 0
+        while done < d - 0.01 do
+            local n = math.min(2 * half, d - done)
+            rows[#rows + 1] = { y - half, y - half + n, at + done, at + done + n }
+            done = done + n
+        end
+    end
+    local yh, yp = g.health[1], g.power[1]
+    rows[#rows + 1] = { A.y0, yh, A.y0, yh }
+    band(yh, g.health[2], yh, dh)
+    rows[#rows + 1] = { yh, yp, yh + dh, yp + dh }
+    band(yp, g.power[2], yp + dh, dp)
+    rows[#rows + 1] = { yp, A.y0 + A.h, yp + D, A.y0 + A.h + D }
+    for _, r in ipairs(rows) do Piece(Take, g.clean, far, r[1], r[2], g.clean, far, r[3], r[4]) end
+
+    -- The panel's end, under the ring: the dark block's top border, middle and bottom border, each carried on to the
+    -- ring's centre by its first column.
+    if not glow then
+        local strips = {
+            { g.top, g.stripTop, g.top, g.stripTop },
+            { g.stripMid[1], g.stripMid[2], g.stripTop, g.stripBottom + D },
+            { g.stripBottom, g.bottom, g.stripBottom + D, g.bottom + D },
+        }
+        for _, r in ipairs(strips) do
+            Piece(Take, g.strip, g.clean, r[1], r[2], g.strip, g.clean, r[3], r[4])
+            Piece(Take, g.strip, g.strip + 0.5, r[1], r[2], ncx, g.strip, r[3], r[4])
+        end
+    end
+    for i = host.sliceUsed + 1, #host.slices do host.slices[i]:Hide() end
+
+    -- The ring, cut out of the atlas by a circle, centred on the panel again and grown by s; a glow's no further right
+    -- than where the panel begins, which its rows above carry.
+    local half = R + (glow and GLOW_PAD or 0.5)
+    local right = glow and math.min(cx + half, g.clean) or cx + half
+    host.ringTex = host.ringTex or host:CreateTexture(nil, host.layer or "BACKGROUND", nil, glow and 1 or 2)
+    local ring = Piece(function() return host.ringTex end, cx - half, right, cy - half, cy + half,
+        ncx - half * s, ncx + (right - cx) * s, ncy - half * s, ncy + half * s)
+    host.ringTex:SetShown(ring ~= nil)
+    if host.ringMask == nil then
+        -- Asked of the client first: FlareUI does not trust SetAtlas's answer on Forever either.
+        host.ringMask = false
+        if AtlasPlace("CircleMask") then
+            local mask = host:CreateMaskTexture()
+            mask:SetAtlas("CircleMask")
+            host.ringTex:AddMaskTexture(mask)
+            host.ringMask = mask
+        end
+    end
+    if host.ringMask then
+        local x0 = X(ncx - half * s, ncx + half * s)
+        host.ringMask:ClearAllPoints()
+        host.ringMask:SetSize(2 * half * s, 2 * half * s)
+        host.ringMask:SetPoint("TOPLEFT", f, "TOPLEFT", x0, -(ncy - half * s))
+    end
+    local circled = ring ~= nil and host.ringMask and true or false
+
+    -- Where a point near the ring (in the frame's units, y down) goes: with the ring, grown about its centre.
+    local function Moved(x, y)
+        local mx = mirror and W - x or x
+        mx = ncx + (mx - cx) * s
+        return mirror and W - mx or mx, ncy + (y - cy) * s
+    end
+    -- How far the grown ring reaches past the frame's edges (left, top, right, bottom), which the frame's own size does
+    -- not take in: it grows out from the bars' side.
+    local rx0 = X(ncx - half * s, ncx + half * s)
+    local rx1 = rx0 + 2 * half * s
+    local over = { math.max(0, -rx0), math.max(0, -(ncy - half * s)), math.max(0, rx1 - W),
+                   math.max(0, ncy + half * s - (H + D)) }
+    return { scale = s, ring = ring ~= nil, circled = circled, atlas = A, Moved = Moved, over = over }
+end
+
+-- The frame art on f (its layout's size, dh + dp taller) with the health slot dh taller and the power slot dp, the
+-- panel at BACKGROUND 0, the ring at 2 (the portrait, at 1, between them). Returns how it placed things, or nil when the
+-- art is not measured (TALL) or the client does not say where the atlas's pixels are (then nothing is drawn). Called
+-- again, it lays the same textures out anew.
+function Preview.TallArt(f, which, dh, dp)
+    local L = LAYOUT[which]
+    if not (TALL[which] and L) then return nil end
+    local W, H = SizeOf(L)
+    local A = AtlasPlace(L.art, W, H, L.artAt)
+    if not A then return nil end
+    return Lay(f, f, which, dh, dp, A, false)
+end
+
+-- A glow of the game's (atlas, its top-left at x0, y0 on the game's frame, as on ours) laid out over a taller frame f
+-- as its art is, on a frame of its own over the art (OVERLAY, under the bars), kept by key for the next layout. Returns
+-- that frame, its textures in .slices and .ringTex, or nil when f is not taller or the client has no such atlas.
+function Preview.TallGlow(f, key, atlas, x0, y0)
+    if not (f.tall and f.tallBy) then return nil end
+    local place = AtlasPlace(atlas)
+    if not place then return nil end
+    place.x0, place.y0 = x0, y0
+    f.glows = f.glows or {}
+    local host = f.glows[key]
+    if not host then
+        host = CreateFrame("Frame", nil, f)
+        host:SetAllPoints(f)
+        host.layer = "OVERLAY"
+        f.glows[key] = host
+    end
+    Lay(f, host, f.which, f.tallBy[1], f.tallBy[2], place, true)
+    return host
+end
+
+-- A bar's layout made taller: health dh, power dp and dh lower, and its mask stretched with it. The mask is mostly
+-- transparent margin round its slot, so stretched evenly its slot grew less than the bar and the liquid stopped short of
+-- the art's borders above and below (seen in game). So it is stretched and moved until the part it lets through (opaque)
+-- starts where it did and is d taller, as the art's slot is.
+local function TallSpec(spec, kind, dh, dp, which)
+    local d = kind == "health" and dh or dp
+    local out = setmetatable({ h = spec.h + d, y = kind == "power" and spec.y - dh or spec.y }, { __index = spec })
+    local m = spec.maskAtlas and AtlasPlace(spec.maskAtlas)
+    local maskH = spec.maskH or (m and m.h)
+    local band = TALL[which] and TALL[which].opaque[kind]
+    if maskH and band then
+        -- From the bar's top (y down) the mask starts at -maskY; its band at o0..o1, a share a..b of its height.
+        local o0, o1 = band[1], band[2]
+        local a = (o0 + spec.maskY) / maskH
+        local grown = maskH * (o1 - o0 + d) / (o1 - o0)
+        out.maskH = grown
+        out.maskY = a * grown - o0
+    elseif maskH then
+        out.maskH = maskH + d
+    end
+    return out
+end
+
+--------------------------------------------------------------------------------
 -- The preview frames
 --------------------------------------------------------------------------------
 
 -- A bar like the game's: its own fill (shown while the liquid is off), shaped by the game's mask
--- atlas, with its text above everything on top.
+-- atlas, with its text above everything on top. setup.live: a bar of a real frame of ours (TallFrames.lua), filled from
+-- the game's and handed to the liquid there, with a left and a right text as well; not a preview.
 local function Bar(f, top, spec, setup)
     local bar = CreateFrame("StatusBar", nil, f)
     bar:SetSize(spec.w, spec.h)
@@ -228,6 +511,12 @@ local function Bar(f, top, spec, setup)
     bar.text = top:CreateFontString(nil, "OVERLAY", "TextStatusBarText")
     bar.text:SetPoint("CENTER", bar, "CENTER", 0, 0)
     bar.max = setup.max
+    bar.fill = fill
+    if setup.live then
+        bar.left = top:CreateFontString(nil, "OVERLAY", "TextStatusBarText")
+        bar.right = top:CreateFontString(nil, "OVERLAY", "TextStatusBarText")
+        return bar
+    end
     bar.state = ns.Bars.Preview(bar, { key = setup.key, unit = setup.unit, kind = setup.kind, token = setup.token,
                                        frame = setup.frame, class = setup.class })
     return bar
@@ -311,28 +600,87 @@ function Preview.SetActive(holder, on)
     end
 end
 
+-- The combo points round an example target's portrait, a rogue's (asked for in the editor), as the game lays them out
+-- (Camelot ComboFrame.lua: from this angle in these steps, this far out in a dot's own units, the last dot lit first),
+-- in dots of its own template. Nothing for other classes, or where the client has no such template.
+local COMBO = { x = 2, y = 2, radius = 66, start = -10, step = 21, scale = 0.6, max = 5 }
+
+local function LayoutCombo(f)
+    local c = f.combo
+    local s = f.tall and f.tall.scale or 1
+    c.host:SetPoint("CENTER", f.portrait, "CENTER", COMBO.x * s, COMBO.y * s)
+    for _, p in ipairs(c.points) do p:SetScale(COMBO.scale * s) end -- a scaled frame's offsets are in its own units
+end
+
+local function AddCombo(f)
+    local okClass, _, class = pcall(UnitClass, "player")
+    if not okClass or class ~= "ROGUE" then return end
+    local ok, combo = pcall(function()
+        local host = CreateFrame("Frame", nil, f.top)
+        host:SetSize(1, 1)
+        host:SetFrameLevel(f.top:GetFrameLevel() + 2)
+        host:Hide()
+        local points = {}
+        for i = 1, COMBO.max do
+            local p = CreateFrame("Frame", nil, host, "RogueComboPointTemplate")
+            local a = math.rad(COMBO.start + (i - 1) * COMBO.step)
+            p:SetPoint("CENTER", host, "CENTER", math.cos(a) * COMBO.radius, math.sin(a) * COMBO.radius)
+            p:Setup()
+            points[i] = p
+        end
+        return { host = host, points = points, n = 0 }
+    end)
+    if not ok then return end
+    f.combo = combo
+    -- Shown again, each dot is as it should be at once: one hidden halfway through its animation would stay so.
+    combo.host:SetScript("OnShow", function()
+        for i, p in ipairs(combo.points) do
+            p.isFull = nil
+            p:SetActiveNoAnimation(i > COMBO.max - combo.n)
+        end
+    end)
+    LayoutCombo(f)
+end
+
+-- n points on f's target; none hides them, as the game does.
+local function SetCombo(f, n)
+    local c = f.combo
+    if not c or n == c.n then return end
+    if n == 0 then
+        c.n = 0
+        c.host:Hide()
+        return
+    end
+    c.host:Show()
+    c.n = n
+    for i, p in ipairs(c.points) do p:SetActive(i > COMBO.max - n) end
+end
+
 -- The frame: art at the bottom, then the bars and their liquid, then the text, the level circle and
 -- the name above them, as the game layers them. as: which frame's settings its bars follow (SIDES), which by default.
-local function Frame(parent, which, as)
+-- Preview.SetFrameTall lays it out again with taller bars. live: a real frame of ours (Preview.LiveFrame).
+local function Frame(parent, which, as, live)
     local L = LAYOUT[which]
     local side = SIDES[as or which]
     local f = CreateFrame("Frame", nil, parent)
-    f:SetSize(232, 100)
     local top = CreateFrame("Frame", nil, f)
     top:SetAllPoints()
     top:SetFrameLevel(f:GetFrameLevel() + 10)
 
+    f:SetSize(SizeOf(L))
+    f.which = which
     f.portrait = Preview.Portrait(f, which)
-    Preview.Art(f, which)
-    if which == "target" then Preview.Banner(f) end
+    f.art = Preview.Art(f, which)
+    if L.banner then f.banner = Preview.Banner(f) end
 
     local name = top:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    f.nameText, f.top = name, top
     name:SetJustifyH("CENTER")
     name:SetSize(L.name.w, 12)
-    if which == "target" then
-        name:SetPoint(L.name.point, L.name.x, L.name.y)
-    else
+    if which == "player" then
         name:SetPoint(L.name.point, f, "TOPLEFT", L.name.x, L.name.y)
+    else
+        name:SetPoint(L.name.point, L.name.x, L.name.y)
     end
     if side.name then
         name:SetText(side.name)
@@ -342,35 +690,106 @@ local function Frame(parent, which, as)
         name:SetText(shown or (UnitName("player")))
     end
 
-    local circle = Preview.Circle(top, which)
-    local level = top:CreateFontString(nil, "OVERLAY", "WhiteLargeNumberFont")
-    level:SetPoint("CENTER", circle, "CENTER", 0, -0.5)
-    level:SetText(UnitLevel("player"))
+    -- The level in its circle; the small frames have none.
+    if L.circle then
+        local circle = Preview.Circle(top, which)
+        f.circle = circle
+        local level = top:CreateFontString(nil, "OVERLAY", "WhiteLargeNumberFont")
+        f.levelText = level
+        level:SetPoint("CENTER", circle, "CENTER", 0, -0.5)
+        level:SetText(UnitLevel("player"))
+    end
 
     local token, powerMax, info
-    if which == "target" then
-        token, powerMax, info = "MANA", 350, PowerBarColor and PowerBarColor.MANA
-    else
+    if which == "player" then
         token, powerMax, info = PowerInfo("player")
+    else
+        token, powerMax, info = "MANA", 350, PowerBarColor and PowerBarColor.MANA
     end
     local key = as or which
     f.health = Bar(f, top, L.health, { key = key .. "Health", unit = side.unit, kind = "health", frame = side.frame,
-        max = which == "target" and 210 or 271 })
+        max = which == "player" and 271 or 210, live = live })
     f.power = Bar(f, top, L.power, { key = key .. "Power", unit = side.unit, kind = "power", token = token,
         frame = side.frame, max = powerMax, color = info and { info.r, info.g, info.b } or { 0, 0, 1 },
-        fillAtlas = which == "player" and info and info.atlas or nil })
+        fillAtlas = which == "player" and info and info.atlas or nil, live = live })
     return f
 end
 
+-- A frame of ours on the real game frame gf, in layout which (LAYOUT), standing for frame as (SIDES: "player",
+-- "target", "focus", "pet" or "tot"), drawn as the examples are but with bars that are not previews: TallFrames.lua
+-- fills them from the game's, hands them to the liquid and copies the game's name, level and portrait onto it. Laid
+-- out with Preview.SetFrameTall.
+function Preview.LiveFrame(gf, which, as)
+    return Frame(gf, which, as, true)
+end
+
+-- Lays a frame of Frame's out with its health bar dh taller and its power bar dp (0 and 0: the game's frame, its own
+-- art). Taller, the art is slices of the game's atlas (Preview.TallArt), the portrait and level circle
+-- going with the ring and the bars' masks stretched with them; with no atlas info from the client it stays the game's
+-- size. f.tall: how the art was laid out, or nil.
+function Preview.SetFrameTall(f, dh, dp)
+    local which, L = f.which, LAYOUT[f.which]
+    dh, dp = dh or 0, dp or 0
+    local tall = (dh ~= 0 or dp ~= 0) and Preview.TallArt(f, which, dh, dp) or nil
+    if not tall then
+        dh, dp = 0, 0
+        for _, tex in ipairs(f.slices or {}) do tex:Hide() end
+        if f.ringTex then f.ringTex:Hide() end
+        for _, host in pairs(f.glows or {}) do host:Hide() end
+    end
+    f.tall, f.tallBy = tall, tall and { dh, dp } or nil
+    if f.art then f.art:SetShown(not tall) end
+    local W, H = SizeOf(L)
+    f:SetSize(W, H + dh + dp)
+    local function Moved(x, y)
+        if tall then return tall.Moved(x, y) end
+        return x, y
+    end
+    local s = tall and tall.scale or 1
+    -- The portrait and the level circle, by their centres (the same places Preview.Portrait and Preview.Circle give).
+    local p = L.portrait
+    local fromRight = p.point:find("RIGHT") ~= nil
+    local x, y = Moved(fromRight and W + p.x - p.size / 2 or p.x + p.size / 2, -p.y + p.size / 2)
+    f.portrait:ClearAllPoints()
+    f.portrait:SetSize(p.size * s, p.size * s)
+    f.portrait:SetPoint("CENTER", f, "TOPLEFT", x, -y)
+    if f.circle then
+        local w, h = f.circle:GetSize()
+        w, h = w or 0, h or 0
+        local c = L.circle
+        x, y = Moved(c.point:find("RIGHT") and W + c.x - w / 2 or c.x + w / 2, H - c.y - h / 2)
+        f.circle:ClearAllPoints()
+        f.circle:SetPoint("CENTER", f, "TOPLEFT", x, -y)
+    end
+    -- The bars and their masks.
+    for _, kind in ipairs({ "health", "power" }) do
+        local bar = f[kind]
+        local spec = tall and TallSpec(L[kind], kind, dh, dp, which) or L[kind]
+        bar:ClearAllPoints()
+        bar:SetSize(spec.w, spec.h)
+        bar:SetPoint("TOPLEFT", spec.x, spec.y)
+        local mask = bar[kind == "health" and "HealthBarMask" or "ManaBarMask"]
+        if mask then
+            mask:ClearAllPoints()
+            Preview.PlaceMask(mask, spec, bar, 0, 0)
+        end
+    end
+    if f.combo then LayoutCombo(f) end
+    return tall ~= nil
+end
+
 -- Both frames side by side, playing a scene (the fight by default) while shown. sides: what each stands for, { left =
--- "player" or "prd", right = "target", "focus", "pet" or "tot" }, the player and the target by default.
-function Preview.Create(parent, sides)
+-- "player" or "prd", right = "target", "focus", "pet" or "tot" }, the player and the target by default. holder:SetTall
+-- makes their bars taller. combo: a rogue's combo points on the target too.
+function Preview.Create(parent, sides, combo)
     sides = sides or {}
     local holder = CreateFrame("Frame", nil, parent)
     holder:SetSize(480, 100)
     local player, target = Frame(holder, "player", sides.left), Frame(holder, "target", sides.right)
-    player:SetPoint("LEFT")
-    target:SetPoint("RIGHT")
+    -- By their tops: a taller frame grows down, as its bars do.
+    player:SetPoint("TOPLEFT")
+    target:SetPoint("TOPRIGHT")
+    if combo then AddCombo(target) end
 
     -- The DoT marker on the target, shown while the dots setting is on.
     local dots = {}
@@ -405,6 +824,9 @@ function Preview.Create(parent, sides)
         SetFraction(player.power, row[3])
         SetFraction(target.health, row[4])
         SetFraction(target.power, row[5])
+        local points = scene.points
+        if type(points) == "table" then points = points[i] end
+        SetCombo(target, not Resting(target.health) and points or 0)
         local now = scene.dots and scene.dots[i] or {}
         local landed = #now > #dots
         dots = now
@@ -430,18 +852,82 @@ function Preview.Create(parent, sides)
         holder.scene = name
         Play(1)
     end
+    -- Each frame's bars taller: tall = { player = { dh, dp }, target = { dh, dp } }, a frame left out as the game's. The
+    -- holder takes the taller frame's height.
+    function holder.SetTall(_, tall)
+        tall = tall or {}
+        local height = 100
+        for _, which in ipairs({ "player", "target" }) do
+            local t = tall[which] or {}
+            local f = holder[which]
+            Preview.SetFrameTall(f, t[1], t[2])
+            height = math.max(height, f:GetHeight())
+        end
+        holder:SetHeight(height)
+    end
     holder.scene = "fight"
     holder.player, holder.target, holder.marker, holder.healer = player, target, marker, healer
     holder.bars = { player.health, player.power, target.health, target.power }
     return holder
 end
 
--- One frame alone, in the target frame's art, standing for the focus, pet or target of target (SIDES), playing the
--- target's side of the frames' scenes while shown (the editor's screen, where each has a place of its own).
+-- /sab tall: a window of the player and target frames with the bars taller, health and power this tall (the game's
+-- are 20 and 10), playing the fight, to see in game how the art laid out again from slices of the atlas looks. nil
+-- hides it. Returns lines for chat: what the client said about the atlas, and how the ring was placed.
+local tallTest
+function Preview.TallTest(health, power)
+    if tallTest then tallTest:Hide() end
+    tallTest = nil
+    if not health then return { "Bar Height test hidden." } end
+    local dh, dp = health - 20, power - 10
+    local win = CreateFrame("Frame", nil, UIParent)
+    win:SetSize(520, 100 + dh + dp + 40)
+    win:SetPoint("TOP", UIParent, "TOP", 0, -140)
+    win:SetFrameStrata("HIGH")
+    win:SetMovable(true)
+    win:EnableMouse(true)
+    win:RegisterForDrag("LeftButton")
+    win:SetScript("OnDragStart", win.StartMoving)
+    win:SetScript("OnDragStop", win.StopMovingOrSizing)
+    local bg = win:CreateTexture(nil, "BACKGROUND", nil, -8)
+    bg:SetAllPoints()
+    bg:SetColorTexture(0.05, 0.06, 0.09, 0.85)
+    local title = win:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    title:SetPoint("TOP", 0, -8)
+    title:SetText(string.format("Bar Height: health %d, power %d. Drag to move; /sab tall off to close.", health, power))
+    local holder = Preview.Create(win)
+    holder:SetTall({ player = { dh, dp }, target = { dh, dp } })
+    holder:SetPoint("BOTTOM", 0, 6)
+    tallTest = win
+
+    local lines = {}
+    for _, which in ipairs({ "player", "target" }) do
+        local f = holder[which]
+        local A = AtlasPlace(LAYOUT[which].art)
+        if not A then
+            lines[#lines + 1] = which .. ": the client gave no atlas info for " .. LAYOUT[which].art
+                .. " (C_Texture.GetAtlasInfo), so the frame is shown at the game's size."
+        else
+            lines[#lines + 1] = string.format("%s: atlas %s %gx%g, coords %.4f %.4f %.4f %.4f, file %s", which, A.name, A.w,
+                A.h, A.l, A.r, A.t, A.b, tostring(A.file))
+        end
+        if f.tall then
+            lines[#lines + 1] = string.format("%s: portrait %s (x%.2f)%s", which,
+                f.tall.scale > 1 and "grown to cover the panel's end" or "at its own size", f.tall.scale,
+                f.tall.circled and "" or "; no CircleMask atlas, so the ring is cut square")
+        end
+    end
+    return lines
+end
+
+-- One frame alone, standing for the focus (in the target frame's art, its template), the pet or the target of target
+-- (in theirs, the small frames' LAYOUT.tot), playing the target's side of the frames' scenes while shown (the
+-- editor's screen, where each has a place of its own).
 function Preview.CreateSingle(parent, as)
+    local art = (as == "pet" or as == "tot") and as or "target"
     local holder = CreateFrame("Frame", nil, parent)
-    holder:SetSize(232, 100)
-    local f = Frame(holder, "target", as)
+    holder:SetSize(SizeOf(LAYOUT[art]))
+    local f = Frame(holder, art, as)
     f:SetPoint("TOPLEFT")
     local t = 0
     holder.scene = "fight"
@@ -454,6 +940,12 @@ function Preview.CreateSingle(parent, as)
     function holder.SetScene(_, name)
         if not SCENES[name] then return end
         holder.scene, t = name, 0
+    end
+    -- The frame's bars taller: tall = { dh, dp }. The holder takes the frame's height.
+    function holder.SetTall(_, tall)
+        tall = tall or {}
+        Preview.SetFrameTall(f, tall[1], tall[2])
+        holder:SetHeight(f:GetHeight())
     end
     holder.target, holder.bars = f, { f.health, f.power }
     return holder
@@ -481,6 +973,24 @@ Preview.PARTY = PARTY -- for /sab capture party (Capture.lua)
 local PARTY_POWER_SHIFT = { 1.5, -1.9 }
 local SHIFTED_POWER = setmetatable({ x = PARTY.power.x + PARTY_POWER_SHIFT[1], y = PARTY.power.y + PARTY_POWER_SHIFT[2] },
     { __index = PARTY.power })
+-- The party member frame as a layout of its own (TallFrames.lua's real party frames, and the example's members laid out
+-- taller): the art at (1, 2), the power bar shifted as above, and the health mask 0.4 lower. Its art is the small
+-- frames' (TALL.tot) pixel for pixel, on the game's party sheet (uipartyframec60.blp, from mod-forever-ui as there), so
+-- its measurements are theirs 1 right and 2 down. Measured on that sheet, the slots are x 47..115, health y 21..30 and
+-- power y 33..38; the shift above, set by eye, centres the power mask's opaque part within a unit of that (0.9 right
+-- and 1.9 down measured), and the health mask is centred on its slot (0.4 down). The masks' opaque bands are the party
+-- capture's (branding/art/party-*-mask.png) from each bar's top.
+LAYOUT.party = {
+    size = { 120, 53 }, artAt = { 1, 2 }, art = PARTY.art,
+    portrait = { point = "TOPLEFT", x = 7, y = -6, size = 37, mask = "CircleMask" },
+    name = { point = "TOPLEFT", x = 48, y = -7, w = 55 },
+    health = setmetatable({ maskY = PARTY.health.maskY - 0.4 }, { __index = PARTY.health }),
+    power = SHIFTED_POWER,
+}
+TALL.party = { ring = { 24, 25, 21.7 }, top = 5.6, bottom = 41, health = { 25.5, 1.5 }, power = { 35.5, 1 },
+               clean = 47, strip = 42, stripTop = 8, stripMid = { 8.5, 10.5 }, stripBottom = 38,
+               opaque = { health = { 0.53, 10.51 }, power = { -0.89, 6.16 } } }
+
 -- The class icons, by file ID, where the client has no class icon atlas.
 local CLASS_ICONS = { WARRIOR = 626008, PRIEST = 626004, MAGE = 626001, ROGUE = 626005 }
 
@@ -531,12 +1041,13 @@ local function Member(holder, spec, as)
     local name, class, token, powerMax = unpack(spec)
     local f = CreateFrame("Frame", nil, holder)
     f:SetSize(120, 53)
+    f.which = "party" -- LAYOUT.party, for Preview.SetFrameTall
     local top = CreateFrame("Frame", nil, f)
     top:SetAllPoints()
     top:SetFrameLevel(f:GetFrameLevel() + 10)
 
-    Preview.PartyPortrait(f, class)
-    Preview.PartyArt(f)
+    f.portrait = Preview.PartyPortrait(f, class)
+    f.art = Preview.PartyArt(f)
 
     local label = top:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
     label:SetJustifyH("LEFT")
@@ -545,9 +1056,9 @@ local function Member(holder, spec, as)
     label:SetText(name)
 
     local info = PowerBarColor and PowerBarColor[token]
-    f.health = Bar(f, top, PARTY.health, { key = as .. "Health", frame = as, class = class, unit = "party1",
+    f.health = Bar(f, top, LAYOUT.party.health, { key = as .. "Health", frame = as, class = class, unit = "party1",
         kind = "health", max = 400 })
-    f.power = Bar(f, top, SHIFTED_POWER, { key = as .. "Power", frame = as, class = class, unit = "party1",
+    f.power = Bar(f, top, LAYOUT.party.power, { key = as .. "Power", frame = as, class = class, unit = "party1",
         kind = "power", token = token, max = powerMax, color = info and { info.r, info.g, info.b } or { 0, 0, 1 },
         fillAtlas = info and info.atlas or nil })
     -- The game shows party bar text only with its status text setting; the examples are cleaner without.
@@ -605,6 +1116,22 @@ function Preview.CreateParty(parent, as, stacked)
     function holder.SetScene(_, name)
         if not SCENES[name] then return end
         holder.scene, t, step = name, 0, 0
+    end
+    -- Every member's bars taller: tall = { dh, dp }, each member growing down as the real ones do, the stack or row
+    -- laid out again round them.
+    function holder.SetTall(_, tall)
+        tall = tall or {}
+        local y, height = 0, 0
+        for i, m in ipairs(members) do
+            Preview.SetFrameTall(m, tall[1], tall[2])
+            if stacked then
+                m:ClearAllPoints()
+                m:SetPoint("TOPLEFT", 0, -y)
+                y = y + m:GetHeight() + 4
+            end
+            height = math.max(height, m:GetHeight())
+        end
+        if stacked then holder:SetHeight(y - 4) else holder:SetHeight(height) end
     end
     holder.members = members
     return holder

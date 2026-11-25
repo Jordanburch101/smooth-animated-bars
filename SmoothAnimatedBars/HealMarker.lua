@@ -89,8 +89,9 @@ local PLUS_FROM, PLUS_TO = { 0.45, 1.00, 0.35 }, { 0.80, 1.00, 0.60 }
 -- Each heal look: the theme it starts from (Themes.lua) and what it changes. Nature keeps the theme's leaves;
 -- bandages throw up green pluses like the ones the game shows over a healed character instead, a few with each
 -- tick, and send a few rising while they run.
--- Other players' heals: one liquid for every healer but the player, whose classes the game does not tell apart, in a
--- silvery teal near the game's own bar for them, with Tidal's caustics and bubbles.
+-- Other players' heals: one liquid for every healer but the player, in Holy's or Nature's look while every healer
+-- casting at the unit is of that school (OthersSchool), else in a silvery teal near the game's own bar for them, with
+-- Tidal's caustics and bubbles.
 local OTHERS_THEME = "others"
 local HEAL_THEMES = {
     others = { base = "tidal", over = {
@@ -207,6 +208,96 @@ local function OthersAmount(unit)
     if ok then return fromOthers end
 end
 
+-- Who else is healing whom, for the look of others' heals. The calculator's amount is one secret sum, and each
+-- healer's own share (UnitGetDetailedHealPrediction with that healer) is secret too, so neither can say who heals. Group
+-- members' casts can: casting[caster token] = { school, on = { [group token] = true } or nil where the caster's target
+-- cannot be told (a click or mouseover cast, or UnitIsUnit secret) }, from the start of a heal (Heals.CastSchool: its
+-- text reads as a heal, its caster's class a healer's) to its end.
+local casting = {}
+local GROUP_TOKENS = { "player", "party1", "party2", "party3", "party4" }
+for i = 1, 40 do GROUP_TOKENS[#GROUP_TOKENS + 1] = "raid" .. i end
+
+local function GroupToken(unit)
+    return type(unit) == "string" and not Secret(unit) and (unit:match("^party%d$") or unit:match("^raid%d+$")) and true
+end
+
+-- Which group members the caster has targeted: the tokens UnitIsUnit says are its target, or nil if it says nothing.
+local function TargetsOf(caster)
+    local target = caster .. "target"
+    local okExists, exists = pcall(UnitExists, target)
+    if not okExists or Secret(exists) or not exists then return nil end
+    local on
+    for _, token in ipairs(GROUP_TOKENS) do
+        local ok, same = pcall(UnitIsUnit, target, token)
+        if ok and not Secret(same) and same then
+            on = on or {}
+            on[token] = true
+        end
+    end
+    return on
+end
+
+-- The last few casts seen, for /sab heals: what was read of each.
+local castLog = {}
+local function NoteCast(text)
+    castLog[#castLog + 1] = text
+    if #castLog > 6 then table.remove(castLog, 1) end
+end
+
+-- Whether a group token is the player (their own raid token: the player's heals are their own). UnitIsUnit may answer
+-- with a secret (SecretWhenUnitComparisonRestricted), so GUIDs, then the player's raid index, are asked after it.
+local function IsMe(token)
+    local ok, me = pcall(UnitIsUnit, token, "player")
+    if ok and not Secret(me) then return me and true or false end
+    local okGuid, guid, mine = pcall(function() return UnitGUID(token), UnitGUID("player") end)
+    if okGuid and type(guid) == "string" and type(mine) == "string" and not Secret(guid) and not Secret(mine) then
+        return guid == mine
+    end
+    local okRaid, index = pcall(UnitInRaid, "player")
+    if okRaid and type(index) == "number" and not Secret(index) then return token == "raid" .. index end
+    return false
+end
+
+-- A cast is taken as over this long after it started, should its end never be seen (a loading screen, the caster out
+-- of sight, its end kept secret); and kept this long after its end, while the game takes its heal off the prediction.
+local CAST_MAX, CAST_GRACE = 10, 0.6
+
+local function CastStarted(caster, spellID)
+    if not GroupToken(caster) then return end
+    -- In a raid each member is a raid token too, and the events come for both: the raid one is enough.
+    local okRaid, inRaid = pcall(IsInRaid)
+    if okRaid and inRaid == true and caster:match("^party") then return end
+    if IsMe(caster) then return end
+    local school, why = ns.Heals.CastSchool(caster, spellID)
+    local on = school and TargetsOf(caster) or nil
+    -- A cast that is no heal (or cannot be read) ends whatever this caster was casting before.
+    casting[caster] = school and { school = school, on = on, at = GetTime() } or nil
+    local targets = {}
+    for token in pairs(on or {}) do targets[#targets + 1] = token end
+    table.sort(targets)
+    NoteCast(string.format("%s cast %s: %s%s", caster, Secret(spellID) and "a secret spell" or tostring(spellID),
+        why or "?", school and (", " .. (SCHOOL_THEMES[school] or "?") .. " at "
+        .. (#targets > 0 and table.concat(targets, " ") or "anyone (target not known)")) or ""))
+end
+
+-- The look of others' heals on unit, by the heals being cast at it: one school's if every healer casting at it (or
+-- at nobody we can tell) is of that school, the shared look if they differ, nil if nobody is casting.
+local function OthersSchool(unit)
+    local school, mixed
+    local now = GetTime()
+    for caster, c in pairs(casting) do
+        if now - c.at > CAST_MAX or (c.ended and now - c.ended > CAST_GRACE) then
+            casting[caster] = nil -- over (clearing a field while traversing is allowed)
+        elseif not c.on or (unit and c.on[unit]) then
+            if school and school ~= c.school then mixed = true end
+            school = school or c.school
+        end
+    end
+    if mixed then return OTHERS_THEME end
+    return school and SCHOOL_THEMES[school] or nil
+end
+HealMarker.OthersSchool = OthersSchool
+
 -- The game's own bar for others' heals on a marker's bar: the region it shows and hides (a segment with a Fill on the
 -- player and party frames, a texture on raid-style frames and the Personal Resource Display), and what to make
 -- transparent. nil when the bar has none.
@@ -215,6 +306,11 @@ local function GameOthers(m)
     if type(region) ~= "table" or type(region.IsShown) ~= "function" then return nil end
     local fill = type(region.Fill) == "table" and region.Fill or region
     if not (fill.SetAlpha and fill.GetAlpha) then return nil end
+    -- A taller frame's copy (TallFrames.lua) shows as the game's does, but a secret answer it can only fade by: whether
+    -- it shows is asked of the game's own, the copy's fill hidden.
+    if type(region.MirrorOf) == "table" and type(region.MirrorOf.IsShown) == "function" then
+        return region.MirrorOf, fill
+    end
     return region, fill
 end
 
@@ -643,6 +739,15 @@ local function Refresh(m)
     end
     local othersArrived = false
     if others then
+        -- Its look by who is casting heals at the unit (OthersSchool). With nobody casting it keeps its look while it
+        -- drains (the heal landed, the game's bar gone), and takes the shared look while heals still come that no
+        -- cast accounts for (a heal over time, a cast not seen) or as it comes in.
+        local key = OthersSchool(spec.unit and spec.unit())
+        if not key and (othersNow or not others.pool:IsShown()) then key = OTHERS_THEME end
+        if key and key ~= others.themeKey then
+            others.themeKey = key
+            others.liquid:SetTheme(HealTheme(key))
+        end
         if othersWanted and not others.pool:IsShown() then
             others.pool:Show()
             others.liquid:Snap(m.width)
@@ -892,33 +997,77 @@ end
 -- Other addons' bars for the player (SmoothAnimatedBars.AddBar): a marker on each health bar, and on each power bar
 -- while it shows mana. Each shows only while the bar is still added for the player, filling from the left, with the
 -- liquid showing.
+local function BuildExternalOn(kind, bar)
+    local want = kind == "health" and "health" or "mana"
+    local had = extra[bar]
+    -- Added again as the other kind: the old marker goes for good, a new one comes.
+    if had and had.name ~= want then
+        pcall(Hide, had)
+        had.retired = true
+        retired[#retired + 1] = had
+        extra[bar] = nil
+    end
+    if extra[bar] then return end
+    local base = kind == "health" and PlayerAlive or ManaShown
+    local function visible()
+        local unit, k, _, _, mirror = ns.Bars.External(bar)
+        return unit == "player" and k == kind and not mirror and ns.Bars.IsLive(bar) and base()
+    end
+    local _, _, _, mask = ns.Bars.External(bar)
+    local function up() return (select(3, ns.Bars.External(bar))) or 1 end
+    local function max()
+        if kind == "health" then return UnitHealthMax("player") end
+        return UnitPowerMax("player", MANA)
+    end
+    extra[bar] = BuildOn(bar, want, kind == "health" and ns.Heals.Player or ns.Heals.Mana, visible,
+        "other addon's " .. (kind == "health" and "health" or "power"), { mask = mask, up = up, max = max })
+end
+
 local function BuildExternal()
     for _, kind in ipairs({ "health", "power" }) do
         for _, bar in ipairs(ns.Bars.ExternalBars("player", kind)) do
-            local want = kind == "health" and "health" or "mana"
-            local had = extra[bar]
-            -- Added again as the other kind: the old marker goes for good, a new one comes.
-            if had and had.name ~= want then
-                pcall(Hide, had)
-                had.retired = true
-                retired[#retired + 1] = had
-                extra[bar] = nil
-            end
-            if not extra[bar] then
-                local base = kind == "health" and PlayerAlive or ManaShown
+            -- Our own taller frames' bars stand for the game frame's (BuildTall).
+            if not (ns.TallFrames and ns.TallFrames.Owns(bar)) then BuildExternalOn(kind, bar) end
+        end
+    end
+end
+
+-- The bars of our taller frames (TallFrames.lua), drawn in place of the game's: markers as on the game frame's own,
+-- the player's health and mana and a party member's health, each once its bar has the liquid. They hide the copies of
+-- the game's predictions there (the same keys as on the game's bars), and while the frame is not taller their bars are
+-- hidden, so they are too.
+local function BuildTall()
+    if not ns.TallFrames then return end
+    for _, t in ipairs(ns.TallFrames.Bars()) do
+        local bar = t.bar
+        if not (extra[bar] or group[bar]) and ns.Bars.Liquid(bar) then
+            if t.which == "player" and t.kind == "health" then
+                extra[bar] = BuildOn(bar, "health", ns.Heals.Player, PlayerAlive, "taller player health", nil,
+                    { others = Player })
+            elseif t.which == "player" then
+                extra[bar] = BuildOn(bar, "mana", ns.Heals.Mana, ManaShown, "taller player power")
+            elseif t.which == "party" and t.kind == "health" then
+                local m
+                local function unit() return m and GroupUnit(m) end
+                local function read()
+                    local u = unit()
+                    if not u then return 0, {} end
+                    return ns.Heals.For(u)
+                end
                 local function visible()
-                    local unit, k, _, _, mirror = ns.Bars.External(bar)
-                    return unit == "player" and k == kind and not mirror and ns.Bars.IsLive(bar) and base()
+                    local u = unit()
+                    if not u or not ns.Bars.IsLive(bar) then return false end
+                    local ok, dead = pcall(UnitIsDeadOrGhost, u)
+                    return not (ok and not Secret(dead) and dead)
                 end
-                local _, _, _, mask = ns.Bars.External(bar)
-                local function up() return (select(3, ns.Bars.External(bar))) or 1 end
-                local function max()
-                    if kind == "health" then return UnitHealthMax("player") end
-                    return UnitPowerMax("player", MANA)
+                m = BuildOn(bar, "health", read, visible, "taller party health", nil, { others = unit })
+                if m then
+                    m.party, m.every, m.wait = true, 1 / PARTY_FPS, 0
+                    m.live = ns.Core.Get("heals") and true or false
+                    group[bar] = m
                 end
-                extra[bar] = BuildOn(bar, want, kind == "health" and ns.Heals.Player or ns.Heals.Mana, visible,
-                    "other addon's " .. (kind == "health" and "health" or "power"), { mask = mask, up = up, max = max })
             end
+            if extra[bar] then extra[bar].live = ns.Core.Get("heals") and true or false end
         end
     end
 end
@@ -981,6 +1130,7 @@ local function OnUpdate(_, elapsed)
     if lookIn <= 0 then
         lookIn = PARTY_LOOK_EVERY
         TryBuildGroup()
+        pcall(BuildTall) -- a taller frame's bar given its liquid since (its setting turned on)
     end
     Each(function(m)
         if not m.live or m.err or m.retired then return end
@@ -1022,14 +1172,39 @@ predict:SetScript("OnEvent", function(_, _, unit)
     end
 end)
 
+-- Group members' heals being cast (casting, for the look of others' heals): from a cast's start to its end.
+local casts = CreateFrame("Frame")
+casts:SetScript("OnEvent", function(_, event, unit, _, spellID)
+    -- After a loading screen nothing from before holds. (A roster change is left to CAST_MAX: in a raid it comes often
+    -- with nobody moved, and would drop casts on their way.)
+    if event == "PLAYER_ENTERING_WORLD" then
+        casting = {}
+        return
+    end
+    if not GroupToken(unit) then return end -- the events fire for every unit; only a group member's count
+    if event == "UNIT_SPELLCAST_START" or event == "UNIT_SPELLCAST_CHANNEL_START" then
+        CastStarted(unit, spellID)
+    elseif casting[unit] and not casting[unit].ended then
+        casting[unit].ended = GetTime() -- kept a moment (CAST_GRACE), while the heal lands
+    end
+end)
+local CAST_EVENTS = { "UNIT_SPELLCAST_START", "UNIT_SPELLCAST_CHANNEL_START", "UNIT_SPELLCAST_STOP",
+                      "UNIT_SPELLCAST_CHANNEL_STOP", "UNIT_SPELLCAST_FAILED", "UNIT_SPELLCAST_INTERRUPTED",
+                      "PLAYER_ENTERING_WORLD" }
+
 -- After the heals setting changes, and at login.
 function HealMarker.Apply()
     local live = ns.Core.Get("heals") and true or false
+    for _, event in ipairs(CAST_EVENTS) do
+        if live then casts:RegisterEvent(event) else casts:UnregisterEvent(event) end
+    end
+    if not live then casting = {} end
     if live and not player then player = Build("playerHealth", ns.Heals.Player, PlayerAlive) end
     if live and not mana then mana = Build("playerPower", ns.Heals.Mana, ManaShown) end
     if live then
         BuildDisplay()
         BuildExternal()
+        BuildTall()
         TryBuildGroup()
     end
     ns.Heals.Enable(live)
@@ -1087,6 +1262,11 @@ ns.Heals.Listen(function(event, arg, who)
     end
 end)
 
+-- Whether a bar has a marker (TallFrames.lua asks before building its bars' markers).
+function HealMarker.Has(bar)
+    return extra[bar] ~= nil or group[bar] ~= nil
+end
+
 -- For the tests and the gallery: the markers on the player frame's health and mana bars (nil until built), the
 -- Personal Resource Display's by bar, and the party and raid-style frames' by bar.
 function HealMarker.State()
@@ -1108,6 +1288,34 @@ local function OthersDebug(m)
         amount == nil and "no answer" or Secret(amount) and "secret" or tostring(amount))
 end
 
+-- One marker's state, for /sab heals and /sab raid.
+local function DebugLine(m)
+    local shown = {}
+    for _, d in ipairs(m.all) do
+        if d.pool:IsShown() then shown[#shown + 1] = d.themeKey or DEFAULT_THEME end
+    end
+    local game = GamePrediction(m)
+    local label = m.label or m.name
+    if m.party or m.raid then label = label .. " on " .. (GroupUnit(m) or "no member") end
+    return string.format("Heal marker (%s): on, %s%s, liquids %s%s, mask %s%s%s%s", label,
+        m.clip:IsShown() and "showing" or "hidden", m.hidden and " (resting)" or "",
+        #shown > 0 and table.concat(shown, " then ") or "none",
+        m.under and " under the bar's liquid" or " over the game's fill", m.spec.mask and "yes" or "no",
+        (m.name == "health" or m.raid) and (", game's own prediction " .. (not game and "not found"
+            or Secret(game:GetAlpha()) and "secret" or game:GetAlpha() == 0 and "hidden" or "shown")) or "",
+        m.others and OthersDebug(m) or "",
+        m.err and (", error: " .. m.err) or "")
+end
+
+-- The marker on one bar (a raid-style frame's, for /sab raid), or what is there instead.
+function HealMarker.DebugBar(bar)
+    if not ns.Core.Get("heals") then return "Heal marker: off" end
+    local m = group[bar] or extra[bar]
+    if not m then return "Heal marker: none on this bar" end
+    local ok, line = pcall(DebugLine, m)
+    return ok and line or ("Heal marker: report failed, " .. tostring(line))
+end
+
 -- For /sab heals.
 function HealMarker.Debug()
     if not ns.Core.Get("heals") then return { "Heal marker: off (Heal Marker in the editor)" } end
@@ -1115,20 +1323,13 @@ function HealMarker.Debug()
     if not player then out[1] = "Heal marker: the player frame's health bar was not found" end
     Each(function(m)
         if m.name == "preview" then return end
-        local shown = {}
-        for _, d in ipairs(m.all) do
-            if d.pool:IsShown() then shown[#shown + 1] = d.themeKey or DEFAULT_THEME end
-        end
-        local game = GamePrediction(m)
-        local label = m.label or m.name
-        if m.party or m.raid then label = label .. " on " .. (GroupUnit(m) or "no member") end
-        out[#out + 1] = string.format("Heal marker (%s): on, %s, liquids %s%s, mask %s%s%s%s", label,
-            m.clip:IsShown() and "showing" or "hidden", #shown > 0 and table.concat(shown, " then ") or "none",
-            m.under and " under the bar's liquid" or " over the game's fill", m.spec.mask and "yes" or "no",
-            m.name == "health" and (", game's own prediction " .. (not game and "not found"
-                or Secret(game:GetAlpha()) and "secret" or game:GetAlpha() == 0 and "hidden" or "shown")) or "",
-            m.others and OthersDebug(m) or "",
-            m.err and (", error: " .. m.err) or "")
+        out[#out + 1] = DebugLine(m)
     end)
+    -- Others' heal casts, which give their liquid its look.
+    if #castLog == 0 then
+        out[#out + 1] = "Group members' heal casts: none seen yet"
+    else
+        for _, line in ipairs(castLog) do out[#out + 1] = "Group cast: " .. line end
+    end
     return out
 end

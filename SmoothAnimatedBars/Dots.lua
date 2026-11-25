@@ -221,9 +221,15 @@ end
 -- Forever's English text has non-breaking spaces (U+00A0) where plain ones would do: between sentences, in
 -- Rip's "1 point \194\160: 57 damage over 12 sec." and in Instant Poison IV's "lasts for 30 \194\160minutes".
 -- Lua's %s does not match them (two bytes in UTF-8, U+202F three), so the English patterns read a copy with
--- them made plain spaces.
+-- them made plain spaces. Thousands separators go too: the client writes "1,177" where Wowhead writes "1177" (a
+-- heal over 999 went unread for this reason, Heals.lua).
 local function plainSpaces(desc)
-    return (desc:gsub("\194\160", " "):gsub("\226\128\175", " "))
+    desc = desc:gsub("\194\160", " "):gsub("\226\128\175", " ")
+    local n
+    repeat
+        desc, n = desc:gsub("(%d),(%d%d%d)%f[^%d]", "%1%2")
+    until n == 0
+    return desc
 end
 
 -- Finishers (Rip, Rupture) list their DoT per combo point:

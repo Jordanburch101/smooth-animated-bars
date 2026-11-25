@@ -7,8 +7,8 @@ target's, your party and raid, the Personal Resource Display and nameplates. It'
 [Smooth Experience Bar](https://www.curseforge.com/wow/addons/smooth-experience-bar), with waves, swirls, bubbles,
 sparkles and lightning.
 
-Your frames stay the game's own; only the fill changes. A short setup on your first login lets you pick a look, or
-skip it.
+Your frames stay the game's own; only the fill changes, unless you make their bars taller. A short setup on your first
+login lets you pick a look, or skip it.
 
 ## What you get
 
@@ -16,6 +16,7 @@ skip it.
 - **Raid frames (optional):** health and power for every raid member, and for your party in raid-style frames.
 - **Nameplates (optional):** enemy and friendly nameplates, with your DoTs on every mob that has them.
 - **The Personal Resource Display:** the game's extra health and power bars, with everything your own frame gets.
+- **Bar Height (optional):** make any frame's health and power bars taller, the frame drawn from the game's own art.
 - **Every power type:** mana, rage, energy and focus, in the game's colours.
 - **Follows the fight:** the liquid moves to wherever the game's bar is, and stirs with every hit, heal and tick.
 - **25 themes:** the game's colours, Class Color, Fire, Frost, Arcane, Shadow, Void and more. Each frame's health and
@@ -201,6 +202,23 @@ On by default, under Rage Fury in the editor.
 - **Spending rage** throws off sparks, and the bar drops back to red.
 - **It shows exactly as far as your rage goes,** as the game itself fades it in. It works on any rage bar: yours, a
   druid's in Bear Form, your target's.
+
+## Bar Height
+
+<p align="center"><img src="https://raw.githubusercontent.com/Jordanburch101/smooth-animated-bars/refs/heads/main/branding/gallery/tall.webp" alt="A mage's player frame with its health and mana bars growing to twice their height, the portrait ring growing with them, then shrinking back to the game's size and settling in between, the liquid flowing in the bars throughout"></p>
+<p align="center"><em>Mage: the health and mana bars from the game's height up to twice it, settling in between.</em></p>
+
+Off to start with: each frame keeps the game's heights until you change them, with Health Bar Height and Power Bar
+Height on its page in the editor. It works on your player, target, focus, pet, target of target and party frames.
+
+- **Drawn from the game's own art,** cut and stretched to fit. The portrait's ring grows once the bars would reach
+  past it.
+- **Your player, target and focus frames grow upward,** so your target's debuffs and cast bar below stay clear. With
+  Buffs on Top, the target and focus grow downward instead. The pet, target of target and party frames grow downward,
+  party members only as far as the gap between them.
+- **Everything the game shows stays:** name, level, portrait, icons, the combat glow, incoming heals, shields, the
+  mana a spell will cost, and the heal marker, Shield and Weakened Soul.
+- **Back at the game's heights,** the game's own frame shows again.
 
 ## Make it yours
 

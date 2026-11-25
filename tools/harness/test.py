@@ -303,7 +303,10 @@ OPTION_KEYS = ["playerHealth", "healthColor", "playerPower", "powerColor", "targ
                "partyPowerColor", "raidHealth", "raidHealthColor", "raidPower", "raidPowerColor", "prdHealth",
                "prdHealthColor", "prdPower", "prdPowerColor", "plateHealth", "plateHealthColor", "plateFriendly",
                "plateFriendlyColor", "plateDots", "plateKillIcon", "waves", "swirl", "bubbles", "sparkles", "ambient",
-               "lightning", "dots", "dotKillIcon", "heals", "shield", "weakenedSoul", "manaBuild", "rageFury", "externalBars", "externalColors"]
+               "lightning", "animationSpeed", "waveIntensity", "dots", "dotKillIcon", "heals", "shield", "weakenedSoul", "manaBuild", "rageFury", "externalBars", "externalColors",
+               "playerHealthHeight", "playerPowerHeight", "targetHealthHeight", "targetPowerHeight",
+               "focusHealthHeight", "focusPowerHeight", "petHealthHeight", "petPowerHeight", "totHealthHeight",
+               "totPowerHeight", "partyHealthHeight", "partyPowerHeight"]
 keys = list(lua.eval("__ns.Editor.Keys()").values())
 check(sorted(keys) == sorted(OPTION_KEYS), f"the editor has a control for every setting ({sorted(set(keys) ^ set(OPTION_KEYS))})")
 check(all(lua.eval(f"__settings.{k} ~= nil") for k in OPTION_KEYS),
@@ -481,8 +484,18 @@ check(lua.eval(ED + ".examples.prd.health.state.spot.flat")
 lua.execute(f"__click({ED}.tabs.effects); __click(__page().rows.bubbles.check)")
 check(lua.eval("__ns.Editor.State().tab") == "effects" and lua.eval("__ns.Core.db.bubbles") is False,
       "the Effects tab: the global effects, a box turns one off")
+check(lua.eval("__page().sliders.animationSpeed.value.text") == "100%"
+      and lua.eval("__page().sliders.waveIntensity.value.text") == "100%",
+      "and Animation Speed and Wave Intensity sliders, at 100%")
+# Through the slider itself, as a drag would: a value between steps lands on one.
+lua.execute("__page().sliders.animationSpeed.slider:SetValue(148.7)")
+check(lua.eval("__ns.Core.db.animationSpeed") == 150
+      and lua.eval("__ns.Bars.Liquid(PlayerFrame.healthbar).opts.speed") == 1.5
+      and lua.eval("__page().sliders.animationSpeed.value.text") == "150%",
+      "dragging a slider sets every bar's speed, in steps of 5%")
 lua.execute(f"__click({ED}.defaults)")
-check(lua.eval("__ns.Core.db.bubbles") is True, "Defaults puts the tab back")
+check(lua.eval("__ns.Core.db.bubbles") is True and lua.eval("__ns.Core.db.animationSpeed") == 100,
+      "Defaults puts the tab back")
 lua.execute(f"__click({ED}.tabs.frames)")
 check(lua.eval("__ns.Editor.State().section") == "prd", "Frames goes back to the frame last edited")
 lua.execute(f"__click({ED}.hots.player); __click(__card(1).header); __click(__card(1).tabs.effects)")
@@ -490,10 +503,23 @@ FX = "__card({}).effects"
 check(lua.eval(FX.format(1) + ".shown") and lua.eval(FX.format(1) + ".global.checked")
       and not lua.eval(FX.format(1) + ".fx.bubbles:IsEnabled()"),
       "Health's Effects tab: Use the global effects, the six greyed out")
+check(not lua.eval(f"{FX.format(1)}.levels[1].slider:IsSliderEnabled()"), "and its sliders too")
+lua.execute("__settings.waveIntensity:SetValue(120)")
 lua.execute(f"__click({FX.format(1)}.global)")
+lua.execute("__settings.waveIntensity:SetValue(100)")
 check(not lua.eval(FX.format(1) + ".global.checked") and lua.eval(FX.format(1) + ".fx.bubbles:IsEnabled()")
       and lua.eval("__ns.Core.db.effects.playerHealth.bubbles") is True,
       "unticked, the bar has its own, starting from the global ones")
+check(lua.eval(f"#{FX.format(1)}.levels") == 2 and lua.eval(f"{FX.format(1)}.levels[1].slider:IsSliderEnabled()")
+      and lua.eval("__ns.Core.db.effects.playerHealth.waveIntensity") == 120
+      and lua.eval("__ns.Bars.Liquid(PlayerFrame.healthbar).opts.intensity") == 1.2,
+      "its own Animation Speed and Wave Intensity sliders, usable, starting from the global ones (120% kept)")
+lua.execute(f"{FX.format(1)}.levels[2].slider:SetValue(150)")
+check(lua.eval("__ns.Bars.Liquid(PlayerFrame.healthbar).opts.intensity") == 1.5
+      and lua.eval("__ns.Bars.Liquid(PlayerFrame.manabar).opts.intensity") == 1
+      and "wave intensity 150%" in lua.eval("__card(1).summary.text"),
+      "Wave Intensity 150% on your health bar alone, and its card says so")
+lua.execute(f"{FX.format(1)}.levels[2].Set(100)")
 lua.execute(f"__click({FX.format(1)}.fx.bubbles)")
 check(lua.eval("__ns.Core.db.effects.playerHealth.bubbles") is False
       and lua.eval("__ns.Bars.Liquid(PlayerFrame.healthbar).opts.bubbles") is False
@@ -1233,6 +1259,17 @@ rh.execute("""__lookups = 0
     __ns.Heals.KeyOf = function(...) __lookups = __lookups + 1; return keyOf(...) end""")
 run(rh, 0.6)
 check(rh.eval("__lookups") == 0, "with no heal going anywhere, the markers look nothing up (a raid's dozens wait idle)")
+# /sab raid reports our liquid's state on each bar and the player's own frame in chat (a player's own raid frame showed
+# black until a /reload; cause not found).
+rh.execute("SlashCmdList.SMOOTHANIMATEDBARS('raid')")
+said = chat(rh)
+own_at = next((i for i, m in enumerate(said) if "your own frame:" in m), None)
+check(own_at is not None and any("live yes" in m and "ours:" in m and "unit player" in m and "textures shown" in m
+                                  for m in said[own_at:])
+      and any("Heal marker (" in m and "on player" in m for m in said[own_at:])
+      and any("your own frames: 1" in m for m in said)
+      and not any("report failed" in m or "Error" in m for m in said),
+      "/sab raid shows your own frame with our liquid's state and its heal marker's")
 rh.execute("__instant(139, 'Cast-1', 'Alys')")
 run(rh, 0.4)
 check(rh.eval("(__ns.Heals.For('party1'))") == 830 and rh.eval("__rm(2).clip.shown and __rm(2).liquids[1].pool.shown")
@@ -1342,6 +1379,67 @@ check(all(rf.eval(f"(select(2, __liquid({b})))") == 0 and rf.eval(f"{b}.fill.alp
       "Power off: the game's power bars back")
 check(not any("Error" in m for m in chat(rf)), "no errors")
 
+print("== a raid frame with no size of its own")
+# Seen in game: the player's own frame black until a /reload. The likely way: built on while alone (its bars 0 x 0), its
+# size then not readable.
+for said, size in (("secret", "__secret()"), ("nothing", "0")):
+    rs = session("{ setupDone = true, raidHealth = true, raidPower = true }", """
+        local f = CreateFrame("Button", "CompactPartyFrameMember1", UIParent)
+        f.w, f.h, f.unit, f.displayedUnit = 98, 44, 'player', 'player'
+        for _, key in ipairs({ "healthBar", "powerBar" }) do
+            local b = CreateFrame("StatusBar", "CompactPartyFrameMember1" .. key, f)
+            b.w, b.h = 0, key == "healthBar" and 0 or 16
+            b:SetMinMaxValues(0, __secret()); b:SetValue(__secret())
+            f[key] = b
+        end
+        f.powerBarUsedHeight = 0
+        f:Hide()""")
+    run(rs, 1.3)
+    rs.execute(f"""__combat = true
+        CompactPartyFrameMember1.powerBarUsedHeight = 8
+        for _, key in ipairs({{ "healthBar", "powerBar" }}) do
+            CompactPartyFrameMember1[key].w, CompactPartyFrameMember1[key].h = {size}, {size}
+        end
+        CompactPartyFrameMember1:Show()""")
+    run(rs, 1.0)
+    H, P = "CompactPartyFrameMember1.healthBar", "CompactPartyFrameMember1.powerBar"
+    check(rs.eval(f"(select(2, __liquid({H})))") > 0 and rs.eval(f"(select(2, __liquid({P})))") > 0
+          and rs.eval(f"__ns.Bars.stateOf[{H}].width") == 96 and rs.eval(f"__ns.Bars.stateOf[{H}].height") == 34
+          and rs.eval(f"__ns.Bars.stateOf[{P}].width") == 96 and rs.eval(f"__ns.Bars.stateOf[{P}].height") == 8,
+          f"its size {said} once shown: drawn at its button's, less the power bar")
+    rs.execute(f"CompactPartyFrameMember1.w, CompactPartyFrameMember1.h = __secret(), __secret();"
+               f" CompactPartyFrameMember1.powerBarUsedHeight = 0")
+    run(rs, 0.5)
+    check(rs.eval(f"__ns.Bars.stateOf[{H}].width") == 96 and rs.eval(f"__ns.Bars.stateOf[{H}].height") == 34,
+          "its button's kept too: the size last known")
+    check(not any("rror" in m for m in chat(rs)), "no errors")
+for said, first, want in (("a wide frame that had a size", "142, 70", (142, 70)),
+                          ("a frame that never had one", "__secret(), __secret()", (96, 42))):
+    rs = session("{ setupDone = true, raidHealth = true }", f"""
+        local f = CreateFrame("Button", "CompactPartyFrameMember1", UIParent)
+        f.w, f.h, f.unit, f.displayedUnit, f.powerBarUsedHeight = 144, 72, 'player', 'player', 0
+        if {"true" if "never" in said else "false"} then f.w, f.h = __secret(), __secret() end
+        local b = CreateFrame("StatusBar", nil, f)
+        b.w, b.h = {first}
+        b:SetMinMaxValues(0, __secret()); b:SetValue(__secret())
+        f.healthBar = b""")
+    run(rs, 1.3)
+    rs.execute("""local f = CompactPartyFrameMember1
+        f.w, f.h, f.healthBar.w, f.healthBar.h = __secret(), __secret(), __secret(), __secret()""")
+    run(rs, 0.5)
+    H = "CompactPartyFrameMember1.healthBar"
+    check((rs.eval(f"__ns.Bars.stateOf[{H}].width"), rs.eval(f"__ns.Bars.stateOf[{H}].height")) == want
+          and rs.eval(f"(select(2, __liquid({H})))") > 0, f"{said}, both its sizes then secret: drawn at {want[0]} x {want[1]}")
+    check(not any("rror" in m for m in chat(rs)), "no errors")
+ns = session("{ setupDone = true }")
+ns.execute("PlayerFrame.healthbar.w, PlayerFrame.healthbar.h = 0, 0")
+run(ns, 0.5)
+check(ns.eval("PlayerFrame.healthbar.fill.alpha") == 1, "any other bar with no size at all shows the game's own fill, not nothing")
+ns.execute("PlayerFrame.healthbar.w, PlayerFrame.healthbar.h = 124, 20")
+run(ns, 0.5)
+check(ns.eval("PlayerFrame.healthbar.fill.alpha") == 0 and ns.eval("(select(2, __liquid(PlayerFrame.healthbar)))") > 0,
+      "and the liquid once it has one")
+
 print("== a bar whose size is kept secret")
 ss = session("{ setupDone = true, dots = true }")
 ss.execute("__target = { guid = 'Creature-0-1-2-3-299-0001', name = 'Mottled Boar' }; __fire('PLAYER_TARGET_CHANGED')")
@@ -1413,6 +1511,452 @@ for key in keys:
     if lua2.eval("(select(2, __liquid(PlayerFrame.healthbar)))") == 0:
         broken.append(key)
 check(not broken and not any("Error in" in m for m in chat(lua2)), f"all {len(keys)} colour choices draw ({broken})")
+
+print("== bar height sliders (a test: the editor's examples only)")
+hs = session()
+hs.execute("__ns.Editor.Open('player')")
+EX = "__ns.Editor.State().ui.examples.frames"
+PAGE = "__ns.Editor.State().ui.pages"
+check(hs.eval(PAGE + ".player.sliders.playerHealthHeight.slider ~= nil")
+      and hs.eval(PAGE + ".player.sliders.playerPowerHeight.slider:GetValue()") == 10,
+      "the Player page has the game's sliders for both bar heights, at the game's 20 and 10")
+check(hs.eval(EX + ".player.health.h") == 20 and hs.eval(EX + ".player.art.shown") and hs.eval(EX + ".h") == 100,
+      "at the game's heights the example is the game's frame, its own art")
+hs.execute(PAGE + ".player.sliders.playerHealthHeight.slider:SetValue(32)")
+run(hs, 0.3)
+check(hs.eval("__ns.Core.db.playerHealthHeight") == 32 and hs.eval(EX + ".player.health.h") == 32
+      and hs.eval(EX + ".player.h") == 112 and not hs.eval(EX + ".player.art.shown") and hs.eval(EX + ".h") == 112,
+      "sliding it saves the setting and lays the player's example out again: bar 32 tall, art in slices, frame taller")
+check(hs.eval(EX + ".target.health.h") == 20, "the target's example keeps its own height")
+# The health mask's slot (3.75 to 16.88 below the bar's top in its 32, which starts 6 above the bar) is 12 taller and
+# starts where it did, as the art's slot.
+my, mh = hs.eval(EX + ".player.health.HealthBarMask.points.TOPLEFT.y"), hs.eval(EX + ".player.health.HealthBarMask.h")
+share0, share1 = (3.75 + 6) / 32, (16.88 + 6) / 32
+start, end = -my + share0 * mh, -my + share1 * mh
+check(abs(start - 3.75) < 0.01 and abs(end - (16.88 + 12)) < 0.01,
+      f"its mask lets the liquid through the whole taller slot, not just the middle ({start:.2f} to {end:.2f})")
+check(hs.eval("(select(2, __liquid(" + EX + ".player.health)))") > 0, "with the liquid in the taller bar")
+check(hs.eval("PlayerFrame.healthbar.h") == 20, "the real player frame is left alone")
+hot = "__ns.Editor.State().ui.hots.player"
+check(hs.eval(hot + ".dashH") == 120, f"the player's outline is drawn round the taller frame ({hs.eval(hot + '.dashH')})")
+used = hs.eval("#" + EX + ".player.slices")
+for v in (40, 25, 38):
+    hs.execute(PAGE + f".player.sliders.playerHealthHeight.slider:SetValue({v})")
+check(hs.eval("#" + EX + ".player.slices") <= used + 4 and hs.eval(EX + ".player.health.h") == 38,
+      "sliding back and forth reuses the art's textures")
+hs.execute("__ns.Editor.Show('target')")
+hs.execute(PAGE + ".target.sliders.targetPowerHeight.slider:SetValue(16)")
+run(hs, 0.2)
+check(hs.eval(EX + ".target.power.h") == 16 and hs.eval(EX + ".target.health.h") == 20
+      and hs.eval(EX + ".target.h") == 106, "the Target page's sliders lay out the target's example")
+hs.execute("__settings.targetPowerHeight:SetValue(12)")
+check(hs.eval(PAGE + ".target.sliders.targetPowerHeight.slider:GetValue()") == 12
+      and hs.eval(EX + ".target.power.h") == 12, "a change made elsewhere moves the slider and the example")
+hs.execute("__ns.Editor.Show('player'); local b = __ns.Editor.State().ui.defaults; b.scripts.OnClick(b)")
+check(hs.eval("__ns.Core.db.playerHealthHeight") == 20 and hs.eval(EX + ".player.art.shown")
+      and hs.eval(EX + ".player.health.h") == 20, "Defaults puts the player's heights back, and the game's art")
+check(not any("rror" in m for m in chat(hs)), "no errors")
+
+print("== taller bars on the real frames (TallFrames.lua)")
+plain = session()
+run(plain, 0.5)
+check(plain.eval("__ns.TallFrames.State().player.f") is None and plain.eval("PlayerFrame.PlayerFrameContent.PlayerFrameContentMain.alpha") != 0,
+      "at the game's heights nothing is built and the game's frames are left alone")
+tf = session("{ setupDone = true, playerHealthHeight = 30, playerPowerHeight = 14 }")
+run(tf, 0.5)
+ST = "__ns.TallFrames.State()"
+OURS = ST + ".player.f"
+check(tf.eval(ST + ".player.shown") and tf.eval(OURS + ".shown")
+      and tf.eval(OURS + ".points.BOTTOMLEFT.rel == PlayerFrame"),
+      "with the player's bars taller, a frame of ours shows on the player frame, from its bottom edge")
+check(tf.eval(OURS + ".health.h") == 30 and tf.eval(OURS + ".power.h") == 14 and tf.eval(OURS + ".h") == 114,
+      "its bars as tall as asked, the frame grown upward by both")
+check(tf.eval("SmoothAnimatedBars.HasBar(" + OURS + ".health)") and tf.eval("SmoothAnimatedBars.HasBar(" + OURS + ".power)")
+      and tf.eval("(select(2, __liquid(" + OURS + ".health)))") > 0,
+      "its bars are handed to the liquid")
+check(tf.eval("issecretvalue(" + OURS + ".health.value)") and tf.eval("issecretvalue(" + OURS + ".power.value)"),
+      "with the game's values, secret, handed on")
+check(tf.eval("PlayerFrame.PlayerFrameContainer.alpha") == 0 and tf.eval("PlayerFrame.PlayerFrameContent.PlayerFrameContentMain.alpha") == 0,
+      "the game's art and main content (bars, name, level, glows) are faded while ours shows, by their frames")
+check(tf.eval("__ns.Bars.Sight(PlayerFrame.healthbar)") == "faded", "so the liquid on the game's own bar pauses")
+tf.execute("""local flash = PlayerFrame.PlayerFrameContainer.FrameFlash
+    flash:SetVertexColor(1, 0.5, 0); flash:Show()
+    local status = PlayerFrame.PlayerFrameContent.PlayerFrameContentMain.StatusTexture
+    status:Show(); status:SetAlpha(0.4)""")
+run(tf, 0.3)
+GLOW = OURS + ".glows[1]"
+check(tf.eval(GLOW + " ~= nil") and tf.eval(GLOW + ".shown") and tf.eval(GLOW + ".slices[1].vc[2]") == 0.5
+      and tf.eval(GLOW + ".slices[1].tc ~= nil") and tf.eval(GLOW + ".slices[1].file") is not None,
+      "the aggro flash is drawn by ours, in its colour, laid out from the game's atlas as the art is")
+check(tf.eval(OURS + ".glows[2].shown") and tf.eval(OURS + ".glows[2].alpha") == 0.4,
+      "and the status glow, its alpha copied as the game pulses it")
+tf.execute("PlayerFrame.PlayerFrameContainer.FrameFlash:Hide()")
+run(tf, 0.1)
+check(not tf.eval(GLOW + ".shown"), "the flash hidden by the game: ours too")
+tf.execute("PlayerFrame.PlayerFrameContainer.AlternatePowerFrameTexture:Show()")
+run(tf, 0.3)
+check(not tf.eval(ST + ".player.shown") and tf.eval("PlayerFrame.PlayerFrameContainer.alpha") == 1,
+      "a druid's extra mana bar, with its own frame art: the game's frame given back")
+tf.execute("PlayerFrame.PlayerFrameContainer.AlternatePowerFrameTexture:Hide()")
+run(tf, 0.3)
+check(tf.eval(OURS + ".nameText.text") == tf.eval("PlayerName.text") and tf.eval(OURS + ".levelText.text") == "38",
+      "the name and level are the game's")
+check(tf.eval("(select(4, " + OURS + ".nameText:GetTextColor()))") == 1
+      and tf.eval("(select(4, " + OURS + ".levelText:GetTextColor()))") == 1,
+      "and show, though the game's are faded (a text's colour carries its alpha: copied whole, they drew invisible)")
+# The PvP badge has a scale of its own (0.8), so it answers its place in its own units: 200 right of the frame's left
+# and 10 below its top on the screen, 20 of its units (16 of the frame's) across.
+tf.execute("""local icon = PlayerFrame.PlayerFrameContent.PlayerFrameContentMain.PvpBackgroundIcon
+    icon.sx, icon.sy, icon.w, icon.h = 660 + 200, 1040 - 10, 20, 20
+    icon:Show()
+    PlayerPVPTimerText.text = '5 m'; PlayerPVPTimerText:Show()""")
+run(tf, 0.3)
+BADGE = "(function() for _, p in ipairs(" + ST + ".player.carried) do if p[1] == PlayerFrame.PlayerFrameContent.PlayerFrameContentMain.PvpBackgroundIcon then return p[2] end end end)()"
+bx, by, bw = tf.eval(BADGE + ".points.CENTER.x"), tf.eval(BADGE + ".points.CENTER.y"), tf.eval(BADGE + ".w")
+check(abs(bx - 208) < 0.01 and abs(by + 18) < 0.01 and abs(bw - 16) < 0.01,
+      f"the PvP badge, drawn at 80% by the game, is carried to its own place and size, not off up and right "
+      f"(seen in game) ({bx:.1f}, {by:.1f}, {bw:.1f} across)")
+TIMER = "(function() for _, p in ipairs(" + ST + ".player.texts) do if p[1] == PlayerPVPTimerText then return p[2] end end end)()"
+check(tf.eval(TIMER + ".text") == "5 m" and tf.eval(TIMER + ".points.RIGHT.rel == " + BADGE)
+      and tf.eval("PlayerPVPTimerText.alpha") == 0,
+      "and the PvP timer beside it, the game's faded (left at the game's place, it stood apart from the badge)")
+# The hit numbers over the portrait, in what is faded with the main content: ours shows them as the game fades them.
+HIT = "PlayerFrame.PlayerFrameContent.PlayerFrameContentMain.HitIndicator.HitText"
+OURHIT = ST + ".player.hit[2]"
+check(not tf.eval(OURHIT + ".shown"), "no hit number, none of ours")
+tf.execute(f"__fire('UNIT_COMBAT', 'player', 'WOUND', 'CRITICAL', __secret(), 1); __hitText = __secret(); {HIT}:SetText(__hitText); {HIT}:SetTextColor(0, 1, 0);"
+           f" {HIT}:SetAlpha(0.4); {HIT}:Show()")
+run(tf, 0.05)
+check(tf.eval(OURHIT + ".shown") and tf.eval(f"rawequal({OURHIT}.text, __hitText)")
+      and abs(tf.eval(OURHIT + ":GetAlpha()") - 0.4) < 1e-9 and tf.eval(OURHIT + ".textHeight") == 45
+      and tf.eval(f"(select(2, {OURHIT}:GetTextColor()))") == 1
+      and tf.eval(f"{OURHIT}.points.CENTER.rel == {OURS}.portrait"),
+      "a hit number (secret) shows over our portrait, in the game's colour and alpha, a crit's bigger, not grown with the ring")
+tf.execute("__fire('UNIT_COMBAT', 'player', 'WOUND', '', __secret(), 1)")
+run(tf, 0.05)
+check(tf.eval(OURHIT + ".textHeight") == 30, "a plain hit's at the usual size")
+tf.execute("__fire('UNIT_COMBAT', 'player', __secret(), __secret(), __secret(), 1)")
+run(tf, 0.05)
+check(tf.eval(OURHIT + ".textHeight") == 30
+      and not any("rror" in m for m in chat(tf)), "a hit kept secret is at the usual size, without an error")
+SIZE = lambda: tf.eval(OURHIT + ".textHeight")
+sizes = {}
+for action, flag, text in (("WOUND", "CRUSHING", None), ("WOUND", "GLANCING", None), ("WOUND", "ABSORB", "Absorb"),
+                           ("WOUND", "ABSORB", None), ("WOUND", "BLOCK_REDUCED", None), ("BLOCK", "", "Block"),
+                           ("IMMUNE", "", "Immune"), ("HEAL", "CRITICAL", None), ("DODGE", "", "Dodge")):
+    tf.execute(f"__fire('UNIT_COMBAT', 'player', '{action}', '{flag}', __secret(), 1);"
+               f" {HIT}:SetText({'__secret()' if text is None else repr(text)})")
+    run(tf, 0.05)
+    sizes[action, flag, text] = round(SIZE(), 2)
+check(list(sizes.values()) == [45, 22.5, 22.5, 30, 30, 22.5, 15, 45, 30],
+      f"every kind of hit at the game's size, a partly absorbed one's number at the usual ({list(sizes.values())})")
+check(abs(tf.eval(OURHIT + ".points.CENTER.y") + tf.eval(OURS + ".tall.scale")) < 1e-6 and tf.eval(OURHIT + ".sub") == 7,
+      "centred as the game's, over the icons round the portrait")
+tf.execute(f"{HIT}:SetText(__secret())")
+tf.execute(f"{HIT}:SetAlpha(1)")
+run(tf, 0.05)
+check(tf.eval(OURHIT + ":GetAlpha()") == 1, "and follows the game's fade each frame")
+tf.execute(f"{HIT}:GetParent():Hide()")
+run(tf, 0.05)
+check(not tf.eval(OURHIT + ".shown"), "hidden with the game's (an addon hiding the numbers' frame)")
+tf.execute(f"{HIT}:GetParent():Show(); {HIT}:Hide()")
+check(not tf.eval(ST + ".target.shown") and tf.eval("TargetFrame.TargetFrameContainer.alpha") != 0,
+      "the target's frame, at the game's heights, is left alone")
+tf.execute("__settings.targetHealthHeight:SetValue(26)")
+run(tf, 0.3)
+check(tf.eval(ST + ".target.shown") and tf.eval(ST + ".target.f.health.h") == 26
+      and tf.eval("TargetFrame.TargetFrameContainer.alpha") == 0 and tf.eval("TargetFrame.TargetFrameContent.TargetFrameContentMain.alpha") == 0,
+      "the target's taller too: ours shows and the game's art and name are faded")
+check(tf.eval(ST + ".target.f.points.BOTTOMLEFT.rel == TargetFrame"), "the target's grows upward too")
+tf.execute("TargetFrame.buffsOnTop = true")
+run(tf, 0.3)
+check(tf.eval(ST + ".target.f.points.TOPLEFT.rel == TargetFrame") and tf.eval(ST + ".target.f.points.BOTTOMLEFT") is None,
+      "with Buffs on Top (the game puts the target's auras above its art) it grows down instead, clear of them")
+tf.execute("TargetFrame.buffsOnTop = false")
+run(tf, 0.3)
+check(tf.eval(ST + ".target.f.points.BOTTOMLEFT.rel == TargetFrame"), "and up again without")
+check(tf.eval("#" + ST + ".target.carried") >= 2
+      and tf.eval("TargetFrame.TargetFrameContent.TargetFrameContentContextual.HighLevelTexture.alpha") == 0,
+      "the icons round the portrait (the high level skull, the elite dragon) are carried to ours")
+# The combo points round the target's portrait (ComboFrame.lua): seen in game left round the game's smaller ring.
+cp = session("{ setupDone = true, targetHealthHeight = 40, targetPowerHeight = 20 }", """
+    ComboFrame = CreateFrame("Frame", "ComboFrame", TargetFrame)
+    ComboFrame:SetFrameLevel(500)
+    ComboFrame:SetPoint("CENTER", TargetFrame.TargetFrameContainer.Portrait, "CENTER", 2, 2)
+    ComboFrame.ComboPoints = {}
+    for i = 1, 5 do
+        local p = CreateFrame("Frame", nil, ComboFrame, "RogueComboPointTemplate")
+        local a = math.rad(-10 + (i - 1) * 21)
+        p:Setup()
+        p:SetScale(0.6)
+        p:SetPoint("CENTER", ComboFrame, "CENTER", math.cos(a) * 66, math.sin(a) * 66)
+        p:SetActiveNoAnimation(false)
+        ComboFrame.ComboPoints[i] = p
+    end
+    ComboFrame:Hide()
+    function __cp(i) return __ns.TallFrames.State().target.combo.points[i].ours end""")
+run(cp, 0.5)
+CB = ST + ".target.combo"
+check(cp.eval(CB + " ~= nil") and not cp.eval(CB + ".host.shown"), "no combo points, none of ours")
+cp.execute("""ComboFrame:SetAlpha(0.5); ComboFrame:Show()
+    ComboFrame.ComboPoints[5].unchargedEmptyToUnchargedFull.playing = true; ComboFrame.ComboPoints[5]:SetActive(true)""")
+run(cp, 0.3)
+scale = cp.eval(ST + ".target.f.tall.scale")
+check(scale > 1.05 and cp.eval(CB + ".host.points.CENTER.rel == " + ST + ".target.f.portrait")
+      and abs(cp.eval(CB + ".host.points.CENTER.x") - 2 * scale) < 1e-6
+      and all(abs(cp.eval(f"__cp({i}).scale") - 0.6 * scale) < 1e-6
+              and cp.eval(f"__cp({i}).points.CENTER.x == ComboFrame.ComboPoints[{i}].points.CENTER.x")
+              for i in range(1, 6)),
+      f"a taller target's combo points go round our ring, grown with it ({scale:.2f})")
+check(all(cp.eval(f"ComboFrame.ComboPoints[{i}].alpha") == 0 for i in range(1, 6)) and cp.eval("ComboFrame.alpha") == 0.5,
+      "the game's dots faded, not their frame, which fades itself in")
+check(cp.eval("__cp(5).isFull") is True and cp.eval("__cp(5).how") == "animated" and cp.eval("__cp(4).isFull") is False
+      and cp.eval(CB + ".host.alpha") == 0.5, "lit as the game's are, with its animation, and fading in with them")
+cp.execute("ComboFrame.ComboPoints[4]:SetActiveNoAnimation(true)")
+run(cp, 0.1)
+check(cp.eval("__cp(4).isFull") is True and cp.eval("__cp(4).how") == "at once", "a new target's points change at once")
+cp.execute("ComboFrame.ComboPoints[3].isFull = __secret(true)")
+run(cp, 0.1)
+check(cp.eval("issecretvalue(__cp(3).IconUncharged.alpha)") and cp.eval(CB + ".err") is None,
+      "a secret one is handed on, never compared")
+cp.execute("ComboFrame.ComboPoints[3].isFull = false; ComboFrame:ClearAllPoints();"
+           " ComboFrame:SetPoint('CENTER', UIParent, 'CENTER', 0, 0)")
+run(cp, 0.3)
+check(not cp.eval(CB + ".host.shown") and cp.eval("ComboFrame.ComboPoints[1].alpha") == 1,
+      "points another addon has moved off the portrait are left alone")
+cp.execute("ComboFrame:ClearAllPoints();"
+           " ComboFrame:SetPoint('CENTER', TargetFrame.TargetFrameContainer.Portrait, 'CENTER', 2, 2)")
+run(cp, 0.3)
+check(cp.eval(CB + ".host.shown") and cp.eval("ComboFrame.ComboPoints[1].alpha") == 0, "and taken again back on it")
+cp.execute("__settings.targetHealthHeight:SetValue(20); __settings.targetPowerHeight:SetValue(10)")
+run(cp, 0.5)
+check(all(cp.eval(f"ComboFrame.ComboPoints[{i}].alpha") == 1 for i in range(1, 6)),
+      "back at the game's heights, the game's dots are given back")
+check(not any("rror" in m for m in chat(cp)), "no errors")
+# The editor's target shows a rogue's, through its scenes and on a taller frame.
+ce = session("{ setupDone = true }", "__player.class = 'ROGUE'")
+ce.execute("SlashCmdList.SMOOTHANIMATEDBARS('')")
+EC = "__ns.Editor.State().ui.examples.frames.target.combo"
+lit = lambda: [bool(ce.eval(f"{EC}.points[{i}].isFull")) for i in range(1, 6)]
+check(ce.eval(EC + " ~= nil") and not ce.eval(EC + ".host.shown"), "a rogue's editor: combo points on the target, none lit to start with")
+ce.execute("__ns.Editor.State().ui.examples.frames.speed = 1")
+run(ce, 1.4)
+check(ce.eval(EC + ".host.shown") and lit() == [False] * 4 + [True], "the fight builds them up, the top dot lit first")
+run(ce, 2.0)
+check(lit() == [True] * 5, "to five")
+run(ce, 1.0)
+check(not ce.eval(EC + ".host.shown"), "and the finisher spends them")
+ce.execute("__ns.Editor.State().ui.examples.frames:SetScene('damage')")
+check(lit() == [False, False, True, True, True] and ce.eval(EC + ".host.shown"), "shown in the other scenes too")
+before = ce.eval(EC + ".points[1].scale")
+ce.execute("__settings.targetHealthHeight:SetValue(40); __settings.targetPowerHeight:SetValue(20)")
+run(ce, 0.2)
+grown = ce.eval("__ns.Editor.State().ui.examples.frames.target.tall.scale")
+check(abs(before - 0.6) < 1e-6 and grown > 1.05 and abs(ce.eval(EC + ".points[1].scale") - 0.6 * grown) < 1e-6
+      and abs(ce.eval(EC + ".host.points.CENTER.x") - 2 * grown) < 1e-6, "round the ring of a taller target, grown with it")
+ce.execute("__settings.targetHealth:SetValue(false); __settings.targetPower:SetValue(false);"
+           " __ns.Editor.State().ui.examples.frames:SetScene('damage')")
+check(not ce.eval(EC + ".host.shown"), "a target that is off rests without them")
+check(not any("rror" in m for m in chat(ce)), "no errors")
+co = session("{ setupDone = true }")
+co.execute("SlashCmdList.SMOOTHANIMATEDBARS('')")
+check(co.eval(EC + " == nil"), "other classes have none there")
+tf.execute("PlayerFrame.unit = 'vehicle'")
+run(tf, 0.3)
+check(not tf.eval(ST + ".player.shown") and tf.eval("PlayerFrame.PlayerFrameContent.PlayerFrameContentMain.alpha") == 1
+      and tf.eval("PlayerFrame.PlayerFrameContainer.alpha") == 1
+      and not tf.eval("SmoothAnimatedBars.HasBar(" + OURS + ".health)"),
+      "in a vehicle the game's frame is given back whole")
+tf.execute("PlayerFrame.unit = 'player'")
+run(tf, 0.3)
+check(tf.eval(ST + ".player.shown") and tf.eval("SmoothAnimatedBars.HasBar(" + OURS + ".health)"), "and taken again after")
+tf.execute("__settings.playerHealthHeight:SetValue(20); __settings.playerPowerHeight:SetValue(10)")
+run(tf, 0.5)
+check(not tf.eval(ST + ".player.shown") and not tf.eval(OURS + ".shown") and tf.eval("PlayerFrame.PlayerFrameContent.PlayerFrameContentMain.alpha") == 1
+      and tf.eval("PlayerFrame.PlayerFrameContainer.alpha") == 1
+      and tf.eval("(select(2, __liquid(PlayerFrame.healthbar)))") > 0,
+      "back at the game's heights: ours hidden, the game's frame whole again, its own liquid back")
+check(not any("rror" in m for m in chat(tf)), "no errors")
+
+# The focus (the target's template and measurements), the pet and the targets of target (the small frames' art).
+sf = session("{ setupDone = true, focusHealthHeight = 28, petHealthHeight = 17, petPowerHeight = 9, "
+             "totHealthHeight = 15 }")
+run(sf, 0.5)
+check(sf.eval(ST + ".focus.shown") and sf.eval(ST + ".focus.f.points.BOTTOMLEFT.rel == FocusFrame")
+      and sf.eval(ST + ".focus.f.health.h") == 28 and sf.eval("FocusFrame.TargetFrameContainer.alpha") == 0
+      and sf.eval("SmoothAnimatedBars.HasBar(" + ST + ".focus.f.health)"),
+      "the focus takes the target's frame of ours, on FocusFrame, its bars handed over")
+check(not sf.eval(ST + ".target.shown") and not sf.eval(ST + ".player.shown"), "and only the frames asked for")
+check(sf.eval(ST + ".pet.shown") and sf.eval(ST + ".pet.f.points.TOPLEFT.rel == PetFrame")
+      and sf.eval(ST + ".pet.f.health.h") == 17 and sf.eval(ST + ".pet.f.power.h") == 9
+      and sf.eval(ST + ".pet.f.h") == 49 + 6 + 2 and sf.eval(ST + ".pet.f.tall ~= nil"),
+      "the pet's in the small frames' art, from the game's 11 and 7, growing down from under the player frame")
+check(sf.eval("PetFrameTexture.alpha") == 0 and sf.eval("PetFrameHealthBar.alpha") == 0 and sf.eval("PetName.alpha") == 0
+      and sf.eval(ST + ".pet.f.nameText.text") == "Wolf"
+      and sf.eval("(select(2, __liquid(" + ST + ".pet.f.health)))") > 0,
+      "the pet's art, bars and name faded, its name copied, the liquid in its taller bar")
+PETHIT = ST + ".pet.hit[2]"
+sf.execute("__fire('UNIT_COMBAT', 'pet', 'WOUND', 'CRITICAL', __secret(), 1); PetHitIndicator:SetText(__secret());"
+           " PetHitIndicator:SetAlpha(0.7); PetHitIndicator:Show()")
+run(sf, 0.2)
+check(sf.eval(PETHIT + ".shown") and abs(sf.eval(PETHIT + ":GetAlpha()") - 0.7) < 1e-9
+      and sf.eval(PETHIT + ".textHeight") == 45
+      and sf.eval(PETHIT + ".points.TOPLEFT.rel == " + ST + ".pet.f.portrait"),
+      "the pet's hit numbers from its portrait's corner, as the game's")
+check(sf.eval("PetHitIndicator:GetParent().alpha") == 0 and sf.eval("PetHitIndicator:GetAlpha()") == 0.7
+      and sf.eval("PetFrame.alpha") != 0,
+      "the game's hidden with the frame they share with the name, their own alpha the game's")
+sf.execute("PetHitIndicator:Hide()")
+check(sf.eval(ST + ".tot.shown") and sf.eval(ST + ".focustot.shown") and sf.eval(ST + ".tot.f.health.h") == 15
+      and sf.eval(ST + ".focustot.f.points.TOPLEFT.rel == FocusFrameToT")
+      and sf.eval("TargetFrameToT.FrameTexture.alpha") == 0,
+      "both targets of target follow the one setting")
+# The target of target's portrait follows its unit: no portrait event comes when the target picks a new target.
+sf.execute("""__portraits = {}
+    local set = SetPortraitTexture
+    SetPortraitTexture = function(tex, unit) __portraits[#__portraits + 1] = unit; return set(tex, unit) end""")
+sf.execute("__fire('UNIT_TARGET', 'target')")
+check("targettarget" in list(sf.eval("__portraits").values()),
+      "the target picking a new target redraws the target of target's portrait (seen in game: the one before's face)")
+sf.execute("__portraits = {}; __fire('PLAYER_FOCUS_CHANGED')")
+check("focustarget" in list(sf.eval("__portraits").values()), "and a new focus the focus's target of target's")
+sf.execute("__portraits = {}; TargetFrameToT.Name.text = 'Someone Else'")
+run(sf, 0.2)
+check("targettarget" in list(sf.eval("__portraits").values()), "and a new name on the game's frame, whatever was missed")
+sf.execute("__settings.petHealthHeight:SetValue(11); __settings.petPowerHeight:SetValue(7)")
+run(sf, 0.3)
+check(not sf.eval(ST + ".pet.shown") and sf.eval("PetFrameTexture.alpha") == 1 and sf.eval("PetFrameHealthBar.alpha") == 1,
+      "the pet back at the game's 11 and 7: the game's frame whole again")
+sf.execute("__ns.Editor.Open('pet')")
+PET = "__ns.Editor.State().ui"
+check(sf.eval(PET + ".pages.pet.sliders.petHealthHeight.slider:GetValue()") == 11
+      and sf.eval(PET + ".examples.pet.h") == 49,
+      "the Pet page's sliders start at the game's 11 and 7, its example in the small frames' own art")
+sf.execute(PET + ".pages.pet.sliders.petHealthHeight.slider:SetValue(19)")
+run(sf, 0.2)
+check(sf.eval(PET + ".examples.pet.h") == 57 and sf.eval(ST + ".pet.shown"),
+      "sliding it lays out the example and the real pet frame alike")
+check(not any("rror" in m for m in chat(sf)), "no errors")
+
+# The party: its members' pooled buttons, each with a frame of ours while it is in use.
+pf = session("{ setupDone = true, partyHealthHeight = 16, partyPowerHeight = 9 }")
+pf.execute("""
+    for i = 1, 2 do PartyFrame['MemberFrame' .. i]:Show() end
+    PartyFrame.MemberFrame3.unit, PartyFrame.MemberFrame4.unit = nil, nil
+    function __partyState(gf) return __ns.TallFrames.State().party[gf] end
+""")
+run(pf, 0.5)
+M1, M2 = "PartyFrame.MemberFrame1", "PartyFrame.MemberFrame2"
+check(pf.eval(f"__partyState({M1}).shown") and pf.eval(f"__partyState({M2}).shown")
+      and not pf.eval(f"__partyState(PartyFrame.MemberFrame3).shown"),
+      "each party member in the game's frames gets a frame of ours; an empty slot does not")
+S1 = f"__partyState({M1}).f"
+check(pf.eval(S1 + ".points.TOPLEFT.rel == " + M1) and pf.eval(S1 + ".health.h") == 16 and pf.eval(S1 + ".power.h") == 9
+      and pf.eval(S1 + ".h") == 53 + 6 + 2,
+      "growing down from the member's top, its bars as tall as asked from the game's 10 and 7")
+check(pf.eval("SmoothAnimatedBars.HasBar(" + S1 + ".health)") and pf.eval("(select(2, __liquid(" + S1 + ".health)))") > 0
+      and pf.eval(M1 + ".Texture.alpha") == 0 and pf.eval(M1 + ".HealthBarContainer.alpha") == 0
+      and pf.eval(M1 + ".Name.alpha") == 0 and pf.eval(S1 + ".nameText.text") == "Member1",
+      "its bars handed to the liquid, the game's art, bars and name faded, the name copied")
+check(pf.eval(f"__partyState({M1}).unit") == "party1", "for the member's own unit")
+# The game hands its buttons between places: the second button now shows party3.
+pf.execute(M2 + ".unit = 'party3'")
+run(pf, 0.3)
+check(pf.eval(f"__partyState({M2}).unit") == "party3" and pf.eval(f"__partyState({M2}).shown"),
+      "a button handed to another member follows its new unit")
+pf.execute(M1 + ".VehicleTexture:Show()")
+run(pf, 0.3)
+check(not pf.eval(f"__partyState({M1}).shown") and pf.eval(M1 + ".Texture.alpha") == 1
+      and pf.eval(M1 + ".HealthBarContainer.alpha") == 1, "a member in a vehicle gets the game's frame back")
+pf.execute(M1 + ".VehicleTexture:Hide(); " + M2 + ".unit = nil")
+run(pf, 0.3)
+check(pf.eval(f"__partyState({M1}).shown") and not pf.eval(f"__partyState({M2}).shown")
+      and pf.eval(M2 + ".Texture.alpha") == 1, "and a button left empty gives its frame back")
+pf.execute("__ns.Editor.Open('party')")
+ED = "__ns.Editor.State().ui"
+check(pf.eval(ED + ".pages.party.sliders.partyHealthHeight.slider.max") == 18
+      and pf.eval(ED + ".pages.party.sliders.partyPowerHeight.slider.max") == 11,
+      "the Party page's sliders keep within the game's 10 between members (+8 and +4)")
+check(pf.eval(ED + ".examples.party.members[1].health.h") == 16 and pf.eval(ED + ".examples.party.h") == 4 * 61 + 3 * 4,
+      "the stacked example's members are as tall, the stack laid out again round them")
+check(pf.eval(ED + ".examples.party:GetScale()") < 1, "and drawn smaller to stay on the screen")
+check(pf.eval("__ns.HealMarker.State() ~= nil and select(4, __ns.HealMarker.State())[" + S1 + ".health] ~= nil")
+      and pf.eval("select(4, __ns.HealMarker.State())[" + S1 + ".health].party")
+      and pf.eval(S1 + ".health.unit") == "party1",
+      "a taller member's health bar gets the party heal marker, for the member on it")
+check(not any("rror" in m for m in chat(pf)), "no errors")
+
+# What the game draws on its bars, faded with them: heal predictions, absorbs, the shield and Weakened Soul.
+ab = session("{ setupDone = true, playerHealthHeight = 30, playerPowerHeight = 14, petHealthHeight = 15 }",
+             "__player.class = 'PRIEST'")
+ab.execute("__spells[17] = { 'Power Word: Shield', 'Draws on the soul of the party member to shield them.' }")
+run(ab, 0.5)
+OH, GH = ST + ".player.f.health", "PlayerFrame.healthbar"
+for key in ("MyHealPredictionBar", "OtherHealPredictionBar", "HealAbsorbBar", "TotalAbsorbBar"):
+    check(ab.eval(f"{OH}.{key} ~= nil and {OH}.{key}.Fill ~= nil and not {OH}.{key}.shown"),
+          f"our taller health bar has a copy of the game's {key}, hidden while the game's is")
+check(ab.eval(ST + ".player.f.power.ManaCostPredictionBar ~= nil") and ab.eval(OH + ".OverAbsorbGlow ~= nil")
+      and ab.eval(OH + ".OverHealAbsorbGlow ~= nil"),
+      "and of the mana cost prediction on its power bar and the glows at the health bar's ends")
+check(ab.eval(ST + ".pet.f.health.MyHealPredictionBar ~= nil"),
+      "the pet's, which the game keeps on the frame only (global names), are found there")
+ab.execute(GH + ".TotalAbsorbBar:Show(); " + GH + ".OverAbsorbGlow:Show()")
+run(ab, 0.2)
+SEG = OH + ".TotalAbsorbBar"
+check(ab.eval(SEG + ".shown") and ab.eval(SEG + ".Fill.atlas") == "UI-HUD-UnitFrame-Player-PortraitOn-Bar-Health-Status",
+      "the game showing its absorb: ours shows, with the game's fill")
+check(ab.eval(SEG + ".box.points.TOPLEFT.rel == " + GH + ".TotalAbsorbBar.FillMask")
+      and ab.eval(SEG + ".box.points.BOTTOMRIGHT.rel == " + GH + ".TotalAbsorbBar.FillMask")
+      and ab.eval(SEG + ".box.points.TOPLEFT.y - " + SEG + ".box.points.BOTTOMRIGHT.y") == 30,
+      "laid on the game's own mask (as wide and as far along as the game makes it from the secret amount), "
+      "our bar's height")
+check(ab.eval(SEG + ".Fill.masks ~= nil and #" + SEG + ".Fill.masks") == 2
+      and ab.eval(SEG + ".TiledFillOverlay.file") == 5003 and ab.eval(SEG + ".TiledFillOverlay.horizTile"),
+      "its fill cut to that stretch and to the bar's slot, its lines tiled by their own size")
+check(ab.eval(OH + ".OverAbsorbGlow:GetParent().shown") and ab.eval(OH + ".OverAbsorbGlow.blend") == "ADD"
+      and ab.eval(OH + ".OverAbsorbGlow.points.TOPLEFT.rel == " + OH),
+      "the over-absorb glow shows at our bar's end, added light as the game's")
+ab.execute(GH + ".TotalAbsorbBar:Hide(); " + GH + ".OverAbsorbGlow:Hide(); "
+           + GH + ".MyHealPredictionBar.shown = __secret(true)")
+run(ab, 0.2)
+check(not ab.eval(SEG + ".shown") and not ab.eval(OH + ".OverAbsorbGlow:GetParent().shown"), "hidden again with the game's")
+check(ab.eval(OH + ".MyHealPredictionBar.shown") and ab.eval("issecretvalue(" + OH + ".MyHealPredictionBar.alpha)"),
+      "a segment whose shown state is secret: ours shows, faded by it")
+check(ab.eval("select(3, __ns.HealMarker.State())[" + OH + "] ~= nil")
+      and ab.eval("select(3, __ns.HealMarker.State())[" + OH + "].others")
+      and not ab.eval("select(3, __ns.HealMarker.State())[" + OH + "].spec.external"),
+      "our health bar gets the player's heal marker as the game frame's has it, others' heals too, not as another "
+      "addon's bar")
+check(ab.eval(OH + ".OverAbsorbGlow.masks ~= nil and " + OH + ".OverAbsorbGlow.masks[1] == " + OH + ".HealthBarMask"),
+      "the glows are cut by the bar's slot, as the game's are (most of one lies past the bar's end, over the art)")
+# Others' heals on the taller bar: the marker takes them over from our copy of the game's bar for them.
+ab.execute(GH + ".MyHealPredictionBar.shown = false; __incoming.player = { others = 90 }; "
+           + GH + ".OtherHealPredictionBar:Show(); __fire('UNIT_HEAL_PREDICTION', 'player')")
+run(ab, 0.3)
+TM = "select(3, __ns.HealMarker.State())[" + OH + "]"
+check(ab.eval(TM + ".others.pool.shown") and ab.eval(OH + ".OtherHealPredictionBar.Fill.alpha") == 0,
+      "others' heals on the taller bar: the marker's liquid shows, our copy of the game's bar for them hidden")
+ab.execute(GH + ".OtherHealPredictionBar.shown = __secret(true); __fire('UNIT_HEAL_PREDICTION', 'player')")
+run(ab, 0.3)
+check(ab.eval("issecretvalue(" + TM + ".others.pool.alpha)"),
+      "the game's answer secret: the marker fades by it, asked of the game's bar (our copy can only fade by it)")
+ab.execute(GH + ".OtherHealPredictionBar.shown = false; __incoming.player = nil; __fire('UNIT_HEAL_PREDICTION', 'player')")
+run(ab, 1)
+check(not ab.eval(TM + ".others.pool.shown"), "and goes when the game's bar does")
+# The shield and Weakened Soul follow the frame drawn in the game's place.
+ab.execute("__absorb.whole = 60; " + GH + ".TotalAbsorbBar:Show()")
+run(ab, 0.3)
+SHL = "__ns.Shield.State()"
+check(ab.eval(SHL + ".bar == " + OH) and ab.eval(SHL + ".clip.shown") and ab.eval(SHL + ".source == " + GH),
+      "a shield going up, as the game's absorb display says: drawn on our taller bar")
+check(ab.eval(SEG + ".Fill.alpha") == 0 and ab.eval(SEG + ".TiledFillOverlay.alpha") == 0,
+      "and the copy of the game's absorb hidden under it, as the game's is on its own bar")
+check(not ab.eval("__ns.Shield.State() == nil") and ab.eval("__ns.Soul.State().bar == " + OH), "Weakened Soul too")
+ab.execute("__settings.playerHealthHeight:SetValue(20); __settings.playerPowerHeight:SetValue(10)")
+run(ab, 0.5)
+check(ab.eval(SHL + ".bar == " + GH) and ab.eval(SHL + ".clip.shown") and ab.eval("__ns.Soul.State().bar == " + GH),
+      "back at the game's heights, the shield and Weakened Soul go back to the game's bar, still up")
+check(not any("rror" in m for m in chat(ab)), "no errors")
 
 print("== saved settings")
 lua3 = session("{ setupDone = true, playerPower = false, healthColor = 'gone', waves = false }")
@@ -2699,6 +3243,78 @@ oh.execute("__heal_other('party1', 0, __PBAR.OtherHealPredictionBar)")
 run(oh, 0.8)
 check(not oh.eval("__pm().clip.shown") and oh.eval("__PBAR.OtherHealPredictionBar.Fill.alpha") == 1
       and oh.eval("__pm().othersWake") is None, "and rests again after, no longer woken")
+# Their look by who is casting: the amounts are secret, so group members' heal casts say whose heals they are.
+oh.execute("""
+    __units.party2 = { isOtherPlayer = true, class = 'PRIEST', name = 'Pria', guid = 'Player-1-00000003' }
+    __units.party3 = { isOtherPlayer = true, class = 'DRUID', name = 'Drue', guid = 'Player-1-00000004' }
+    __spells[2061] = { 'Flash Heal', 'Heals a friendly target for 193 to 237.' }
+    __spells[585] = { 'Smite', 'Smite an enemy for 15 to 20 Holy damage.' }
+    __spells[8936] = { 'Regrowth', 'Heals a friendly target for 93 to 107 and another 98 over 21 sec.' }
+""")
+oh.execute("__fire('UNIT_SPELLCAST_START', 'party2', 'Cast-P1', 585)")
+oh.execute("__heal_other('party1', 120, __PBAR.OtherHealPredictionBar)")
+run(oh, 0.3)
+check(oh.eval("__pm().others.pool.shown") and oh.eval("__pm().others.themeKey") == "others",
+      "others' heals with no heal being cast (a priest's Smite is no heal): the shared silvery teal")
+oh.execute("__fire('UNIT_SPELLCAST_START', 'party2', 'Cast-P2', 2061)")
+run(oh, 0.2)
+check(oh.eval("__pm().others.themeKey") == "holy", "a priest casting a heal: others' heals take the Holy look")
+oh.execute("__fire('UNIT_SPELLCAST_START', 'party3', 'Cast-D1', 8936)")
+run(oh, 0.2)
+check(oh.eval("__pm().others.themeKey") == "others", "a druid healing too: mixed, so the shared look again")
+oh.execute("__fire('UNIT_SPELLCAST_STOP', 'party2', 'Cast-P2', 2061)")
+run(oh, 0.2)
+check(oh.eval("__pm().others.themeKey") == "others", "the priest's cast just ended: kept a moment, while its heal lands")
+run(oh, 0.6)
+check(oh.eval("__pm().others.themeKey") == "nature", "then the druid's, still coming: Nature")
+oh.execute("__fire('UNIT_SPELLCAST_STOP', 'party3', 'Cast-D1', 8936); __heal_other('party1', 0, __PBAR.OtherHealPredictionBar)")
+run(oh, 0.2)
+check(oh.eval("__pm().others.themeKey") == "nature", "the heal landed: the liquid keeps its look as it drains")
+run(oh, 0.8)
+# A paladin's Holy Light on another class's client: no text until the client loads it (seen in game: the shared look).
+oh.execute("""
+    __units.party2 = { isOtherPlayer = true, class = 'PALADIN', name = 'Pala', guid = 'Player-1-00000003' }
+    __spells[635] = { 'Holy Light', '', helpful = true }
+    __spells[1022] = { 'Blessing', '' }
+    __fire('UNIT_SPELLCAST_START', 'party2', 'Cast-L1', 635)
+""")
+oh.execute("__heal_other('party1', 120, __PBAR.OtherHealPredictionBar)")
+run(oh, 0.3)
+check(oh.eval("__pm().others.themeKey") == "holy" and oh.eval("__spellLoads[635]") == 1,
+      "a heal whose text the client has not loaded yet: taken as a heal as the game calls it helpful, Holy for a "
+      "paladin, and its text asked for")
+oh.execute("__fire('UNIT_SPELLCAST_STOP', 'party2', 'Cast-L1', 635); __fire('UNIT_SPELLCAST_START', 'party2', 'Cast-L2', 1022)")
+oh.execute("__heal_other('party1', 0, __PBAR.OtherHealPredictionBar)")
+run(oh, 1)
+casts = [m for m in oh.eval("__ns.HealMarker.Debug()").values() if m.startswith("Group cast:")]
+check(any("party2 cast 635: helpful, holy at anyone" in m for m in casts) and any("party2 cast 1022: no text" in m for m in casts),
+      "/sab heals lists the group's casts and what was read of each")
+# Whose heal it is, by the caster's target where the game says.
+oh.execute("""__units.party3 = { isOtherPlayer = true, class = 'DRUID', name = 'Drue', guid = 'Player-1-00000004' }
+    __unitTargets.party3 = 'party2'
+    __fire('UNIT_SPELLCAST_START', 'party3', 'Cast-D2', 8936)""")
+oh.execute("__heal_other('party1', 120, __PBAR.OtherHealPredictionBar)")
+run(oh, 0.3)
+check(oh.eval("__pm().others.themeKey") == "others",
+      "a druid healing another member: not this one's (heals still coming here that no cast accounts for: shared look)")
+oh.execute("__fire('UNIT_SPELLCAST_STOP', 'party3', 'Cast-D2', 8936); __unitTargets.party3 = 'party1'; "
+           "__fire('UNIT_SPELLCAST_START', 'party3', 'Cast-D3', 8936)")
+run(oh, 0.3)
+check(oh.eval("__pm().others.themeKey") == "nature", "the druid healing this member: Nature")
+# A cast whose end never comes (a loading screen, the caster out of sight) is over after CAST_MAX.
+run(oh, 10.5)
+check(oh.eval("__pm().others.themeKey") == "others", "a cast whose end was never seen is let go after a while")
+oh.execute("__heal_other('party1', 0, __PBAR.OtherHealPredictionBar); __unitTargets.party3 = nil")
+run(oh, 1)
+# The player's own raid token: their heals are their own, whatever UnitIsUnit answers.
+oh.execute("""__units.raid4 = { isMe = true, class = 'PRIEST' }
+    __spells[2050] = { 'Lesser Heal', 'Heals a friendly target for 47 to 58.' }
+    local isUnit = UnitIsUnit
+    UnitIsUnit = function(a, b) if a == 'raid4' then return __secret(true) end return isUnit(a, b) end
+    __fire('UNIT_SPELLCAST_START', 'raid4', 'Cast-M1', 2050)
+    UnitIsUnit = isUnit""")
+check(not any("raid4" in m for m in oh.eval("__ns.HealMarker.Debug()").values()),
+      "the player's own raid token (UnitIsUnit secret, known by GUID) is not taken for another healer")
 oh.execute("__fire('UNIT_HEAL_PREDICTION', 'nameplate1'); __fire('UNIT_HEAL_PREDICTION', 'target')")
 check(oh.eval("__pm().othersWake") is None, "heals changing on a nameplate or the target wake no group marker")
 oh.execute("__PBAR:Hide(); __fire('UNIT_HEAL_PREDICTION', 'party1')")
@@ -2762,6 +3378,31 @@ check(not wrong, f"Forever's heal, food and drink text in every language, and sp
 check(fd.eval("(__ns.Heals.readHeal('Heals 66 damage over 6 sec.'))") == 66
       and fd.eval("(__ns.Heals.readHeal('Rend 830\\194\\160points de vie à la cible en 15\\194\\160sec.'))") == 830,
       "non-breaking spaces read as spaces")
+# The client writes thousands separators Wowhead leaves out (reported: Holy Light rank 8, 1,177 to 1,309, showed nothing).
+fd.execute("""
+    __hl = { __ns.Heals.readHeal('Heals a friendly target for 1,177 to 1,309.') }
+    __hot = { __ns.Heals.readHeal('Heals 1,104 damage over 8 sec.') }
+    __rest = { __ns.Heals.readRest('Restores 2,148 health and 4,200 mana over 30 sec. Must remain seated while eating.') }
+""")
+check(fd.eval("__hl[3]") == 1177 and fd.eval("__hl[1]") is None, "a direct heal over 999 written with a comma reads")
+check(fd.eval("__hot[1]") == 1104 and fd.eval("__hot[2]") == 8, "a heal over time over 999 written with a comma reads")
+check(fd.eval("__rest[1]") == 2148 and fd.eval("__rest[2]") == 4200 and fd.eval("__rest[3]") == 30,
+      "food and drink over 999 written with commas read")
+# Other languages' separators (a review found German "1.177" read as 177), every group of a long number, and the DoTs.
+fd.execute("""
+    __de = { __ns.Heals.readHeal('Heilt ein befreundetes Ziel um 1.177 bis 1.309.') }
+    __dehot = { __ns.Heals.readHeal('Heilt das Ziel 15 Sek. lang um 1.830 Schadenspunkt(e).') }
+    __derest = { __ns.Heals.readRest('Stellt im Verlauf von 30 Sek. 2.148 Punkt(e) Gesundheit wieder her. Ihr müsst beim Essen sitzen bleiben.') }
+    __fr = { __ns.Heals.readHeal('Rend 1\\194\\160177 à 1\\194\\160309\\194\\160points de vie à une cible alliée.') }
+    __big = { __ns.Heals.readHeal('Heals a friendly target for 1,234,567 to 1,300,000.') }
+    __dot = { __ns.Dots.parseDot('Corrupts the target, causing 1,234 Shadow damage over 18 sec.') }
+""")
+check(fd.eval("__de[3]") == 1177, "a German direct heal over 999 (1.177) reads")
+check(fd.eval("__dehot[1]") == 1830 and fd.eval("__dehot[2]") == 15, "a German heal over time over 999 reads")
+check(fd.eval("__derest[1]") == 2148, "German food over 999 reads")
+check(fd.eval("__fr[3]") == 1177, "a French direct heal over 999 (1 177, non-breaking) reads")
+check(fd.eval("__big[3]") == 1234567, "every thousands group of a long number is joined")
+check(fd.eval("__dot[1]") == 1234, "a DoT over 999 written with a comma reads")
 fd.execute("""
     __units.party1 = { isOtherPlayer = true, class = 'MAGE', power = 0, name = 'Alys', guid = 'Player-1-00000002' }
     __spells[139] = { 'Rénovation', 'Rend 830 points de vie à la cible en 15 sec.' }
@@ -3436,6 +4077,48 @@ ws.execute("__fire('UNIT_SPELLCAST_SENT', 'player', UnitName('player'), 'Cast-21
 run(ws, 0.2)
 check(ws.eval(WS + ".endAt") is not None, "and your shield on yourself starts it")
 check(not any("Error" in m for m in chat(ws)), "no errors (health and the shield stayed secret)")
+
+print("== /sab tall (taller bars test)")
+tall = session()
+run(tall, 0.5)
+tall.execute("SlashCmdList.SMOOTHANIMATEDBARS('tall 34 14')")
+tall.execute("""
+    function __tallHolder()
+        local found
+        for _, f in ipairs(__frames) do if f.player and f.target and f.bars then found = f end end
+        return found
+    end
+    -- The frame art's slices: textures showing the art atlas's file (its slices are cut from the file by coordinates).
+    function __slices(f)
+        local file = C_Texture.GetAtlasInfo('UI-HUD-UnitFrame-' .. (f == __tallHolder().target and 'Target' or 'Player')
+            .. '-PortraitOn').file
+        local n, tc = 0, 0
+        for _, r in ipairs(__regions) do
+            if r.parent == f and r.kind == 'Texture' and r.file == file and r.shown then
+                n = n + 1
+                if r.tc then tc = tc + 1 end
+            end
+        end
+        return n, tc
+    end
+""")
+run(tall, 0.5)
+check(tall.eval("__tallHolder().player.health.h") == 34 and tall.eval("__tallHolder().player.power.h") == 14
+      and tall.eval("__tallHolder().target.health.h") == 34 and tall.eval("__tallHolder().player.h") == 118,
+      "the frames' bars are as tall as asked, the frame grown by both")
+n, tc = tall.eval("__slices(__tallHolder().player)")
+check(n > 10 and tc == n, f"the art is slices of the game's atlas, each its file cut with texture coordinates ({tc} of {n})")
+check(tall.eval("(select(2, __liquid(__tallHolder().player.health)))") > 0, "with the liquid in the taller bars")
+check(tall.eval("__tallHolder().player.tall.scale") > 1 and any("grown to cover" in m for m in chat(tall)),
+      "the portrait grows once the ring no longer covers the panel's end, and chat says so")
+tall.execute("SlashCmdList.SMOOTHANIMATEDBARS('tall 22 10')")
+check(tall.eval("__tallHolder().player.tall.scale") == 1, "and keeps its size while it does")
+tall.execute("__missingAtlases['UI-HUD-UnitFrame-Player-PortraitOn'] = true; SlashCmdList.SMOOTHANIMATEDBARS('tall 34 14')")
+check(not tall.eval("__tallHolder().player.tall") and tall.eval("__tallHolder().player.health.h") == 20
+      and any("no atlas info" in m for m in chat(tall)), "with no atlas info, the frame is the game's size, and chat says why")
+tall.execute("__missingAtlases['UI-HUD-UnitFrame-Player-PortraitOn'] = nil; SlashCmdList.SMOOTHANIMATEDBARS('tall off')")
+check(not tall.eval("__tallHolder():GetParent().shown"), "/sab tall off hides it")
+check(not any("rror" in m for m in chat(tall)), "no errors")
 
 print("== /sab capture (gallery art)")
 cap = session()
@@ -5239,6 +5922,62 @@ piece.execute("__cuifSkin()")
 run(piece, 1.2)
 check(piece.eval("SmoothAnimatedBars.HasBar(__cP)") and piece.eval("(select(2, __liquid(__cP)))") > 0,
       "its standalone unit frames piece is looked for too")
+
+print("== animation speed and wave intensity")
+sp = session("{ setupDone = true }")
+run(sp, 0.5)
+sp.execute("""
+    __lp = __ns.Bars.Liquid(PlayerFrame.healthbar)
+    __lt = __ns.Bars.Liquid(TargetFrame.healthbar)
+    -- How far the liquid's clock moves in 0.1 s of real time, and its front offsets after a splash.
+    function __tick(l) local t = l.t; l:Update(0.1, l.edge); return l.t - t end
+    function __fronts(l) local out = {}; for i = 1, l.n do out[i] = l:FrontOffset(i) end; return out end
+""")
+check(sp.eval("__lp.opts.speed") == 1 and sp.eval("__lp.opts.intensity") == 1, "both at 100% by default")
+check(abs(sp.eval("__tick(__lp)") - 0.1) < 1e-9, "at 100% the liquid's clock keeps real time")
+sp.execute("__settings.animationSpeed:SetValue(200)")
+check(sp.eval("__lp.opts.speed") == 2 and abs(sp.eval("__tick(__lp)") - 0.2) < 1e-9,
+      "Animation Speed 200%: the liquid runs twice as fast")
+sp.execute("__settings.animationSpeed:SetValue(50)")
+check(abs(sp.eval("__tick(__lp)") - 0.05) < 1e-9, "and 50% half as fast")
+sp.execute("__lp:Splash(1, 20, 40); __lp:Update(0.05, __lp.edge)")
+sp.execute("__settings.waveIntensity:SetValue(100); __one = __fronts(__lp)")
+sp.execute("__settings.waveIntensity:SetValue(200); __two = __fronts(__lp)")
+sp.execute("__settings.waveIntensity:SetValue(0); __none = __fronts(__lp)")
+n = sp.eval("__lp.n")
+one = [sp.eval(f"__one[{i}]") for i in range(1, n + 1)]
+two = [sp.eval(f"__two[{i}]") for i in range(1, n + 1)]
+none = [sp.eval(f"__none[{i}]") for i in range(1, n + 1)]
+check(max(abs(v) for v in one) > 0.5 and all(abs(b - 2 * a) < 1e-9 for a, b in zip(one, two)),
+      f"Wave Intensity 200%: the front's waves twice as far ({max(abs(v) for v in one):.2f} px at 100%)")
+check(all(v == 0 for v in none), "Wave Intensity 0%: a flat front")
+sp.execute("__settings.waveIntensity:SetValue(100); __settings.animationSpeed:SetValue(100)")
+sp.execute("__ns.Core.SetEffect('playerHealth', 'waveIntensity', 50)")
+check(sp.eval("__lp.opts.intensity") == 0.5 and sp.eval("__lt.opts.intensity") == 1,
+      "a bar's own Wave Intensity, the others on the global one")
+sp.execute("__ns.Core.SetUseGlobal(false); __ns.Core.SetUseGlobal(true)")
+check(sp.eval("__ns.Core.db.effects.playerHealth.waveIntensity") == 50 and sp.eval("__lp.opts.intensity") == 0.5,
+      "and kept through a profile change (a review found the levels dropped by the settings' clean-up)")
+# The fury follows the bar's front: at 0% its own tremble is still, as its body's cut expects.
+sp.execute("""__ns.Core.SetEffect('playerHealth', 'waveIntensity', 0)
+    __f = __ns.Liquid.New(CreateFrame('Frame', nil, UIParent), 100, 20, __lp.theme, __lp.opts, __lp.n)
+    __f:Follow(__lp, 1.25); __f.t = 3.1""")
+check(all(abs(sp.eval(f"__f:FrontOffset({i})")) < 1e-9 for i in range(1, sp.eval("__lp.n") + 1)),
+      "Wave Intensity 0%: a follower's (the fury's) tremble is still too")
+sp.execute("__ns.Core.SetEffect('playerHealth', 'waveIntensity', 50)")
+lv = session("{ setupDone = true, global = { effects = { playerHealth = { waveIntensity = 50, animationSpeed = 'fast' },"
+             " targetHealth = { waveIntensity = 900 } } } }")
+run(lv, 0.5)
+check(lv.eval("__ns.Bars.Liquid(PlayerFrame.healthbar).opts.intensity") == 0.5
+      and lv.eval("__ns.Core.db.effects.playerHealth.animationSpeed") is None
+      and lv.eval("__ns.Bars.Liquid(TargetFrame.healthbar).opts.intensity") == 2,
+      "a bar's own levels are kept at login, a saved one that is no number dropped, one out of range held to it")
+sp.execute("__ns.Core.ClearEffects('playerHealth'); __ns.Core.db.animationSpeed = 5000; __ns.Bars.ApplyOptions()")
+check(sp.eval("__lp.opts.speed") == 2, "a saved speed out of range is held to the slider's (200%)")
+sp.execute("__ns.Core.db.animationSpeed = 100; __ns.Bars.ApplyOptions()")
+sp.execute("SlashCmdList.SMOOTHANIMATEDBARS('')")
+run(sp, 0.3)
+check(not any("Error" in m for m in chat(sp)), "no errors")
 
 if failures:
     print(f"\n{len(failures)} check(s) failed:")

@@ -2,7 +2,7 @@
 
 Usage: python gallery.py <addon dir> [out dir] [scenario ...]
 Default out dir: branding/gallery. Writes each scenario as an animated WebP (hero is the warrior, then
-mage, rogue, then warlock and rend, whose targets carry the DoT marker, priest, with the heal marker, druid, with both, eating, a meal up to its buff, mana, the build-up to mana regenerating, and fury, a warrior's rage building to full and spent), frames.png (a still of the warrior), themes.png (the player frame in a few themes) plates.webp (four nameplates, from the plate art capture_art.py --plates cut out) and prd.webp (a warrior's Personal Resource Display through a fight and a bandage, on the same plate art) and party.webp (four party members through a fight, from the party art capture_art.py --party cut out) and raid.webp (ten raid members through a pull, from the raid art capture_art.py --raid cut out).
+mage, rogue, then warlock and rend, whose targets carry the DoT marker, priest, with the heal marker, druid, with both, eating, a meal up to its buff, mana, the build-up to mana regenerating, and fury, a warrior's rage building to full and spent), frames.png (a still of the warrior), themes.png (the player frame in a few themes) plates.webp (four nameplates, from the plate art capture_art.py --plates cut out) and prd.webp (a warrior's Personal Resource Display through a fight and a bandage, on the same plate art) and party.webp (four party members through a fight, from the party art capture_art.py --party cut out) and raid.webp (ten raid members through a pull, from the raid art capture_art.py --raid cut out) and tall.webp (a mage's player frame with its bars made taller and shorter, settling in the middle, the art cut as the addon cuts it for its taller frames).
 A full run takes about a quarter of an hour.
 
 The frame art comes from branding/art, which tools/capture_art.py cuts out of the screenshots /sab
@@ -651,6 +651,202 @@ def themes(art):
         text(draw, fx + 116 * K, fy + 8 * K, THEME_NAMES.get(key, key.title()), 10, (230, 230, 240), False)
     sheet.save(os.path.join(OUT, "themes.png"))
     print("wrote themes.png")
+
+
+# ---------------------------------------------------------------------------- taller bars
+
+# A mage's player frame with its bars made taller and shorter (the editor's Health and Power Bar Height): from the
+# middle up to the tallest the sliders go (40 and 20), down to the game's own (20 and 10) and back to the middle, so it
+# loops. Heights as how much taller than the game's, eased between these: (seconds, health, power).
+TALL_LOOP = 8.8
+TALL_KEYS = [(0.0, 10, 5), (1.2, 10, 5), (2.7, 20, 10), (3.3, 20, 10), (5.3, 0, 0), (5.8, 0, 0), (7.2, 10, 5),
+             (TALL_LOOP, 10, 5)]
+# A quiet fight meanwhile: two Fireballs out of the mana, which refills, and one hit taken that is healed back.
+TALL_SC = dict(player="Mailbox Hootsman", level="12", power="MANA", maxes=(232, 420), regen=0.011,
+               power_start=0.82, spends=[(1.6, 0.12), (4.8, 0.12)],
+               script=[(0.0, 0.92, 0), (2.4, 0.78, 0), (6.6, 0.78, 0), (7.4, 0.92, 0)])
+TALL_MAX = 30  # the most the frame grows (20 + 10)
+# The frame of ours the addon lays out taller (Preview.LiveFrame, as TallFrames.lua puts on the game's frame): its art's
+# slices of the atlas, the portrait's and level circle's places, and its bars' boxes, in frame units from its top-left.
+TALL_LAYOUT = """
+function __tallLayout(dh, dp, cx, cy)
+    local P = __ns.Preview
+    if not __tallF then
+        __tallF = P.LiveFrame(UIParent, 'player', 'player')
+        __tallF:Hide()
+    end
+    local f = __tallF
+    P.SetFrameTall(f, math.max(dh, 0.0001), dp) -- laid out as sliced art even at the game's heights
+    local slices = {}
+    local tex = {}
+    for _, t in ipairs(f.slices or {}) do tex[#tex + 1] = t end
+    tex[#tex + 1] = f.ringTex
+    for _, r in ipairs(tex) do
+        if r and r.shown and r.tc then
+            local p = r.points.TOPLEFT
+            local m = r == f.ringTex and f.ringMask or nil
+            slices[#slices + 1] = { r.tc[1], r.tc[2], r.tc[3], r.tc[4], p.x, -p.y, r.w, r.h, r == f.ringTex,
+                                    m and m.points.TOPLEFT.x or false, m and -m.points.TOPLEFT.y or false,
+                                    m and m.w or false }
+        end
+    end
+    local pc = f.portrait.points.CENTER
+    -- The level circle's centre (cx, cy: where the captured art has it) moved with the ring, as SetFrameTall moves it
+    -- (the mock does not know the circle atlas's size, so its own place for it is off).
+    local mx, my = f.tall.Moved(cx, cy)
+    local function box(b) return { b.points.TOPLEFT.x, -b.points.TOPLEFT.y, b.w, b.h } end
+    return slices, f.w, f.h, pc.x, -pc.y, f.portrait.w, mx, my, box(f.health), box(f.power)
+end
+"""
+
+
+def tall_heights(t):
+    """The bars' growth at t, eased (smoothstep) between TALL_KEYS."""
+    for (t0, h0, p0), (t1, h1, p1) in zip(TALL_KEYS, TALL_KEYS[1:]):
+        if t0 <= t <= t1:
+            u = 0.0 if t1 == t0 else (t - t0) / (t1 - t0)
+            u = u * u * (3 - 2 * u)
+            return h0 + (h1 - h0) * u, p0 + (p1 - p0) * u
+    return TALL_KEYS[-1][1:]
+
+
+def tall_mask(base, bar0, bar1, band, d, height):
+    """A bar's captured mask (alpha, the game's frame at K) laid out for a frame `height` units tall whose bar starts at
+    bar1 instead of bar0 and is d taller: stretched about the top of the part it lets through (band, from the bar's
+    top) until that part is d taller, as Preview.lua's TallSpec stretches the mask atlas."""
+    o0, o1 = band
+    s = (o1 - o0 + d) / (o1 - o0)
+    ys = (np.arange(round(height * K)) + 0.5) / K
+    orig = bar0 + o0 + (ys - bar1 - o0) / s
+    rows = np.clip(np.floor(orig * K).astype(int), 0, base.shape[0] - 1)
+    out = base[rows].copy()
+    out[(orig < 0) | (orig * K >= base.shape[0])] = 0
+    return out
+
+
+def draw_tall_bar(session, img, fx, fy, box, mask, frac, frame):
+    """A bar's liquid onto img (RGB) at its box in a taller frame (top-left at fx, fy px), cut by its mask (alpha for
+    the whole frame at K) and its motes by the clip frame, as draw_bar does for the game's frame."""
+    x, y, w, h = box
+    sx, sy = int(fx + (x - 4) * K), int(fy + (y - SPILL) * K)
+    sw, sh = int((w + SPILL + 8) * K), int((h + 2 * SPILL) * K)
+    sub = img.crop((sx, sy, sx + sw, sy + sh))
+    session.frame = frame
+    ox, oy = fx + (x + frac * w - w) * K - sx, fy + y * K - sy
+    clip = np.zeros((sh, sw), np.float32)
+    clip[:, int(4 * K):] = 1
+    liquid = session.render(sub, ox, oy, K, only=lambda r: not is_mote(r))
+    cut = Image.new("L", (sw, sh), 0)
+    cut.paste(Image.fromarray(mask), (int(fx) - sx, int(fy) - sy))
+    m = np.asarray(cut).astype(np.float32) / 255 * clip
+    a, b = np.asarray(sub).astype(np.float32), np.asarray(liquid).astype(np.float32)
+    sub = Image.fromarray((a + (b - a) * m[..., None]).astype(np.uint8))
+    motes = session.render(sub, ox, oy, K, only=is_mote)
+    a, b = np.asarray(sub).astype(np.float32), np.asarray(motes).astype(np.float32)
+    sub = Image.fromarray((a + (b - a) * clip[..., None]).astype(np.uint8))
+    img.paste(sub, (sx, sy))
+
+
+def tall(art):
+    """tall.webp: the player frame's bars growing, shrinking and settling (TALL_KEYS), the frame drawn as the addon lays
+    out its taller frames: the game's atlas cut into slices (Preview.TallArt), the portrait ring grown once it would
+    clip, and the masks stretched; the liquid is the addon's in the game's bars made as tall."""
+    sc = TALL_SC
+    session = start({}, sc["power"])
+    session.lua.execute(TALL_LAYOUT)
+    ppu = json.load(open(os.path.join(ART, "art.json"), encoding="utf-8"))["ppu"]
+    raw_art = Image.open(os.path.join(ART, "player-art.png")).convert("RGBA")
+    raw_portrait = Image.open(os.path.join(ART, f"{portrait_for(art, 'mage')}.png")).convert("RGBA")
+    # The atlas's place on the game's frame (Preview.lua, AtlasPlace: centred, its size as the client gives it).
+    aw, ah = 194, 68
+    ax0, ay0 = FRAME_W / 2 - aw / 2, FRAME_H / 2 - ah / 2
+    bands = {kind: tuple(session.lua.eval(f"__ns.Preview.TALL.player.opaque.{kind}[{i}]") for i in (1, 2))
+             for kind in ("health", "power")}
+    masks = {kind: np.asarray(art[f"player-{kind}-mask"].getchannel("A")) for kind in ("health", "power")}
+    circle = art["player-circle"]
+    cbox = circle.getchannel("A").getbbox()
+    circle_piece = circle.crop(cbox)
+    ccx0, ccy0 = (cbox[0] + cbox[2]) / 2 / K, (cbox[1] + cbox[3]) / 2 / K  # the piece's own centre
+    pad = round(24 * K)
+    w, h = pad * 2 + round(FRAME_W * K), pad * 2 + round((FRAME_H + TALL_MAX) * K)
+    back = backdrop(w, h)
+    maxes = {"health": sc["maxes"][0], "power": sc["maxes"][1]}
+    # The game's bars as tall as ours, and their liquid's frames (sized from their anchors in the client).
+    grow = """local dh, dp = ...
+        PlayerFrame.healthbar.h, PlayerFrame.manabar.h = 20 + dh, 10 + dp
+        __mover_player_health.h, __mover_player_power.h = 20 + dh, 10 + dp"""
+    resize = session.lua.eval("function(...) " + grow + " end")
+
+    def at(t):
+        health = [r for r in sc["script"] if r[0] <= t][-1][1]
+        return {"health": health, "power": power_at(sc, t)}
+
+    fills, shown = dict(at(0)), at(0)
+    frames, t, dt = [], 0.0, 1 / FPS
+    while t < TALL_LOOP - 1e-9:
+        dh, dp = tall_heights(t)
+        resize(dh, dp)
+        goal = at(t)
+        for kind in ("health", "power"):
+            if round(goal[kind] * maxes[kind]) != round(shown[kind] * maxes[kind]):
+                session.lua.execute(f"__fire('{'UNIT_HEALTH' if kind == 'health' else 'UNIT_POWER_UPDATE'}', 'player')")
+        shown = goal
+        session.lua.execute(f"__powerPercent.player = {goal['power']}")
+        session.run_until(t)
+        session.lua.execute("__unmask()")
+        for kind in fills:
+            fills[kind] += (goal[kind] - fills[kind]) * (1 - math.exp(-8 * dt))
+
+        slices, fw, fh, pcx, pcy, psize, ccx, ccy, hbox, pbox = session.lua.eval("__tallLayout")(dh, dp, ccx0, ccy0)
+        boxes = {"health": tuple(hbox[i] for i in range(1, 5)), "power": tuple(pbox[i] for i in range(1, 5))}
+        # Bottom-aligned, as the game's frame grows upward from its bottom edge.
+        fx, fy = pad, pad + round((FRAME_H + TALL_MAX - fh) * K)
+        canvas = back.copy().convert("RGBA")
+        layers = sorted(slices.values(), key=lambda s: s[9])  # the ring (true) last, over the portrait
+        drawn = False
+        for s in layers:
+            l, r, top, bottom, dx, dy, sw_, sh_, ring, mx, my, msize = (s[i] for i in range(1, 13))
+            if ring and not drawn:
+                # The portrait, as captured, at its new place and size, between the panel and the ring.
+                box = tuple(round(v * ppu) for v in (54 - 30, 49 - 30, 54 + 30, 49 + 30))
+                piece = raw_portrait.crop(box).resize((round(psize * K), round(psize * K)), Image.LANCZOS)
+                canvas.alpha_composite(piece, (fx + round((pcx - psize / 2) * K), fy + round((pcy - psize / 2) * K)))
+                drawn = True
+            src = ((ax0 + l * aw) * ppu, (ay0 + top * ah) * ppu, (ax0 + r * aw) * ppu, (ay0 + bottom * ah) * ppu)
+            piece = raw_art.crop(tuple(round(v) for v in src)).resize((max(1, round(sw_ * K)), max(1, round(sh_ * K))),
+                                                                      Image.LANCZOS)
+            if mx is not False:
+                # CircleMask: a circle filling the mask's square.
+                yy, xx = np.mgrid[0:piece.height, 0:piece.width]
+                gx, gy = dx + (xx + 0.5) / K, dy + (yy + 0.5) / K
+                inside = np.hypot(gx - (mx + msize / 2), gy - (my + msize / 2)) <= msize / 2
+                a = np.asarray(piece).astype(np.float32)
+                a[..., 3] *= inside
+                piece = Image.fromarray(a.astype(np.uint8), "RGBA")
+            canvas.alpha_composite(piece, (fx + round(dx * K), fy + round(dy * K)))
+        img = canvas.convert("RGB")
+        for kind, bar0, d in (("health", 43, dh), ("power", 61, dp)):
+            mask = tall_mask(masks[kind], bar0, boxes[kind][1], bands[kind], d, fh)
+            draw_tall_bar(session, img, fx, fy, boxes[kind], mask, fills[kind], f"__mover_player_{kind}")
+        canvas = img.convert("RGBA")
+        canvas.alpha_composite(circle_piece, (fx + round(ccx * K - circle_piece.width / 2),
+                                              fy + round(ccy * K - circle_piece.height / 2)))
+        img = canvas.convert("RGB")
+        draw = ImageDraw.Draw(img)
+        nx, ny = NAME_AT["player"]
+        text(draw, fx + nx * K, fy + ny * K, sc["player"], 10, (255, 209, 0), False)
+        text(draw, fx + ccx * K, fy + (ccy + 0.5) * K, sc["level"], 13, (255, 255, 255), True)
+        for kind in ("health", "power"):
+            x, y, bw, bh = boxes[kind]
+            text(draw, fx + (x + bw / 2) * K, fy + (y + bh / 2) * K,
+                 f"{round(goal[kind] * maxes[kind])} / {maxes[kind]}", 10, (255, 255, 255), True)
+        frames.append(img)
+        t += dt
+    os.makedirs(OUT, exist_ok=True)
+    webp = os.path.join(OUT, "tall.webp")
+    frames[0].save(webp, save_all=True, append_images=frames[1:], duration=round(1000 / FPS), loop=0,
+                   quality=92, method=6)
+    print(f"wrote tall.webp ({os.path.getsize(webp) // 1024} KB)")
 
 
 # ---------------------------------------------------------------------------- nameplates
@@ -1384,13 +1580,15 @@ def raid():
 
 
 if __name__ == "__main__":
-    if not ONLY or any(k in ONLY for k in list(SCENARIOS) + ["themes"]):
+    if not ONLY or any(k in ONLY for k in list(SCENARIOS) + ["themes", "tall"]):
         art = load_art()
         for key in SCENARIOS:
             if not ONLY or key in ONLY:
                 scenario(art, key)
         if not ONLY or "themes" in ONLY:
             themes(art)
+        if not ONLY or "tall" in ONLY:
+            tall(art)
     if not ONLY or "plates" in ONLY:
         plates()
     if not ONLY or "prd" in ONLY:

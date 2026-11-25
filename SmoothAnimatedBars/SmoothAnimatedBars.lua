@@ -74,6 +74,9 @@ local DEFAULTS = {
     sparkles  = true,
     ambient   = true,
     lightning = true,
+    -- How fast everything in the liquid moves, and how far its front's waves bulge and dip, in percent
+    animationSpeed = 100,
+    waveIntensity  = 100,
     -- The DoT marker on the target's health bar (Marker.lua), offered by the setup wizard
     dots        = false,
     dotKillIcon = true,
@@ -87,6 +90,22 @@ local DEFAULTS = {
     manaBuild   = true,
     -- The rage bar growing furious as it fills, and bursting when rage is spent (Bars.lua, Fury)
     rageFury    = true,
+    -- The unit frames' bar heights, the game's by default. Taller, a frame of ours is drawn in place
+    -- of the game's (TallFrames.lua), the art laid out again from slices of the game's atlas (Preview.SetFrameTall).
+    playerHealthHeight = 20,
+    playerPowerHeight  = 10,
+    targetHealthHeight = 20,
+    targetPowerHeight  = 10,
+    focusHealthHeight  = 20,
+    focusPowerHeight   = 10,
+    -- The pet's and the targets of target's (both targets of target share theirs), the game's 11 and 7.
+    petHealthHeight    = 11,
+    petPowerHeight     = 7,
+    totHealthHeight    = 11,
+    totPowerHeight     = 7,
+    -- The party members', the game's 10 and 7.
+    partyHealthHeight  = 10,
+    partyPowerHeight   = 7,
 }
 
 -- db is the settings in use: this character's own profile, or the account-wide one (Profiles below). root is
@@ -210,6 +229,12 @@ local SETTING_APPLY = {
     end,
 }
 for _, key in ipairs(BAR_KEYS) do SETTING_APPLY[key] = function() ApplyBars(true) end end
+-- The player's and target's bar heights: a frame of ours in place of the game's while they are not the game's.
+for _, key in ipairs({ "playerHealthHeight", "playerPowerHeight", "targetHealthHeight", "targetPowerHeight",
+                       "focusHealthHeight", "focusPowerHeight", "petHealthHeight", "petPowerHeight",
+                       "totHealthHeight", "totPowerHeight", "partyHealthHeight", "partyPowerHeight" }) do
+    SETTING_APPLY[key] = function() ns.TallFrames.Apply() end
+end
 -- The Personal Resource Display's heal markers are built once its bars have the liquid.
 for _, key in ipairs({ "prdHealth", "prdPower" }) do
     SETTING_APPLY[key] = function() ApplyBars(true); ns.HealMarker.Apply() end
@@ -221,7 +246,13 @@ for frame, keys in pairs(COLOR_KEYS) do
 end
 local EFFECTS = { "waves", "swirl", "bubbles", "sparkles", "ambient", "lightning" }
 Core.EFFECTS = EFFECTS
-local IS_EFFECT = {}
+-- The effects that are amounts, not on or off: percentages, with their slider's range.
+local EFFECT_LEVELS = {
+    { key = "animationSpeed", min = 25, max = 200 },
+    { key = "waveIntensity", min = 0, max = 200 },
+}
+Core.EFFECT_LEVELS = EFFECT_LEVELS
+local IS_EFFECT, LEVEL = {}, {}
 local function ApplyEffects()
     ns.Bars.ApplyOptions()
     ns.Marker.ApplyOptions()
@@ -231,6 +262,18 @@ end
 for _, key in ipairs(EFFECTS) do
     IS_EFFECT[key] = true
     SETTING_APPLY[key] = ApplyEffects
+end
+for _, level in ipairs(EFFECT_LEVELS) do
+    IS_EFFECT[level.key], LEVEL[level.key] = true, level
+    SETTING_APPLY[level.key] = ApplyEffects
+end
+
+-- An effect level as a factor (1 at 100%), kept in its range: a saved value from an older or edited file never drives
+-- the liquid out of it.
+function Core.EffectLevel(barKey, key)
+    local level = LEVEL[key]
+    local v = tonumber(Core.Effect(barKey, key)) or DEFAULTS[key]
+    return math.max(level.min, math.min(level.max, v)) / 100
 end
 
 -- Effects for one bar: each of a bar's (by its on/off setting's key, "playerHealth"...) can be set apart from the global
@@ -247,6 +290,7 @@ end
 function Core.OwnEffects(barKey)
     local own = {}
     for _, effect in ipairs(EFFECTS) do own[effect] = Core.Effect(barKey, effect) and true or false end
+    for _, level in ipairs(EFFECT_LEVELS) do own[level.key] = tonumber(Core.Effect(barKey, level.key)) end
     db.effects = db.effects or {}
     db.effects[barKey] = own
     ApplyEffects()
@@ -398,14 +442,20 @@ local function Clean(p)
     if p.mobClassColor ~= "game" and p.mobClassColor ~= "class" and p.mobClassColor ~= "own" then
         p.mobClassColor = "reaction"
     end
-    -- Bars' own effects: only known effects, true or false, and only bars with any.
+    -- Bars' own effects: only known effects, true or false, the levels a number in their range, and only bars with
+    -- any. (A review found the levels dropped here at every login and profile change, as they are not true or false.)
     if type(p.effects) ~= "table" then p.effects = {} end
     for bar, own in pairs(p.effects) do
         if type(bar) ~= "string" or type(own) ~= "table" then
             p.effects[bar] = nil
         else
             for k, v in pairs(own) do
-                if not IS_EFFECT[k] or type(v) ~= "boolean" then own[k] = nil end
+                local level = LEVEL[k]
+                if level then
+                    own[k] = type(v) == "number" and v == v and math.max(level.min, math.min(level.max, v)) or nil
+                elseif not IS_EFFECT[k] or type(v) ~= "boolean" then
+                    own[k] = nil
+                end
             end
             if not next(own) then p.effects[bar] = nil end
         end
@@ -699,6 +749,7 @@ events:SetScript("OnEvent", function(self, event, arg1, arg2)
         ns.Soul.Apply()
         ns.ManaRule.Apply()
         ns.Adaptors.Start() -- other unit frame addons' own bars, for those that do not hand them over (Adaptors/)
+        ns.TallFrames.Start() -- taller player and target bars, on a frame of ours (TallFrames.lua)
         -- The settings page's preview, once the bars are set up and before the settings panel can be open.
         ns.Options.BuildPreview()
         -- The setup wizard, once per account, a moment after the first login with the addon.
@@ -731,6 +782,8 @@ local HELP = {
         .. "tools/perf_report.py after /reload (perf reset: time afresh, perf clear: forget the saved ones)",
     "/sab party [note] - what the game lets the addon read about the party frames, saved for /reload "
         .. "(party clear: forget the saved ones)",
+    "/sab tall [health] [power] - a test: the player and target frames at other bar heights (the game's are 20 and 10; "
+        .. "34 and 14 by default), drawn from slices of the game's frame art; /sab tall off to close",
     "/sab raid [note] - the same for the raid-style frames (raid clear: forget the saved ones); /sab raid test "
         .. "[low | up | off] - a magenta block where their liquid would go, to see what the game draws over it",
 }
@@ -861,6 +914,21 @@ SlashCmdList.SMOOTHANIMATEDBARS = function(input)
             Core.Print(string.format("Magenta blocks on %d raid-style health bars, %s. Whatever shows over the magenta "
                 .. "draws over the liquid there. /sab raid test off to hide them.", n, RAID_TEST_SAYS[mode]))
         end
+    elseif cmd == "tall" or cmd:match("^tall ") then
+        local health, power = cmd:match("^tall%s+(%d+)%s*(%d*)$")
+        if cmd == "tall off" then
+            health = nil
+        elseif cmd == "tall" then
+            health, power = 34, 14
+        elseif not health then
+            Core.Print("/sab tall [health] [power]: bar heights, e.g. /sab tall 34 14; /sab tall off to close.")
+            return
+        end
+        if health then
+            health = math.min(60, math.max(20, tonumber(health)))
+            power = math.min(40, math.max(10, tonumber(power) or 10))
+        end
+        for _, line in ipairs(ns.Preview.TallTest(health, power)) do Core.Print(line) end
     elseif cmd == "raid clear" then
         root.raidProbe = nil
         Core.Print("Saved raid reports cleared.")

@@ -185,7 +185,12 @@ def shot(section, path):
                 sys.exit(f"no setup step {step!r}")  # rather than Finish and a blank image
             lua.execute("local n = __ns.Wizard.State().ui.next; n.scripts.OnClick(n)")
     else:
+        # <frame>:fx draws the frame with its first card's Effects tab open.
+        section, fx = section.split(":", 1)[0], section.endswith(":fx")
         lua.execute(f"__ns.Editor.Open('{section}')")
+        if fx:
+            lua.execute("local p = __ns.Editor.State().ui.pages[__ns.Editor.State().section]; "
+                        "p.pane = 'effects'; __ns.Editor.Refresh()")
         if CLOSED:
             lua.execute("local p = __ns.Editor.State().ui.pages[__ns.Editor.State().section]; "
                         "p.open = nil; __ns.Editor.Refresh()")

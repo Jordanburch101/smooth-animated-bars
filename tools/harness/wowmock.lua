@@ -87,8 +87,16 @@ end
 function Region:GetSize() return self.w, self.h end
 function Region:GetWidth() return self.w end
 function Region:GetHeight() return self.h end
-function Region:GetLeft() return 660 end
-function Region:GetTop() return 1040 end
+-- Every region lies at the same place unless given one on the screen (sx, sy: its left and top in screen units), which
+-- it answers in its own units, as the client does: divided by its effective scale (a texture with a scale of its own,
+-- the player's PvP badge at 0.8, answers bigger numbers than its frame).
+function Region:GetLeft() return self.sx and self.sx / self:GetEffectiveScale() or 660 end
+function Region:GetTop() return self.sy and self.sy / self:GetEffectiveScale() or 1040 end
+function Region:GetEffectiveScale()
+    local s = self.scale or 1
+    if self.parent and not self.ignoreParentScale then s = s * self.parent:GetEffectiveScale() end
+    return s
+end
 function Region:SetResizable() end
 function Region:SetResizeBounds(...) self.bounds = { ... } end
 function Region:StartSizing(point) self.sizing = point end
@@ -200,8 +208,17 @@ end
 function Region:UnregisterEvent(e) self.events[e] = nil end
 function Region:UnregisterAllEvents() self.events = {} end
 function Region:IsEventRegistered(e) return self.events[e] end
-function Region:SetTexture(file, wh, wv) self.file, self.wrap, self.wrapV, self.color = file, wh, wv or wh, nil end
-function Region:SetColorTexture(r, g, b, a) self.file, self.color = "SOLID", { r, g, b, a or 1 } end
+function Region:SetTexture(file, wh, wv) self.file, self.wrap, self.wrapV, self.color, self.atlas = file, wh, wv or wh, nil, nil end
+function Region:SetColorTexture(r, g, b, a) self.file, self.color, self.atlas = "SOLID", { r, g, b, a or 1 }, nil end
+function Region:GetTexCoord()
+    local tc = self.tc or { 0, 1, 0, 1 }
+    return tc[1], tc[2], tc[3], tc[4]
+end
+-- The texture's file (its ID, as the client answers), or nil.
+function Region:GetTexture()
+    if self.file == "SOLID" then return nil end
+    return self.file
+end
 -- The client keeps one alpha for a texture: SetVertexColor's fourth value is the same alpha SetAlpha sets (seen in game:
 -- the shield's sheen, given 0.16 here and then faded in with SetAlpha(1), drew opaque). So the mock keeps it in alpha.
 function Region:SetVertexColor(r, g, b, a)
@@ -214,10 +231,18 @@ function Region:SetGradient(_, c1, c2)
     self.grad = { { c1:GetRGBA() }, { c2:GetRGBA() } }
 end
 function Region:SetBlendMode(m) self.blend = m end
+function Region:GetBlendMode() return self.blend or "BLEND" end
+function Region:GetAtlas() return self.atlas end
 function Region:SetDesaturated(v) self.desaturated = v and true or false end
 function Region:SetHorizTile(v) self.horizTile = v end
 function Region:SetVertTile(v) self.vertTile = v end
-function Region:SetTexCoord(l, r, t, b) self.tc = { l, r, t, b } end
+-- A texture showing an atlas drew nothing at all in game once given texture coordinates (the editor's taller frames:
+-- every slice of the frame art cut that way was missing). A slice of an atlas is its file (C_Texture.GetAtlasInfo) with
+-- coordinates, as FlareUI cuts Forever's unit frame art.
+function Region:SetTexCoord(l, r, t, b)
+    assert(not self.atlas, "SetTexCoord on a texture showing an atlas (" .. tostring(self.atlas) .. "): drew nothing in game")
+    self.tc = { l, r, t, b }
+end
 function Region:SetRotation(rad) self.rotation = rad end
 function Region:SetDrawLayer(layer, sub) self.layer, self.sub = layer, sub or 0 end
 function Region:SetSnapToPixelGrid() end
@@ -248,8 +273,18 @@ function Region:SetShadowColor(r, g, b, a) self.shadowColor = { r, g, b, a or 1 
 function Region:GetShadowColor() return unpack(self.shadowColor or { 0, 0, 0, 1 }) end
 function Region:SetShadowOffset(x, y) self.shadowOffset = { x, y } end
 function Region:GetShadowOffset() return unpack(self.shadowOffset or { 0, 0 }) end
-function Region:SetTextColor(r, g, b, a) self.textColor = { r, g, b, a or 1 } end
-function Region:GetTextColor() return unpack(self.textColor or { 1, 1, 1, 1 }) end
+-- A FontString has one alpha too: the text colour's is the one SetAlpha sets (seen in game: a copy of a faded name,
+-- given its GetTextColor, drew invisible).
+function Region:SetTextColor(r, g, b, a)
+    self.textColor = { r, g, b }
+    if a ~= nil then self.alpha = a end
+end
+function Region:GetTextColor()
+    local c = self.textColor or { 1, 1, 1 }
+    local a = self.alpha
+    if a == nil then a = 1 end
+    return c[1], c[2], c[3], a
+end
 function Region:SetJustifyH(j) self.justifyH = j end
 function Region:GetJustifyH() return self.justifyH or "CENTER" end
 function Region:SetJustifyV(j) self.justifyV = j end
@@ -348,8 +383,56 @@ local ROW_TEMPLATES = {
     SettingsListSectionHeaderTemplate = true,
 }
 local TEMPLATES = { MinimalScrollBar = true, UIPanelButtonTemplate = true, UIRadioButtonTemplate = true,
-                    UICheckButtonTemplate = true,
-                    ButtonFrameTemplate = true, BackdropTemplate = true }
+                    UICheckButtonTemplate = true, MinimalSliderWithSteppersTemplate = true,
+                    ButtonFrameTemplate = true, BackdropTemplate = true, RogueComboPointTemplate = true }
+-- The game's slider with steppers (Blizzard_SharedXML, MinimalSliderWithSteppersMixin): Init(value, min, max, steps),
+-- callbacks on its value changing (RegisterCallback with the mixin's Event.OnValueChanged), SetValue kept in range and
+-- calling them when the value changes, as the slider's OnValueChanged does in the client.
+MinimalSliderWithSteppersMixin = { Event = { OnValueChanged = "OnValueChanged" }, Label = { Right = 1 } }
+local function makeStepperSlider(f)
+    function f:Init(value, lo, hi, steps)
+        assert(type(lo) == "number" and type(hi) == "number" and lo < hi, "Init(value, min, max, steps)")
+        assert(type(steps) == "number" and steps > 0, "Init needs a step count")
+        self.min, self.max, self.steps = lo, hi, steps
+        self:SetValue(value)
+    end
+    function f:RegisterCallback(event, fn, owner)
+        assert(event == MinimalSliderWithSteppersMixin.Event.OnValueChanged, "unknown slider event " .. tostring(event))
+        assert(owner ~= nil, "RegisterCallback needs an owner")
+        self.callbacks = self.callbacks or {}
+        self.callbacks[#self.callbacks + 1] = { fn, owner }
+    end
+    function f:SetValue(v)
+        assert(self.min, "SetValue before Init")
+        v = math.max(self.min, math.min(self.max, v))
+        if v == self.value then return end
+        self.value = v
+        for _, c in ipairs(self.callbacks or {}) do c[1](c[2], v) end
+    end
+    function f:GetValue() return self.value end
+    -- As the client's (MinimalSlider.lua): greys the slider and turns its steppers off.
+    function f:SetEnabled(on)
+        assert(type(on) == "boolean", "SetEnabled(enabled)")
+        self.sliderEnabled = on
+    end
+    function f:IsSliderEnabled() return self.sliderEnabled ~= false end
+end
+-- A combo point (Blizzard_UnitFrame, RogueComboPointMixin): lit or not (isFull), with an animation or at once.
+local function makeComboPoint(f)
+    for _, key in ipairs({ "BGActive", "BGInactive", "IconUncharged" }) do f[key] = f:CreateTexture(nil, "ARTWORK") end
+    for _, key in ipairs({ "unchargedEmptyToUnchargedFull", "unchargedFullToUnchargedEmpty" }) do
+        f[key] = { IsPlaying = function(self) return self.playing or false end }
+    end
+    local function Set(full, how)
+        assert(not issecretvalue(full), "a combo point compares its state: a secret only untainted")
+        if f.isFull == full and f.isCharged == false then return end
+        f.isFull, f.isCharged, f.how = full, false, how
+        f.IconUncharged.alpha, f.BGActive.alpha, f.BGInactive.alpha = full and 1 or 0, full and 1 or 0, full and 0 or 1
+    end
+    function f:Setup() self.isFull, self.isCharged = nil, nil; self:Show() end
+    function f:SetActive(full) Set(full, "animated") end
+    function f:SetActiveNoAnimation(full) Set(full, "at once") end
+end
 local RowTemplate = {}
 function RowTemplate.Init(self, initializer)
     assert(self.GetElementData and self:GetElementData() == initializer, "row Init without its GetElementData")
@@ -439,6 +522,8 @@ function CreateFrame(frameType, name, parent, template)
     if frameType == "StatusBar" then __makeStatusBar(f) end
     if frameType == "PlayerModel" then __makeModel(f) end
     if template == "BackdropTemplate" then makeBackdrop(f) end
+    if template == "MinimalSliderWithSteppersTemplate" then makeStepperSlider(f) end
+    if template == "RogueComboPointTemplate" then makeComboPoint(f) end
     if ROW_TEMPLATES[template] then
         f.rowTemplate, f.Init, f.Release = template, RowTemplate.Init, RowTemplate.Release
     end
@@ -630,6 +715,26 @@ function Region:SetAtlas(name, useSize)
     self.atlas, self.file, self.color = name, nil, nil
     return true
 end
+-- Where an atlas's pixels are in its file (C_Texture.GetAtlasInfo): each atlas fills a file of its own here, at
+-- __atlasSizes[name] (64 x 64 if not given; the frame art about as captured). None for a missing one.
+__atlasSizes = {
+    ["UI-HUD-UnitFrame-Player-PortraitOn"] = { 194, 68 },
+    ["UI-HUD-UnitFrame-Target-PortraitOn"] = { 194, 68 },
+    ["UI-HUD-UnitFrame-TargetofTarget-PortraitOn"] = { 120, 49 },
+    ["UI-HUD-UnitFrame-Party-PortraitOn"] = { 120, 49 },
+    -- The glows over the art (Forever's sheet: mod-forever-ui's atlas table).
+    ["UI-HUD-UnitFrame-Player-PortraitOn-InCombat"] = { 198, 71 },
+    ["UI-HUD-UnitFrame-Player-PortraitOn-Status"] = { 198, 71 },
+}
+C_Texture = {
+    GetAtlasInfo = function(name)
+        assert(type(name) == "string", "GetAtlasInfo needs an atlas name")
+        if __missingAtlases[name] then return nil end
+        local size = __atlasSizes[name] or { 64, 64 }
+        return { width = size[1], height = size[2], leftTexCoord = 0, rightTexCoord = 1, topTexCoord = 0,
+                 bottomTexCoord = 1, file = 100000 + (function() local n = 0; for i = 1, #name do n = n + name:byte(i) * i end; return n end)() }
+    end,
+}
 function SetPortraitTexture(tex, unit)
     assert(tex and tex.kind == "Texture", "SetPortraitTexture needs a texture")
     tex.portrait = unit
@@ -720,6 +825,20 @@ local function UnitFrame(name, contentKey, mainKey)
     bar.RightText:SetPoint("RIGHT", container, "RIGHT", -5, 0)
     return f
 end
+-- The game's segments on a bar (StatusBarOverlaySegmentTemplate: a Fill the bar's size, shown through FillMask, which
+-- the game lays from the fill's edge as wide as the amount), each hidden while it has nothing to show. keys: which, by
+-- default a health bar's (UnitFrameHealPredictionBars_Update's four). frame: kept only on the frame instead, as
+-- UnitFrame_Initialize keeps them (the pet's have global names, no parentKey).
+function __segments(bar, keys, frame)
+    for _, key in ipairs(keys or { "MyHealPredictionBar", "OtherHealPredictionBar", "HealAbsorbBar", "TotalAbsorbBar" }) do
+        local segment = CreateFrame("Frame", nil, bar)
+        segment.Fill = segment:CreateTexture(nil, "BORDER")
+        segment.Fill:SetAtlas("UI-HUD-UnitFrame-Player-PortraitOn-Bar-Health-Status")
+        segment.FillMask = segment:CreateMaskTexture()
+        if frame then frame[key:sub(1, 1):lower() .. key:sub(2)] = segment else bar[key] = segment end
+        segment:Hide()
+    end
+end
 PlayerFrame = UnitFrame("PlayerFrame", "PlayerFrameContent", "PlayerFrameContentMain")
 -- The player's health-loss animation: a red bar beside the health bar, shown for a moment after damage
 -- (AnimatedHealthLossMixin, which stores itself on the health bar).
@@ -731,26 +850,29 @@ do
     loss:Hide()
     -- The client's prediction of the player's own heals and others' (PlayerFrame.xml): bar segments with a Fill.
     -- The game hides each while it has nothing to show (CompactUnitFrameUtil_UpdateFillBar's way).
-    for _, key in ipairs({ "MyHealPredictionBar", "OtherHealPredictionBar" }) do
-        local segment = CreateFrame("Frame", nil, PlayerFrame.healthbar)
-        segment.Fill = segment:CreateTexture(nil, "BORDER")
-        PlayerFrame.healthbar[key] = segment
-        segment:Hide()
-    end
-    -- Its absorb segments (a Fill, and a tiled overlay on the shield's) and the glow at the bar's end when the shield
-    -- is more than the missing health (PlayerFrame.xml). The game hides the shield's segment when it has no width.
-    for _, key in ipairs({ "HealAbsorbBar", "TotalAbsorbBar" }) do
-        local segment = CreateFrame("Frame", nil, PlayerFrame.healthbar)
-        segment.Fill = segment:CreateTexture(nil, "BORDER")
-        PlayerFrame.healthbar[key] = segment
-        segment:Hide()
-    end
-    PlayerFrame.healthbar.TotalAbsorbBar.TiledFillOverlay = PlayerFrame.healthbar.TotalAbsorbBar:CreateTexture(nil, "BORDER")
+    -- Its absorb segments (a Fill, and a tiled overlay on the shield's, shadows on the heal absorb's) and the glows at
+    -- the bar's ends when the shield is more than the missing health, or the heal absorb more than the health
+    -- (PlayerFrame.xml). The game hides the shield's segment when it has no width.
+    __segments(PlayerFrame.healthbar)
+    local absorb = PlayerFrame.healthbar.TotalAbsorbBar
+    absorb.TiledFillOverlay = absorb:CreateTexture(nil, "BORDER")
+    absorb.TiledFillOverlay:SetTexture(5003) -- Shield-Overlay, by file
+    local healAbsorb = PlayerFrame.healthbar.HealAbsorbBar
+    healAbsorb.LeftShadow = healAbsorb:CreateTexture(nil, "BORDER")
+    healAbsorb.RightShadow = healAbsorb:CreateTexture(nil, "BORDER")
     PlayerFrame.healthbar.OverAbsorbGlow = PlayerFrame.healthbar:CreateTexture(nil, "ARTWORK")
+    PlayerFrame.healthbar.OverAbsorbGlow:SetTexture(5004) -- Shield-Overshield
+    PlayerFrame.healthbar.OverAbsorbGlow:SetBlendMode("ADD")
     PlayerFrame.healthbar.OverAbsorbGlow:Hide()
+    PlayerFrame.healthbar.OverHealAbsorbGlow = PlayerFrame.healthbar:CreateTexture(nil, "ARTWORK")
+    PlayerFrame.healthbar.OverHealAbsorbGlow:Hide()
+    -- The mana a cast will cost, on the power bar (ManaCostPredictionBarTemplate).
+    __segments(PlayerFrame.manabar, { "ManaCostPredictionBar" })
 end
 TargetFrame = UnitFrame("TargetFrame", "TargetFrameContent", "TargetFrameContentMain")
 FocusFrame = UnitFrame("FocusFrame", "TargetFrameContent", "TargetFrameContentMain")
+__segments(TargetFrame.healthbar)
+__segments(FocusFrame.healthbar)
 -- The targets of target (TargetFrameMixin:CreateTargetofTarget): .HealthBar 70x11 and .ManaBar 78x7 under Camelot,
 -- each with its mask on the bar.
 local function TargetOfTarget(name, owner)
@@ -771,6 +893,7 @@ PetFrameManaBar = NewStatusBar("PetFrameManaBar", PetFrame, 77, 7)
 PetFrameHealthBarMask = PetFrameHealthBar:CreateMaskTexture()
 PetFrameManaBarMask = PetFrameManaBar:CreateMaskTexture()
 PetFrame.healthbar, PetFrame.manabar = PetFrameHealthBar, PetFrameManaBar
+__segments(PetFrameHealthBar, nil, PetFrame)
 -- The Personal Resource Display (Blizzard_PersonalResourceDisplay, forever branch): health in a container, power, and
 -- the mana a druid's form takes off the power bar (AlternatePowerBar, hidden unless the player is a druid in a form).
 -- PersonalResourceStatusBar bars: the plates' art, no mask, texts TextString, LeftText and RightText (TextStatusBar,
@@ -823,24 +946,119 @@ for i = 1, 4 do
         10)
     f.HealthBarContainer.HealthBarMask = f.HealthBarContainer:CreateMaskTexture()
     -- The game's heal prediction and absorb segments on the health bar (PartyFrameTemplates.xml), child frames above it.
-    for _, key in ipairs({ "MyHealPredictionBar", "OtherHealPredictionBar", "HealAbsorbBar", "TotalAbsorbBar" }) do
-        local segment = CreateFrame("Frame", nil, f.HealthBarContainer.HealthBar)
-        segment.Fill = segment:CreateTexture(nil, "BORDER")
-        f.HealthBarContainer.HealthBar[key] = segment
-        segment:Hide()
-    end
+    __segments(f.HealthBarContainer.HealthBar)
     f.ManaBar = KeyedStatusBar(name .. ".ManaBar", f, 74, 7)
     f.ManaBar.ManaBarMask = f.ManaBar:CreateMaskTexture()
     f.HealthBarContainer.HealthBar.unit, f.ManaBar.unit = unit, unit
     f.PetFrame = CreateFrame("Button", nil, f)
     f.PetFrame.HealthBar = KeyedStatusBar(name .. ".PetFrame.HealthBar", f.PetFrame, 71, 10)
     f.PetFrame.HealthBar.unit = "partypet" .. i
+    -- What a frame of ours takes the place of on a taller member (TallFrames.lua): the art, portrait, name and the
+    -- icons on its overlay; the vehicle's art, hidden.
+    f.w, f.h = 120, 53
+    f.Texture = f:CreateTexture(nil, "BORDER")
+    f.Texture:SetAtlas("UI-HUD-UnitFrame-Party-PortraitOn")
+    f.VehicleTexture = f:CreateTexture(nil, "BORDER")
+    f.VehicleTexture:Hide()
+    f.Portrait = f:CreateTexture(nil, "BACKGROUND")
+    f.Name = NewRegion("FontString", f)
+    f.Name.text = "Member" .. i
+    f.PartyMemberOverlay = CreateFrame("Frame", nil, f)
+    f.PartyMemberOverlay.LeaderIcon = f.PartyMemberOverlay:CreateTexture(nil, "ARTWORK")
+    f.PartyMemberOverlay.LeaderIcon:SetAtlas("UI-HUD-UnitFrame-Player-Group-LeaderIcon")
     f:Hide()
     PartyFrame["MemberFrame" .. i] = f
 end
 -- The target's portrait, on the frame's container (TargetFrame.xml).
 TargetFrame.TargetFrameContainer = CreateFrame("Frame", nil, TargetFrame)
 TargetFrame.TargetFrameContainer.Portrait = TargetFrame.TargetFrameContainer:CreateTexture(nil, "BACKGROUND")
+-- The pieces of the player and target frames a frame of ours takes the place of (TallFrames.lua): their art, portrait,
+-- name, level, the target's banner and the icons round the portrait (PlayerFrame.xml, TargetFrame.xml), all 232 x 100.
+do
+    local function Icon(parent, key, atlas)
+        local t = parent:CreateTexture(nil, "ARTWORK")
+        t:SetAtlas(atlas)
+        t:SetSize(20, 20)
+        t:Hide()
+        parent[key] = t
+        return t
+    end
+    PlayerFrame.w, PlayerFrame.h, TargetFrame.w, TargetFrame.h = 232, 100, 232, 100
+    local pc = CreateFrame("Frame", nil, PlayerFrame)
+    PlayerFrame.PlayerFrameContainer = pc
+    pc.FrameTexture = pc:CreateTexture(nil, "BORDER")
+    pc.FrameTexture:SetAtlas("UI-HUD-UnitFrame-Player-PortraitOn")
+    pc.PlayerPortrait = pc:CreateTexture(nil, "BACKGROUND")
+    -- The aggro flash (the threat indicator) and the status glow, shown by the game in combat or resting.
+    pc.FrameFlash = pc:CreateTexture(nil, "OVERLAY")
+    pc.FrameFlash:SetAtlas("UI-HUD-UnitFrame-Player-PortraitOn-InCombat")
+    pc.FrameFlash:Hide()
+    pc.AlternatePowerFrameTexture = pc:CreateTexture(nil, "BORDER")
+    pc.AlternatePowerFrameTexture:Hide()
+    local pmain = PlayerFrame.PlayerFrameContent.PlayerFrameContentMain
+    pmain.ManaBarArea = CreateFrame("Frame", nil, pmain)
+    pmain.LevelBackgroundCircle = pmain:CreateTexture(nil, "ARTWORK")
+    pmain.StatusTexture = pmain:CreateTexture(nil, "OVERLAY")
+    pmain.StatusTexture:SetAtlas("UI-HUD-UnitFrame-Player-PortraitOn-Status")
+    pmain.StatusTexture:Hide()
+    -- The hit numbers over the portrait (CombatFeedback).
+    pmain.HitIndicator = CreateFrame("Frame", nil, pmain)
+    pmain.HitIndicator.HitText = NewRegion("FontString", pmain.HitIndicator)
+    pmain.HitIndicator.HitText:Hide()
+    PlayerName.parent = pmain
+    PlayerLevelText = NewRegion("FontString", pmain)
+    PlayerLevelText.text = "38"
+    -- The PvP badge (PlayerPvpBackgroundIconTemplate, scale 0.8) and its timer beside it, on the contextual frame.
+    pmain.PvpBackgroundIcon = pmain:CreateTexture(nil, "OVERLAY")
+    pmain.PvpBackgroundIcon:SetAtlas("UI-HUD-UnitFrame-SmallCircle-Alliance")
+    pmain.PvpBackgroundIcon:SetScale(0.8)
+    pmain.PvpBackgroundIcon:Hide()
+    local pctx = CreateFrame("Frame", nil, PlayerFrame.PlayerFrameContent)
+    PlayerFrame.PlayerFrameContent.PlayerFrameContentContextual = pctx
+    PlayerPVPTimerText = NewRegion("FontString", pctx)
+    PlayerPVPTimerText:Hide()
+    Icon(pctx, "AttackIcon", "UI-HUD-UnitFrame-Player-CombatIcon")
+    Icon(pctx, "LeaderIcon", "UI-HUD-UnitFrame-Player-Group-LeaderIcon")
+
+    -- The target's template: the target and the focus.
+    local function TargetPieces(frame)
+        frame.w, frame.h = 232, 100
+        frame.TargetFrameContainer = frame.TargetFrameContainer or CreateFrame("Frame", nil, frame)
+        local tc = frame.TargetFrameContainer
+        tc.Portrait = tc.Portrait or tc:CreateTexture(nil, "BACKGROUND")
+        tc.FrameTexture = tc:CreateTexture(nil, "BORDER")
+        tc.FrameTexture:SetAtlas("UI-HUD-UnitFrame-Target-PortraitOn")
+        Icon(tc, "BossPortraitFrameTexture", "UI-HUD-UnitFrame-Target-PortraitOn-Boss-Gold")
+        local tmain = frame.TargetFrameContent.TargetFrameContentMain
+        tmain.Name = NewRegion("FontString", tmain)
+        tmain.LevelText = NewRegion("FontString", tmain)
+        tmain.ReputationColor = tmain:CreateTexture(nil, "BACKGROUND")
+        tmain.LevelBackgroundCircle = tmain:CreateTexture(nil, "ARTWORK")
+        local tctx = CreateFrame("Frame", nil, frame.TargetFrameContent)
+        frame.TargetFrameContent.TargetFrameContentContextual = tctx
+        Icon(tctx, "HighLevelTexture", "UI-HUD-UnitFrame-Target-HighLevelTarget_Icon")
+    end
+    TargetPieces(TargetFrame)
+    TargetPieces(FocusFrame)
+    -- The small frames, 120 x 49: the targets of target (their pieces on the frame) and the pet's (global).
+    for _, f in ipairs({ TargetFrameToT, FocusFrameToT }) do
+        f.w, f.h = 120, 49
+        f.FrameTexture = f:CreateTexture(nil, "BORDER")
+        f.FrameTexture:SetAtlas("UI-HUD-UnitFrame-TargetofTarget-PortraitOn")
+        f.Portrait = f:CreateTexture(nil, "BACKGROUND")
+        f.Name = NewRegion("FontString", f)
+    end
+    PetFrame.w, PetFrame.h = 120, 49
+    PetFrameTexture = PetFrame:CreateTexture(nil, "BORDER")
+    PetFrameTexture:SetAtlas("UI-HUD-UnitFrame-TargetofTarget-PortraitOn")
+    PetPortrait = PetFrame:CreateTexture(nil, "BACKGROUND")
+    -- The pet's name and its hit numbers share a frame of their own (PetFrame.xml).
+    local petTexts = CreateFrame("Frame", nil, CreateFrame("Frame", nil, PetFrame))
+    PetName = NewRegion("FontString", petTexts)
+    PetHitIndicator = NewRegion("FontString", petTexts)
+    PetHitIndicator:Hide()
+    PetName.text = "Wolf"
+end
 
 -- The target: nil for none, else { guid, name, dead }. Its health is secret like the player's.
 __target = nil
@@ -850,9 +1068,15 @@ local function plateUnit(unit)
     if unit == "mouseover" or unit == "softenemy" then return __units[unit] end
     return type(unit) == "string" and unit:match("^nameplate%d+$") and __units[unit] or nil
 end
+-- What each group member has targeted: __unitTargets["party2"] = "party1" (a group token, or nil for nothing), read
+-- through "party2target". __inRaid: the player is in a raid.
+__unitTargets, __inRaid = {}, false
+function IsInRaid() return __inRaid end
 function UnitExists(unit)
     if unit == "player" then return true end
     if plateUnit(unit) then return true end
+    local caster = type(unit) == "string" and unit:match("^(.+)target$")
+    if caster and caster ~= "" and __unitTargets[caster] then return true end
     if type(unit) == "string" and (unit:match("^party%d$") or unit:match("^raid%d+$")) then return __units[unit] ~= nil end
     return unit == "target" and __target ~= nil
 end
@@ -886,6 +1110,8 @@ end
 -- names them (party1..4).
 function UnitIsUnit(a, b)
     if a == b then return true end
+    local caster = type(a) == "string" and a:match("^(.+)target$")
+    if caster and caster ~= "" and __unitTargets[caster] then return __unitTargets[caster] == b end
     local function me(u)
         local member = __groupUnit(u)
         return u == "player" or (u == "target" and __target ~= nil and __target.isPlayer) or (member ~= nil and member.isMe)
@@ -921,11 +1147,15 @@ function GetWeaponEnchantInfo()
         __weapons.offHand, __weapons.offHand and 1800000 or nil, 0, __weapons.offHand and 7 or nil
 end
 
--- Spells by ID: __spells[id] = { name, description }.
-__spells = {}
+-- Spells by ID: __spells[id] = { name, description, helpful = true for a spell cast on friends }. A spell the
+-- player does not know may answer an empty description until its data is loaded (RequestLoadSpellData, counted in
+-- __spellLoads): its description is then "".
+__spells, __spellLoads = {}, {}
 C_Spell = {
     GetSpellName = function(id) return __spells[id] and __spells[id][1] end,
     GetSpellDescription = function(id) return __spells[id] and __spells[id][2] end,
+    IsSpellHelpful = function(id) return __spells[id] ~= nil and __spells[id].helpful == true end,
+    RequestLoadSpellData = function(id) __spellLoads[id] = (__spellLoads[id] or 0) + 1 end,
     -- What each spell costs right now: __spellCosts[id] = { { type = 0, name = "MANA", cost = 65 } }, or nil if free.
     GetSpellPowerCost = function(id) return __spellCosts[id] end,
 }
@@ -1306,7 +1536,6 @@ function __closeSettings()
     __settingsPanel.shown = false
     if __settingsCategory and __settingsCategory.frame then __settingsCategory.frame:Hide() end
 end
-MinimalSliderWithSteppersMixin = { Label = { Right = 1 } }
 function CreateSettingsButtonInitializer(name, buttonText, buttonClick, tooltip, addSearchTags)
     assert(addSearchTags ~= nil, "CreateSettingsButtonInitializer needs addSearchTags")
     local data = { name = name, buttonText = buttonText, buttonClick = buttonClick, tooltip = tooltip }

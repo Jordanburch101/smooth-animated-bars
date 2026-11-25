@@ -664,15 +664,19 @@ function Liquid:SliceAt(i, n)
 end
 
 -- n: how many slices i counts in, if not this liquid's (a seam drawn along it by a liquid of another count).
+-- The waves are simulated as ever and drawn scaled by the Wave Intensity effect (opts.intensity, 1 at 100%), so every
+-- way the front moves (ripples, sloshing, the lean while pouring, the idle wobble) grows or calms together.
 function Liquid:FrontOffset(i, n)
     i = self:SliceAt(i, n)
     local t = self.t
     if self.leader then
-        local tr = self.opts.waves and self.tremble or 0
+        -- The leader's offset is scaled already; the tremble is this liquid's own, scaled as Draw's cut expects (at 0%
+        -- an unscaled tremble shook the fury over a flat bar and dented it past its body's end, a review found).
+        local tr = self.opts.waves and self.tremble * (self.opts.intensity or 1) or 0
         return self.leader:FrontOffset(i, self.n) + tr * (0.6 * sin(t * 37 + i * 1.7) + 0.4 * sin(t * 53 - i * 2.9))
     end
     local wobble = self.opts.waves and self:Wobble() or 0
-    return self.pos[i] + wobble * (sin(t * 2.3 + i * 0.6) + 0.5 * sin(t * 3.7 - i * 1.1))
+    return (self.pos[i] + wobble * (sin(t * 2.3 + i * 0.6) + 0.5 * sin(t * 3.7 - i * 1.1))) * (self.opts.intensity or 1)
 end
 
 -- A ripple along the front only: no motes, no bubbles, no lightning charge. intensity 0..1.
@@ -1008,7 +1012,9 @@ function Liquid:Simulate(dt)
     local k, d, c, limit = phys.stiffness, phys.damping + STEADY_DAMPING * self.steady, phys.coupling, phys.amplitude * 1.2
     local s = CFG.step
 
-    self.acc = min(self.acc + dt, s * 8)
+    -- At most 16 steps a frame: room for a 20 fps party liquid at double Animation Speed (plain arithmetic, no widget
+    -- calls; 8 held it back to 1.33 times).
+    self.acc = min(self.acc + dt, s * 16)
     while self.acc >= s do
         self.acc = self.acc - s
         -- Springs and neighbour coupling act on the offset from the lean, so the front holds the lean's
@@ -1031,11 +1037,15 @@ function Liquid:Simulate(dt)
     end
 end
 
+-- dt is real time. The bar's fill speed and the lean are measured in it, as the edge follows the game's bar; everything
+-- the liquid does on its own runs on its own clock, dt scaled by the Animation Speed effect (opts.speed, 1 at 100%).
 function Liquid:Update(dt, edge)
+    local real = dt
+    dt = dt * (self.opts.speed or 1)
     self.t = self.t + dt
 
     -- The liquid's inertia: speeding up drags the front back, slowing down sloshes it forward.
-    local speed = (edge - self.edge) / dt
+    local speed = (edge - self.edge) / real
     local dv = speed - self.speed
     self.edge, self.speed = edge, speed
     if dv ~= 0 and self.opts.waves and not self.leader then
@@ -1048,7 +1058,7 @@ function Liquid:Update(dt, edge)
     -- Pouring fast, the front leans: the top runs ahead and the bottom drags. The lean moves where the
     -- springs pull the front, so when the pour slows it rocks back and settles by itself.
     local leanTo = self.opts.waves and self.phys.crest * min(1, max(0, speed) / 250) or 0
-    self.lean = self.lean + (leanTo - self.lean) * (1 - exp(-14 * dt))
+    self.lean = self.lean + (leanTo - self.lean) * (1 - exp(-14 * real))
 
     -- Themes that stir themselves (Shadow's slow swells) do it here, before the physics step.
     if self.theme.Animate then self.theme:Animate(self, self.t, dt) end
@@ -1097,9 +1107,9 @@ function Liquid:Draw(dt)
     local edge, energy, t = self.edge, self.energy, self.t
     local opts, theme = self.opts, self.theme
     local wobble = opts.waves and self:Wobble() or 0
-    -- The body stops behind the deepest dent Simulate and the wobble allow, so no slice of the
-    -- front ever falls behind it and flattens into the body's straight end.
-    local base = max(0, edge - amp * 1.2 - wobble * 1.5 - 0.5)
+    -- The body stops behind the deepest dent Simulate and the wobble allow (as FrontOffset scales them), so no slice of
+    -- the front ever falls behind it and flattens into the body's straight end.
+    local base = max(0, edge - (amp * 1.2 + wobble * 1.5) * (opts.intensity or 1) - 0.5)
 
     local fa, fb = theme.fillA, theme.fillB
     if self.inflowTheme then fb = Mix(fb, self.inflowTheme.fillB, self.inflowMix) end
@@ -1174,7 +1184,8 @@ function Liquid:Draw(dt)
                 -- Mirrored, the tip's right edge goes where its left edge would.
                 tip:SetPoint(self.aTL, parent, self.aTL, (right - 0.5 - CFG.edgeCore * CFG.edgeW) * self.sx, y + tip.dy)
                 local src = self.leader or self
-                tip:SetAlpha(min(1, tipAlpha + abs(src.vel[src:SliceAt(i, self.n)]) * 0.01))
+                -- A moving slice glows brighter, as much as Wave Intensity lets it move.
+                tip:SetAlpha(min(1, tipAlpha + abs(src.vel[src:SliceAt(i, self.n)]) * 0.01 * (opts.intensity or 1)))
                 On(tip)
             else
                 Off(tip)

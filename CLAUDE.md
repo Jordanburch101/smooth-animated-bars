@@ -11,7 +11,10 @@ for players; `docs/DEVELOPMENT.md` covers the layout and tools; this file holds 
   (`StatusBar:SetValue`) and anchor to what the client lays out; `Bars.lua` explains the design.
 - **Game frames:** only read and draw on them. No hooks, no fields written onto them, no changes besides the
   fill texture's alpha. Our frames sit at the bar's own frame level so the game's text stays on top, except on
-  nameplates (see Enemy nameplates below) and a health liquid with the DoT marker on it (see DoT tracking).
+  nameplates (see Enemy nameplates below) and a health liquid with the DoT marker on it (see DoT tracking). One
+  exception, asked for: while a player or target bar height is not the game's (see Taller bars), a frame of ours is
+  drawn in place of the game's, and the game's pieces it redraws are faded (alpha 0) meanwhile and given their alpha
+  back after. Nothing is ever drawn over or faded at the game's heights.
 - **Forever assets:** game files by path often fail to load there. Use `SetColorTexture` for solid fills and
   the addon's own TGAs in `SmoothAnimatedBars/Media/` (made by `tools/make_media.py`), never `Interface\...`
   game paths. Icons by file ID.
@@ -23,6 +26,17 @@ for players; `docs/DEVELOPMENT.md` covers the layout and tools; this file holds 
   Forever that taints the Social page. `tools/harness/editor_shot.py` draws the editor's layout. One exception to
   registering: a bar's own effects (the profile's `effects[barKey][effect]`, `Core.SetEffect`), a nested table
   the Settings API cannot hold, read by each bar's liquids and markers (`b.opts`, filled by `Bars.FillEffects` whenever an effect changes).
+  Two effects are amounts, not switches (`Core.EFFECT_LEVELS`, asked for): Animation Speed (`animationSpeed`, 25 to
+  200%, `opts.speed`) scales the liquid's own clock in `Liquid:Update`, while the fill speed and lean stay in real time
+  as the edge follows the game's bar; Wave Intensity (`waveIntensity`, 0 to 200%, `opts.intensity`) scales what
+  `FrontOffset` returns and the body's cut behind it, so ripples, slosh, lean and wobble grow together (the simulation
+  itself is unchanged). Both are percentages, held to their range when read (`Core.EffectLevel`). From two reviews: the
+  settings' clean-up (`Clean`) kept only true or false in a bar's own effects, so its levels were lost at every login
+  and profile change (now kept as numbers in range); a follower's (the fury's) own tremble is scaled too, or at 0% it
+  shook over a flat bar past its body's cut; the tips' glow from a slice's speed is scaled. Accepted: below 100% speed
+  a stirred liquid takes longer to go quiet, so stays at full rate longer (cost); at 200% a dent reached 6.2, past the
+  markers' `OVERLAP` of 6, opening a gap behind a DoT or heal liquid for a frame now and then (13 of 9000 slice-frames
+  measured; `OVERLAP` left as seen in game).
 - **Lua's 200 locals:** `Bars.lua`'s main chunk is at the limit; one more file-level `local` fails to load in game
   ("main function has more than 200 local variables", seen). Put new functions on a table (`Bars.X`) instead.
 - **Tests:** run `tools/venv/Scripts/python tools/harness/test.py SmoothAnimatedBars` before every commit; it
@@ -36,7 +50,11 @@ for players; `docs/DEVELOPMENT.md` covers the layout and tools; this file holds 
   game the game's fill does not, so the gallery was tuned by eye to sit in the slot; the example party in the setup and the editor (`Preview.lua`, `PARTY_POWER_SHIFT`) showed the same in game and takes the same shift, the capture keeping the game's offsets), and `raid`, a ten-player raid through a pull in two groups of raid-style frames, on the raid frame art (`gallery.py`, `RAIDERS`), its tank targeted, and `shield`, a priest's Power Word: Shield soaking five hits and shattering, no Weakened Soul (asked for; not made by
   `gallery.py`: the mock cannot lay the shield out from the secret absorb, so it was composited from the gallery's own
   player frame with the real `Shield.lua` and `Soul.lua` rendered where the client would place them, as the shield's
-  previews were; render it that way again if either changes), and PNG stills (`frames.png`, `themes.png`), at full
+  previews were; render it that way again if either changes), and `tall`, a mage's player frame with its bars grown to
+  the sliders' tallest (40 and 20), shrunk to the game's 20 and 10 and settled in the middle, looping (`gallery.py`,
+  `TALL_KEYS`): the art is the addon's own slicing (`Preview.SetFrameTall` on a `LiveFrame`) of the captured art, the
+  captured masks stretched as `TallSpec` stretches them, the level circle moved with the ring (the mock's circle atlas
+  has no real size), and the liquid the addon's in the game's bars resized to match, and PNG stills (`frames.png`, `themes.png`), at full
   quality (`K = 3.0`, 20 fps). No GIFs.
   A full run takes about a quarter of an hour, so run it in the background.
 - **Frame art:** `branding/art/` is Forever's own unit frame art, captured in game with `/sab capture` and
@@ -192,7 +210,26 @@ Facts found while building this, which the code relies on and which are not obvi
   yet seen in game what Forever counts. Drawn under the player's heal liquids: BORDER 3..7 on unit frames
   (`OTHERS_LAYERS`; their ARTWORK sublevels are spent), with a seam of the nearest front before it; BACKGROUND 1..5 on
   raid-style frames (`OTHERS_RAID_LAYERS`). A resting party or raid marker is woken by `UNIT_HEAL_PREDICTION` for its
-  member. One look for every other healer (`OTHERS_THEME`, Tidal in silvery teal): the amount is one sum. Not yet
+  member. The amount is one sum, and each healer's own share (the calculator filled with that healer) is secret too,
+  so neither says who heals. Their look comes from group members' heal casts (asked for: always the water look before;
+  `HealMarker.lua`, `casting`, `OthersSchool`): a cast from its start to its end, kept when its text reads as a heal
+  and its caster's class is a healer's (`Heals.CastSchool`, by class as the player's own), aimed at whoever
+  `UnitIsUnit(caster .. "target", token)` names, or at anyone where that says nothing (click or mouseover casts, a
+  secret answer). Holy or Nature where every healer casting at the unit is of that school, the shared look
+  (`OTHERS_THEME`, Tidal in silvery teal) where they differ or nobody is casting (heals over time); kept while the
+  liquid drains. Seen in game on raid-style frames: a paladin's heals still in the shared look. The likely cause, not
+  confirmed: a spell the player does not know may have no description until the client loads it, so it never read as
+  a heal; with no text, `C_Spell.IsSpellHelpful` stands in and `C_Spell.RequestLoadSpellData` asks for the text.
+  `/sab heals` lists the last group casts and what was read of each (`castLog`: the spell ID or "a secret spell",
+  heal / helpful / no heal / no text / not a healer, and whose target). From a review: a cast's end can be missed
+  (a loading screen, the caster out of sight, a secret payload), so a cast is over `CAST_MAX` after its start, and its
+  look kept `CAST_GRACE` after its end while the heal lands; with nobody casting the shared look comes back while the
+  game still shows others' heals (no cast accounts for them), and stays only while the liquid drains; the player's own
+  raid token is known by GUID or raid index where `UnitIsUnit` is secret; in a raid only raid tokens count (the events
+  come for both); the class is asked before any spell text, and a spell's reading is kept by ID. Not yet seen in game:
+  group heals (Prayer of Healing, Chain Heal) look right only on the caster's target, and bandages take the caster's
+  class look. Not yet seen in game: whether other members'
+  casts and their targets are readable there. Not yet
   seen in game: any of it, whether the game's bar's shown state is readable on each frame, and the cost. Seen in game in
   a dungeon: looks good. From a review: the amount is never truth-tested (`x and secret or y` tests it), the calculator
   is asked only while the game's bar shows, and when it gives nothing the game's bar is left showing
@@ -226,6 +263,13 @@ Facts found while building this, which the code relies on and which are not obvi
   a heal whose aura reads as gone; an idle group marker stops before any widget call, and an owner change on a hidden
   marker no longer hides it again (that cleared a heal's splash just landed); `TryBuildGroup` guards both callers.
   Forever's Chinese battleground bandages say 回复, not 恢复 (now in the cases, 1160).
+  Reported by a player: Holy Light rank 8 (1177 to 1309, the first rank over 999) showed nothing while the lower ranks
+  worked. Likely the client writes English amounts with thousands separators ("1,177"), which Wowhead's text (and so
+  the cases) leaves out; English readers now drop them (`Heals.lua` `plain`, `Dots.lua` `plainSpaces`; Korean and
+  Chinese write the comma too). A review found the other languages' heal readers had the same gap (only their DoT
+  readers joined separators): German "um 1.177 bis 1.309" read as 177, a heal over time after its duration as 1, and
+  food as its last three digits. `L.healReader` now joins "1.177" and "1 177" first (`Locale.lua`, `joinThousands`,
+  a group of exactly three digits, as Forever's decimals have one). Not yet confirmed in game.
 - **Shields** (`Shield.lua`, `shield`): Forever's player frame has the game's absorb display (`healthBar.TotalAbsorbBar`,
   a segment with `Fill` and `TiledFillOverlay`, and `OverAbsorbGlow` at the bar's end; Camelot `PlayerFrame.lua` wires
   them up). `UnitGetTotalAbsorbs` is `SecretReturns`, but the game's heal prediction calculator
@@ -385,8 +429,21 @@ Facts found while building this, which the code relies on and which are not obvi
   its own at level 5 with its background on it, shown by the game for everyone or healers only; its colour is the power
   type's. At the party's 20 fps the raid-style party looked steppier than the player frame (seen in game), so the rate
   follows how many raid liquids show (`Bars.raid.RATES`): up to 10 at 30 fps stirring every 0.4 s, up to 20 at the
-  party's 20, more at 15. Not yet
-  seen in game: the dispel overlay (not among the button's textures), heal prediction and aggro over the liquid, a
+  party's 20, more at 15. Reported twice (a player, and seen here once): the player's own raid frame black until a
+  `/reload`, the game's fill hidden and no liquid drawn. Seen again after joining a party in combat (the bar's
+  own line was not in the screenshots; `0x16` there is only the template size of power bars the game never shows). Likely
+  cause, not proven: a health bar's size comes from its anchors alone, 0 x 0 while alone (when it is built on), and the game
+  anchors it by the temporary max health loss (`UnitFrame.lua`, `TempMaxHealthLossMixin`), whose event
+  `UNIT_MAX_HEALTH_MODIFIERS_CHANGED` is `SecretPayloads`; `GetWidth` is `SecretWhenAnchoringSecret`. The player's own hidden
+  frame gets that event while alone, before any size was known, so the liquid was never drawn though the fill was hidden.
+  Whether the game's next plain anchor (`CompactUnitFrame_UpdateAll`) clears the secret is not known. Such a bar now takes
+  its button's size (`Bars.raid.SizeOf`; with that secret too, the size last known, from a review), and any bar with no size
+  shows the game's fill. Seen in game after the fix: invited to a group
+  in combat, no black frame (once; the bug never came every time, so not proven). Bars built while alone had 6 slices (built at height 1) and now have
+  the intended 15, 252 textures instead of 171: the cost is not measured in game. `/sab raid` lists, under every frame's bars, our liquid's
+  state (`Bars.raid.Ours`: live, unit, sight, clip, fill alpha, our value, front, clock, textures shown, colour and
+  tint) and the heal marker's on it (`HealMarker.DebugBar`), and the player's own frames in chat as well; two reports
+  a few seconds apart show whether its clock still moves. Not yet seen in game: the dispel overlay (not among the button's textures), heal prediction and aggro over the liquid, a
   secret class's tint, a full raid's frames and its cost.
 - **Enemy nameplates** (`Bars.lua`, `plateHealth`, off by default): Forever's plates are `Blizzard_NamePlates`
   (`forever` branch). The game pools the plates' unit frames: `NamePlateBaseMixin:AcquireUnitFrame` sets
@@ -625,6 +682,96 @@ Facts found while building this, which the code relies on and which are not obvi
   stands for, Game Colour being the game's (green health), not the bar's. A bar's `spot.frame` is set before `NewBar`
   colours it: set after, a bar handed over with the setting on (after a `/reload`) failed to set up and kept its own
   fill (seen in game). Seen in game and right on FlareUI's bars after that.
+- **Taller bars** (players are told "Bar Height": they did not like "taller bars"; `TallFrames.lua`, `Preview.TallArt`, `playerHealthHeight`... sliders in the editor; asked for):
+  Forever's player and target art (`UI-HUD-UnitFrame-<Player|Target>-PortraitOn`) is one atlas, so a taller frame is
+  that atlas cut into slices: each bar's slot stretched by repeating a band from its middle, the portrait ring cut out
+  with `CircleMask` and put back, and the panel's end the ring hides (never seen in the capture) drawn again from the
+  dark block beside it. The ring keeps its size until it no longer covers that end, then grows (asked for). The layout
+  numbers (`TALL`) were measured on the capture. Seen in game: `SetAtlas` and then `SetTexCoord` drew nothing at all, so
+  a slice is the atlas's file by ID (`C_Texture.GetAtlasInfo`) with coordinates, as FlareUI cuts the same art
+  (`Modules/UnitFramesRing.lua`); the mock now rejects texture coordinates on an atlas texture. The bars' masks are
+  mostly transparent margin round their slot: stretched evenly, the liquid stopped short of the slot (seen in game), so
+  each is stretched until the part it lets through (`opaque`, measured on the captured masks) is exactly the bar's
+  growth taller. Seen in game and right in the editor's examples. On the real frames (`TallFrames.lua`) the frame is
+  `Preview.LiveFrame` as a child of the game's frame, grown upward from its bottom edge (asked for: the target's auras
+  start 9 above its art's bottom, and its cast bar, the target of target and the pet frame hang below). It fades the
+  game's art, portrait, bars (with their texts and predictions), name and level, carries the icons round the portrait
+  (elite dragon, skull, raid target, leader, PvP...) to where the moved ring puts them, copies the texts each 0.1 s, and
+  hands its own bars, filled from the game's each frame, to the liquid with `Bars.AddBar` and the frame's own key, as an
+  adaptor does: so the DoT marker and the mana build-up follow. The game's segments on its bars (heal predictions, heal
+  absorb, absorb, the player's mana cost prediction; StatusBarOverlaySegmentTemplate) are children of the faded bar,
+  so ours copy them onto our bars under the game's keys (`MyHealPredictionBar`...`OverAbsorbGlow`): each a bar-wide
+  fill seen through a mask on a box anchored to the game's own `FillMask` (laid by the game from the fill's edge,
+  from secrets it alone may do arithmetic on), moved by how far our bar is from the game's, our bar's height; shown as
+  the game's are, each frame. Under those keys the heal marker and the shield find and hide them as on the game's bars:
+  the heal marker builds on our bars as on the game frame's (`HealMarker.lua`, `BuildTall`: the player's health with
+  others' heals, mana, a party member's health), not as another addon's, and the shield and Weakened Soul are drawn on
+  our player health bar while it shows (`Follow` in both, the game's absorb display still read on the game's bar). From
+  a review: a copy can only fade by a secret shown state (its own `IsShown` then answers true), so the heal marker asks
+  the game's segment (`MirrorOf` on the copy, read by `GameOthers`), or others' heals never faded or hid there; the
+  glows are cut by the bar's slot as the game's are (`PlayerFrame.xml` masks them; 9 of their 16 lie past the bar's
+  end); a copy's alpha is never copied (the game's may be the paused game-bar marker's 0); Weakened Soul keeps its glass
+  parts per shield and uses the shield only on its own bar (the two switch bars in separate OnUpdates). Seen in game:
+  the player's PvP badge carried far up and right of the frame, its timer ("5 m") left where the game had it. The
+  badge's template has a scale of its own (`PlayerPvpBackgroundIconTemplate`, `scale="0.8"`), and a scaled region
+  answers `GetLeft`/`GetWidth` in its own units, so carried icons and glows are now taken into the frame's units by
+  their effective scales (`ScaleTo`); the mock answers a placed region's position (`sx`, `sy`) in its own units too.
+  Seen in game after that: the badge in its place.
+  Texts the game anchors to a carried icon are faded and drawn beside our copy of it (`follow`: the PvP timer). Seen
+  in game: heals on taller frames working (the heal marker). Not yet seen in game: the rest of that, and whether the
+  client lets ours anchor to the game's masks. The full list of what
+  the game's frames show and what is still missing is `docs/TALLER_BARS_GOALS.md`. Left as the game's: the rest loop,
+  the group indicator.
+  Built out of combat only; in a vehicle the game's frame is given back. Seen in game on a target: the frame, bars,
+  portrait and text copies right, but the name and level copies invisible: a FontString's `GetTextColor` alpha is its
+  `SetAlpha`, 0 on the faded game text, so copies take the colour's red, green and blue only (the mock keeps one alpha
+  for text too). And with Edit Mode's Buffs on Top the game anchors the target's auras above its art
+  (`TargetFrameMixin:AnchorAuraContainer`), which growing up covered (seen), so a target with `buffsOnTop` grows down.
+  The focus (`focusHealthHeight`...), the pet and both targets of target (`pet`/`tot`, from the game's 11 and 7) take it
+  too, each frame a spec in `TallFrames.lua` (`SPEC`: the target's template shared by the target and the focus, one
+  for both targets of target) naming its art, so frames of one art share its layout and measurements (`Preview.lua`,
+  `LAYOUT` and `TALL` by art; the editor's pet and target of target examples are now in their own art). The small
+  frames' art (`UI-HUD-UnitFrame-TargetofTarget-PortraitOn`, the pet's too) was never captured: it was measured on
+  the game's own sheet, `uiunitframec60.blp` (BLP2, uncompressed BGRA: Pillow cannot read it, the pixels follow a
+  1172-byte header), from github.com/Adrestie/mod-forever-ui (its `data/art/interface/foreverui/hud`, and the
+  atlases' places on it in `data/addon/ForeverUI/UIAtlas_04_unit_frames.lua`, generated from the Forever client
+  1.60.1). Measured there, the player's and target's art agreed with their capture's numbers within a few tenths. That
+  repo also has Forever's other sheets (action bars, party, raid, minimap), worth a look before capturing art again;
+  it has no masks. The small frames use the party frame's masks, so their opaque bands are the party capture's. Seen
+  in the editor: the small frames' masks, placed by the game's anchors, let the liquid through 1.4 above their slots
+  and the power's 2 left, under the gold divider (as on the party frame, where `PARTY_POWER_SHIFT` was set by eye); the
+  game keeps its fill in the slot, so each mask is centred on its slot as measured on the sheet. A ring grown past its
+  frame widens the editor's outline (`TallArt`'s `over`). The party members (`partyHealthHeight`/`partyPowerHeight`,
+  from the game's 10 and 7): the party art is the small frames' pixel for pixel, 1 right and 2 down (`TALL.party`,
+  measured on `uipartyframec60.blp` from the same repo); measured there, centring the power mask on its slot needs
+  0.9 right and 1.9 down, against `PARTY_POWER_SHIFT`'s 1.5 and 1.9 by eye, so that shift stays. The game pools the
+  four member buttons and hands them between `MemberFrame1..4`, so a member's state is kept by its button
+  (`TallFrames.State().party`) and its unit read from the button each look. The game stacks them 10 apart (26 with
+  party pets) and each has 2 under its art, so they grow down and their sliders stop at +8 and +4; the editor's
+  stacked party is drawn smaller as it grows, to stay on the screen. Not yet seen in game: the focus, pet, targets
+  of target and party taller. Seen in game: the player's aggro flash (`FrameFlash`, the threat indicator) left at the
+  game's place, misaligned with the taller frame. The flashes (`...-PortraitOn-InCombat`) and the player's status
+  glow (`...-Status`) have the art's outline round the ring and the name row, so they are laid out by the art's own
+  slicing (`Preview.TallGlow`, `Lay` with no panel's end, the ring cut `GLOW_PAD` wider), placed where the game's sits,
+  in its colour and blend mode. The game pulses the status glow's alpha every frame (`PlayerFrame_OnUpdate`), so the
+  player's and target's pieces are hidden by fading their containers (`PlayerFrameContainer`,
+  `PlayerFrameContentMain` and the target's), never the glows themselves, whose own alpha ours copies each frame; the
+  pet's and a party member's flash sit on the frame itself and are faded alone. The game's hit numbers over the portrait
+  go with the player's main content, so ours copies them over its portrait each frame (`CopyHit`: text, colour, alpha; seen in game
+  working, before its sizes: asked to match the default exactly), its size worked out from `UNIT_COMBAT`'s action and flag
+  (`HitSize`; a FontString has no getter for `SetTextHeight`), not grown with the ring
+  (asked for; only its place moves with the portrait). A hit flagged ABSORB, BLOCK or
+  RESIST is a word at 0.75 or, with some damage through, a number at full size: the amount is secret, so told by the text
+  being secret. The pet's (`PetHitIndicator`) share a frame with its name alone, so that frame is faded (the game sets the
+  text's own alpha each frame). Not yet seen in game: the sizes, the pet's. The combo points round the target's portrait (Camelot `ComboFrame.lua`) were seen in game
+  left round the game's smaller ring; ours are dots of the game's own template round our ring (`BuildCombo`,
+  `MirrorCombo`), the game's dots faded rather than `ComboFrame`, whose alpha `UIFrameFadeIn` sets. Seen in
+  game: in sync with the game's. The editor's target example has them for a rogue (`Preview.lua`, `AddCombo`, asked for;
+  seen in game, working). Seen in game: the resting "zzz" and the target's cast bar fine. A druid's extra mana bar has its own player art
+  (`AlternatePowerFrameTexture`): while it shows, the game's frame is given back. Seen in game: a target of target showing the face of the
+  one before, as no portrait event comes when the target picks a new target; portraits are now redrawn on
+  `UNIT_TARGET` (the target's or focus's new target), a new target or focus, the party's roster, and whenever the
+  name the game shows changes (`TallFrames.lua`, `Changes`).
 - **Toc changes** (a new file) need a full game restart; `/reload` does not pick them up.
 - **No realm since build 71037** (reported by another addon's author; Forever's patch of 2026-11-21): `GetRealmName()`
   returns `""`. An empty realm is no answer, never a realm: a character without a surname keeps its one saved

@@ -109,10 +109,12 @@ end
 -- Building
 --------------------------------------------------------------------------------
 
-local function New(bar)
+-- Drawn on bar, the shield's going up read on source (the game's player health bar: bar itself, or the game's bar a
+-- taller frame of ours stands in for).
+local function New(bar, source)
     local w, h = ns.Bars.Size(bar, 124, 20)
     local mask = MaskOf(bar)
-    local s = { bar = bar, mask = mask, width = w, height = h, specks = {}, falling = {}, embers = {}, beams = {},
+    local s = { bar = bar, source = source or bar, mask = mask, width = w, height = h, specks = {}, falling = {}, embers = {}, beams = {},
                 phase = 0, ashIn = 0, auraIn = 0 }
     -- Free of any clip, at the bar's level under the game's text; what lies on the liquid is cut by the bar's mask.
     s.frame = CreateFrame("Frame", nil, bar)
@@ -163,8 +165,23 @@ local function New(bar)
 end
 
 -- What is drawn in the shield's own glass, made there the first time it is needed (the shield is built by Shield.lua).
+-- Kept by shield (s.glassBy), as the shield has one per bar it is drawn on (Shield.lua, Follow): going back to one
+-- made before takes its parts again, and the other's are hidden.
 local function GlassParts(s, m)
     if s.glassFor == m then return s.glass end
+    local old = s.glass
+    if old then
+        for _, t in ipairs({ old.ashen, old.warm, old.sweep }) do t:Hide() end
+        for _, q in ipairs(old.embers) do
+            q.age = q.life
+            q.tex:Hide()
+        end
+    end
+    s.glassBy = s.glassBy or {}
+    if s.glassBy[m] then
+        s.glassFor, s.glass = m, s.glassBy[m]
+        return s.glass
+    end
     local rim = ns.Shield.RIM
     local mv = m.mover
     local g = { embers = {}, mover = mv }
@@ -191,6 +208,7 @@ local function GlassParts(s, m)
     g.sweep:AddMaskTexture(m.edge)
     g.sweep:AddMaskTexture(m.fadeIn)
     for _, t in ipairs({ g.ashen, g.warm, g.sweep }) do t:Hide() end
+    s.glassBy[m] = g
     s.glassFor, s.glass = m, g
     return g
 end
@@ -199,8 +217,12 @@ end
 -- Timing
 --------------------------------------------------------------------------------
 
-local player -- Soul on the player frame's health bar, once built
+local player -- Soul drawn now: on the player frame's health bar, or a taller frame's of ours in its place
+local souls = {} -- by the bar each is drawn on
+local gameBar -- the player frame's health bar, once found
 local driver
+-- What a switch of bars carries over: the wait and what was read of it (the release is played again on the new bar).
+local CARRIED = { "startAt", "endAt", "rel", "test", "auraSeen", "auraIn", "exists", "live", "err" }
 local SHIELD_NAME
 local probe = { started = {}, skipped = 0, aura = "not read yet" }
 local lastCast -- the player's last cast: { name, at, absorbs }
@@ -575,7 +597,7 @@ local function Update(s, dt)
     local now = GetTime()
     local bar = s.bar
     -- Going up, as the game's absorb display says; where it is secret, the player's own shield on themselves says.
-    local exists = ns.Shield.Exists(bar)
+    local exists = ns.Shield.Exists(s.source)
     if exists == true and s.exists == false then ShieldUp(s, now) end
     s.exists = exists
     s.auraIn = s.auraIn - dt
@@ -601,6 +623,9 @@ local function Update(s, dt)
     s.frame:Show()
 
     local m = ns.Shield.State()
+    -- Only the shield on the bar this is drawn on: for a frame while the two switch bars (each in its own OnUpdate)
+    -- the other may still be on the old one.
+    if m and m.bar ~= bar then m = nil end
     local shown = m and m.clip:IsShown()
     local glass = shown and not m.ending
     -- The ash comes only once a shattering shield's glass is gone: over the breaking glass it was a grey block.
@@ -649,9 +674,28 @@ end
 -- The driver, events and settings
 --------------------------------------------------------------------------------
 
+-- The bar Weakened Soul is drawn on now: our taller player frame's while it shows in place of the game's
+-- (TallFrames.lua), else the game's, as the shield's (Shield.lua).
+local function Follow()
+    local bar = ns.TallFrames and ns.TallFrames.PlayerHealth() or gameBar
+    if not bar or (player and player.bar == bar) then return end
+    local s = souls[bar]
+    if not s then
+        s = New(bar, gameBar)
+        souls[bar] = s
+    end
+    if player then
+        for _, k in ipairs(CARRIED) do s[k] = player[k] end
+        s.relAt = nil
+        pcall(HideAll, player)
+    end
+    player = s
+end
+
 local function OnUpdate(_, elapsed)
     local dt = math.min(elapsed, 0.1)
     if dt <= 0 or not player or not player.live or player.err then return end
+    Follow()
     local ok, err = pcall(Update, player, dt)
     if not ok then
         player.err = tostring(err)
@@ -706,7 +750,11 @@ function Soul.Apply()
     local live = ns.Core.Get("weakenedSoul") and true or false
     if live and not player then
         local bar = ns.Bars.Find("playerHealth")
-        if type(bar) == "table" and bar.GetStatusBarTexture then player = New(bar) end
+        if type(bar) == "table" and bar.GetStatusBarTexture then
+            gameBar = bar
+            player = New(bar)
+            souls[bar] = player
+        end
     end
     SHIELD_NAME = SHIELD_NAME or SpellName(SHIELD_SPELL)
     if player then

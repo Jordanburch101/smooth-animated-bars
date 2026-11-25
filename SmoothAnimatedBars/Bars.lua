@@ -41,6 +41,7 @@ ns.Bars = Bars
 Bars.raid = {
     blocks = {},                     -- /sab raid test's blocks, by health bar
     built = {},                      -- health bar -> true, once it has its liquid
+    memberOf = {},                   -- bar -> { its button, "health" or "power" } (Bars.raid.SizeOf)
     LOOK_EVERY = 1,                  -- seconds between looks for raid frames the game has made since
     lookIn = 0,
     -- The liquid's ARTWORK 3..7 to BORDER -4..0, its bubbles and motes (OVERLAY 3, 4) to BORDER 2, 3; the tint of a
@@ -184,11 +185,47 @@ local function Secret(...)
 end
 
 -- A region's width and height, or the fallbacks while the client keeps them secret: seen in game on the target's
--- health bar, whose size then cannot be compared.
+-- health bar, whose size then cannot be compared. A raid-style bar's comes from its button when it reads as nothing too
+-- (Bars.raid.SizeOf).
 local function Size(region, w0, h0)
     local w, h = region:GetWidth(), region:GetHeight()
-    if Secret(w, h) then return w0, h0 end
+    local secret = Secret(w, h)
+    if secret or w < 1 or h < 1 then
+        local rw, rh = Bars.raid.SizeOf(region)
+        if rw then return rw, rh end
+    end
+    if secret then return w0, h0 end
     return w, h
+end
+
+-- A raid-style bar's size worked out from its button, as the game lays it out (DefaultCompactUnitFrameSetup: 1 in from
+-- the button's edges, the power bar's 8 off the health when it shows), or nil for any other bar. The bar's own size comes
+-- from its anchors alone: 0 x 0 while the player is alone (seen with /sab raid), when the frame is built on, and secret,
+-- it seems, once the game has anchored it by a secret change in maximum health. With none ever known the liquid was never
+-- drawn though the game's fill was hidden, which is likely how the player's own frame stayed black until a /reload (seen).
+-- A button that will not say either leaves the size last known, or the game's 98 x 44 where there never was one.
+function Bars.raid.SizeOf(bar)
+    local m = Bars.raid.memberOf[bar]
+    if not m then return nil end
+    local frame = m[1]
+    local ok, fw, fh = pcall(frame.GetSize, frame)
+    if not ok or Secret(fw, fh) or type(fw) ~= "number" or type(fh) ~= "number" or fw < 4 or fh < 4 then
+        local b = Bars.stateOf[bar]
+        if b and b.width >= 1 and b.height >= 1 then return b.width, b.height end
+        fw, fh = 98, 44
+    end
+    local used = frame.powerBarUsedHeight
+    if Secret(used) or type(used) ~= "number" then used = 0 end
+    if m[2] == "power" then return fw - 2, used >= 1 and used or 8 end
+    return fw - 2, math.max(1, fh - 2 - used)
+end
+
+-- The size a bar is built at when the client keeps its own secret then: the game's for its frame.
+function Bars.GameSize(spot)
+    local health = spot.kind == "health"
+    if spot.party then return health and 70 or 74, health and 10 or 7 end
+    if spot.frame == "pet" or spot.frame == "tot" then return health and 70 or 77, health and 11 or 7 end
+    return 124, health and 20 or 10
 end
 
 -- A child of a game frame by its parentKey path, or nil.
@@ -349,6 +386,9 @@ function Bars.FillEffects(b)
     end
     b.opts = b.opts or {}
     for _, effect in ipairs(ns.Core.EFFECTS) do b.opts[effect] = ns.Core.Effect(key, effect) and true or false end
+    -- Factors, 1 at the editor's 100% (Liquid.lua: speed scales its time, intensity its front's waves).
+    b.opts.speed = ns.Core.EffectLevel(key, "animationSpeed")
+    b.opts.intensity = ns.Core.EffectLevel(key, "waveIntensity")
     return b.opts
 end
 
@@ -1007,8 +1047,9 @@ function Over.Apply(b)
 end
 
 local function NewBar(spot, bar)
-    local w, h = Size(bar, spot.plate and PLATE_W or spot.flat and PRD_W or 1,
-        spot.plate and PLATE_H or spot.flat and PRD_H or 1)
+    local gameW, gameH = Bars.GameSize(spot)
+    local w, h = Size(bar, spot.plate and PLATE_W or spot.flat and PRD_W or gameW,
+        spot.plate and PLATE_H or spot.flat and PRD_H or gameH)
     local b = { spot = spot, unit = spot.unit, kind = spot.kind, bar = bar, width = w, height = h, live = false,
                 idle = 0, feed = 0, stirAt = 0 }
 
@@ -1564,6 +1605,12 @@ local function UpdateBar(b, dt)
         Bars.raid.Follow(b, dt)
         if b.away then return end
     end
+    -- No size to draw at: the game's own fill shows meanwhile, never an empty bar.
+    local w, h = Size(bar, b.width, b.height)
+    if w < 1 or h < 1 then
+        HideGameFill(bar, 1, b.spot.external)
+        return
+    end
     -- The game can swap or reset its fill textures; keep them hidden under the liquid.
     HideGameFill(bar, 0, b.spot.external)
     -- Back after being hidden (the Personal Resource Display shown in combat only, the mana under a druid's form, a
@@ -1589,8 +1636,6 @@ local function UpdateBar(b, dt)
         Feed(b, true)
     end
 
-    local w, h = Size(bar, b.width, b.height)
-    if w < 1 or h < 1 then return end
     if w ~= b.width or h ~= b.height then
         b.width, b.height = w, h
         b.mover:SetWidth(w)
@@ -2219,6 +2264,7 @@ function Bars.raid.AddSpots()
                 local bar = e.frame[k.field]
                 if IsBar(bar) and not r.built[bar] then
                     r.built[bar] = true
+                    r.memberOf[bar] = { e.frame, k.kind }
                     local unit = e.frame.displayedUnit or e.frame.unit
                     if type(unit) ~= "string" or Secret(unit) then unit = "player" end
                     local spot = { key = k.key, frame = "raid", optional = true, raid = true, slow = true, unit = unit,
@@ -3126,8 +3172,32 @@ function Bars.raid.Listen()
     end)
 end
 
+-- Our liquid's state on one raid-style bar, for /sab raid: asked for after a player's own raid frame showed black until
+-- a /reload (reported twice, cause not found): which unit it follows, whether it runs (its clock, liquid.t, moves
+-- between two reports), where its front is, its colour and tint, and what of it shows.
+function Bars.raid.Ours(bar)
+    local b = type(bar) == "table" and Bars.stateOf[bar]
+    if not b or not b.spot or not b.spot.raid then return "ours: no liquid built on this bar" end
+    local shown = 0
+    for _, t in ipairs(b.liquid.textures) do
+        if t:IsShown() then shown = shown + 1 end
+    end
+    local function Num(v) return Secret(v) and "secret" or tostring(v) end
+    local lo, hi = b.proxy:GetMinMaxValues()
+    local fill = bar:GetStatusBarTexture()
+    local tint = b.plateTint
+    return string.format("ours: width %s, live %s, error %s, unit %s, offline %s, sight %s, waiting to show %s, clip shown %s, "
+        .. "game fill alpha %s, our value %s of %s..%s, front at %.1f of %.1f (back %.1f), clock %.2f, quiet %s, "
+        .. "textures shown %d/%d, colour %s, colour secret %s, tint shown %s, theme fill %s",
+        Num(bar:GetWidth()), YesNo(b.live), b.err or "none", tostring(b.unit), YesNo(b.away), tostring(b.sight), YesNo(b.unseen),
+        YesNo(b.clip:IsShown()), fill and Num(fill:GetAlpha()) or "none", Num(b.proxy:GetValue()), Num(lo), Num(hi),
+        b.liquid.edge or -1, b.width or -1, b.liquid.back or -1, b.liquid.t or -1, YesNo(b.liquid:IsQuiet()),
+        shown, #b.liquid.textures, tostring(b.colorKey), YesNo(b.plateSecret), YesNo(tint and tint:IsShown()),
+        b.liquid.theme and b.liquid.theme.fillB and string.format("%.2f %.2f %.2f", unpack(b.liquid.theme.fillB)) or "?")
+end
+
 -- The report: full (every line, saved) and brief (for the chat window: the first shown frame of each kind in detail,
--- then a line for each of the first few shown frames).
+-- then a line for each of the first few shown frames, and the player's own frames always).
 function Bars.RaidDebug()
     local r = Bars.raid
     r.Listen()
@@ -3167,7 +3237,12 @@ function Bars.RaidDebug()
                 Ask(rawget(_G, "UnitIsDeadOrGhost"), unit))
         end
         out[#out + 1] = "  " .. Bar("health", f.healthBar, f)
+        local okH, ours = pcall(r.Ours, f.healthBar)
+        out[#out + 1] = "    " .. (okH and ours or ("ours: report failed, " .. tostring(ours)))
+        if ns.HealMarker and ns.HealMarker.DebugBar then out[#out + 1] = "    " .. ns.HealMarker.DebugBar(f.healthBar) end
         out[#out + 1] = "  " .. Bar("power", f.powerBar, f)
+        local okP, oursP = pcall(r.Ours, f.powerBar)
+        out[#out + 1] = "    " .. (okP and oursP or ("ours: report failed, " .. tostring(oursP)))
     end
     -- What the button and its health bar draw, and where: the layers the liquid would have to sit among.
     local function Parts(out, e)
@@ -3254,6 +3329,20 @@ function Bars.RaidDebug()
         end
     end
     if listed > 8 then brief[#brief + 1] = string.format("... and %d more shown frames in the saved report", listed - 8) end
+    -- The player's own frames, in full in chat too, wherever they are in the list (a player's own frame showed black
+    -- until a /reload; see Bars.raid.Ours).
+    local own = 0
+    for _, e in ipairs(frames) do
+        local unit = e.frame.displayedUnit or e.frame.unit
+        local okMe, me = false, false
+        if type(unit) == "string" and not Secret(unit) then okMe, me = pcall(UnitIsUnit, unit, "player") end
+        if okMe and not Secret(me) and me then
+            own = own + 1
+            brief[#brief + 1] = "your own frame:"
+            Frame(brief, e)
+        end
+    end
+    Both("your own frames: " .. own)
     local hidden = {}
     for _, e in ipairs(frames) do
         local v = e.frame.IsShown and e.frame:IsShown()

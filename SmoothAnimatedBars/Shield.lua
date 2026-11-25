@@ -155,10 +155,12 @@ local function Tint(t, c, alpha)
     t:SetAlpha(alpha)
 end
 
-local function New(bar)
+-- The shield drawn on bar, the game's absorb display read on source (the game's player health bar: bar itself, or the
+-- game's bar a taller frame of ours stands in for).
+local function New(bar, source)
     local w, h = ns.Bars.Size(bar, 124, 20)
     local mask = MaskOf(bar)
-    local m = { bar = bar, mask = mask, width = w, height = h, feed = FEED_EVERY, t = 0, castUntil = 0,
+    local m = { bar = bar, source = source or bar, mask = mask, width = w, height = h, feed = FEED_EVERY, t = 0, castUntil = 0,
                 flare = 0, flash = 0, push = 0, fade = 1, motes = {}, sparks = {} }
     m.calc = NewCalculator(CLAMP_MAX)
 
@@ -785,8 +787,9 @@ local function Update(m, dt)
     if not m.calc then return Hide(m) end
     local now = GetTime()
 
-    -- Going up and going, where the game says (or, where it will not, for a while after the player's own cast).
-    local exists = Exists(m.bar)
+    -- Going up and going, where the game says (or, where it will not, for a while after the player's own cast): its
+    -- own bar's absorb display, also while the shield is drawn on a taller frame's bar of ours.
+    local exists = Exists(m.source)
     m.exists = exists
     local holding = exists == true or (exists == nil and now < m.castUntil)
     if holding then
@@ -833,15 +836,36 @@ end
 -- The driver, events and settings
 --------------------------------------------------------------------------------
 
-local player -- the shield on the player frame's health bar, once built
+local player -- the shield drawn now: on the player frame's health bar, or a taller frame's of ours in its place
+local shields = {} -- by the bar each is drawn on
+local gameBar -- the player frame's health bar, once found
 local driver
 local probe = { absorbs = 0, hits = {}, casts = 0 }
 local SHIELD_NAME -- Power Word: Shield in the client's language
 local selfCast = {} -- castGUID -> true for the player's own Power Word: Shield sent at themselves
 
+-- The bar the shield is drawn on now: our taller player frame's while it shows in place of the game's (TallFrames.lua),
+-- else the game's. Switching hides the one before (putting its liquid's front and the game's absorb back) and carries
+-- over what the player's own cast said.
+local function Follow()
+    local bar = ns.TallFrames and ns.TallFrames.PlayerHealth() or gameBar
+    if not bar or (player and player.bar == bar) then return end
+    local m = shields[bar]
+    if not m then
+        m = New(bar, gameBar)
+        shields[bar] = m
+    end
+    if player then
+        m.live, m.err, m.castUntil = player.live, player.err, player.castUntil
+        pcall(Hide, player)
+    end
+    player = m
+end
+
 local function OnUpdate(_, elapsed)
     local dt = math.min(elapsed, 0.1)
     if dt <= 0 or not player or not player.live or player.err then return end
+    Follow()
     local ok, err = pcall(Update, player, dt)
     if not ok then
         player.err = tostring(err)
@@ -884,7 +908,11 @@ function Shield.Apply()
     local live = ns.Core.Get("shield") and true or false
     if live and not player then
         local bar = ns.Bars.Find("playerHealth")
-        if type(bar) == "table" and bar.GetStatusBarTexture then player = New(bar) end
+        if type(bar) == "table" and bar.GetStatusBarTexture then
+            gameBar = bar
+            player = New(bar)
+            shields[bar] = player
+        end
     end
     if not SHIELD_NAME then
         local ok, name = pcall(C_Spell and C_Spell.GetSpellName or GetSpellInfo, 17)

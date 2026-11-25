@@ -45,25 +45,45 @@ local function TwoBars(frame, prefix, healthColor, powerColor)
     }
 end
 
+-- A frame's bar heights, as sliders: taller than the game's, the frame is drawn by the addon (TallFrames.lua).
+-- base: the game's heights (20 and 10 on the player, target and focus frames, 11 and 7 on the pet and targets of
+-- target); each can be room taller (20 for health and 10 for power unless it says).
+local function HeightSliders(prefix, base, room)
+    base, room = base or { 20, 10 }, room or { 20, 10 }
+    local grows = "Taller, the frame grows, drawn from the game's own art."
+    return {
+        { key = prefix .. "HealthHeight", label = "Health Bar Height", min = base[1], max = base[1] + room[1],
+          desc = "The game's is " .. base[1] .. ". " .. grows, base = base[1] },
+        { key = prefix .. "PowerHeight", label = "Power Bar Height", min = base[2], max = base[2] + room[2],
+          desc = "The game's is " .. base[2] .. ". " .. grows, base = base[2] },
+    }
+end
+
 -- same: what following is called on the frame's bars ("same" in its colour setting), and whose it follows; mobs: the
--- Core function saying when Class Color on Mobs matters there; rows: on/off settings with what they do.
+-- Core function saying when Class Color on Mobs matters there; rows: on/off settings with what they do; sliders: number
+-- settings, { key, label, desc, min, max }.
 local FRAMES = {
     player = { label = "Player", desc = "Liquid in your own health and power bars.",
-               bars = TwoBars("player", "player", "healthColor", "powerColor") },
+               bars = TwoBars("player", "player", "healthColor", "powerColor"), sliders = HeightSliders("player") },
     target = { label = "Target", desc = "Liquid in your target's bars. Class Color shows a targeted player's class.",
                same = "Same as Yours", whose = "your", mobs = "TargetUsesClass",
-               bars = TwoBars("target", "target", "targetHealthColor", "targetPowerColor") },
+               bars = TwoBars("target", "target", "targetHealthColor", "targetPowerColor"),
+               sliders = HeightSliders("target") },
     focus = { label = "Focus", desc = "Liquid in your focus's bars.", same = "Same as Target", whose = "your target's",
-              mobs = "TargetUsesClass", bars = TwoBars("focus", "focus", "focusHealthColor", "focusPowerColor") },
+              mobs = "TargetUsesClass", bars = TwoBars("focus", "focus", "focusHealthColor", "focusPowerColor"),
+              sliders = HeightSliders("focus") },
     pet = { label = "Pet", desc = "Liquid in your pet's bars. With Class Color your pet takes your class.",
-            same = "Same as Yours", whose = "your", bars = TwoBars("pet", "pet", "petHealthColor", "petPowerColor") },
+            same = "Same as Yours", whose = "your", bars = TwoBars("pet", "pet", "petHealthColor", "petPowerColor"),
+            sliders = HeightSliders("pet", { 11, 7 }) },
     tot = { label = "Target of Target", desc = "Liquid in your target's target's and your focus's target's bars.",
             same = "Same as Target", whose = "your target's", mobs = "TargetUsesClass",
-            bars = TwoBars("tot", "tot", "totHealthColor", "totPowerColor") },
+            bars = TwoBars("tot", "tot", "totHealthColor", "totPowerColor"), sliders = HeightSliders("tot", { 11, 7 }) },
     party = { label = "Party", desc = "Liquid in your party members' bars. While a member is offline the game's grey "
                   .. "bar comes back. Class Color shows each member's class.",
               same = "Same as Yours", whose = "your",
-              bars = TwoBars("party", "party", "partyHealthColor", "partyPowerColor") },
+              bars = TwoBars("party", "party", "partyHealthColor", "partyPowerColor"),
+              -- The game stacks the members 10 apart and each frame has 2 under its art: 12 of room, so 8 and 4.
+              sliders = HeightSliders("party", { 10, 7 }, { 8, 4 }) },
     raid = { label = "Raid", desc = "Liquid in the raid frames, and the party's in raid style. The game's names, icons, "
                  .. "heal prediction and shields stay on top. Game Colour takes the raid frames' own colours.",
              same = "Same as Party", whose = "your party's",
@@ -90,6 +110,27 @@ local FRAMES = {
                } },
 }
 
+-- The effects that are amounts (Core.EFFECT_LEVELS), as sliders in steps of 5%: on the Effects tab, and in a bar's
+-- own effects.
+local EFFECT_SLIDER_TEXT = {
+    animationSpeed = { label = "Animation Speed",
+                       desc = "How fast the waves, swirl, bubbles and sparks move. The bar still follows your health "
+                           .. "at the game's pace." },
+    waveIntensity = { label = "Wave Intensity",
+                      desc = "How far the liquid's front bulges and ripples. 0% is a flat front." },
+}
+local function EffectSliders(get, set)
+    local out = {}
+    for _, level in ipairs(ns.Core.EFFECT_LEVELS) do
+        local text = EFFECT_SLIDER_TEXT[level.key]
+        out[#out + 1] = { key = level.key, label = text.label, desc = text.desc, min = level.min, max = level.max,
+                          step = 5, suffix = "%",
+                          get = get and function() return get(level.key) end,
+                          set = set and function(v) set(level.key, v) end }
+    end
+    return out
+end
+
 -- The other tabs: their settings.
 local TABS = {
     { id = "frames", label = "Frames" },
@@ -104,7 +145,8 @@ local TABS = {
             desc = "Embers, snow, spores, stars and the like from themes that have them." },
           { key = "lightning", label = "Lightning",
             desc = "Faint flashes that build into a storm when the bar changes a lot." },
-      } },
+      },
+      sliders = EffectSliders() },
     { id = "combat", label = "Combat",
       desc = "Markers on your bars for what is still to come, and how your mana and rage behave.",
       rows = {
@@ -166,6 +208,7 @@ local function Keys(f)
     end
     if f.mobs then keys[#keys + 1] = "mobClassColor" end
     for _, row in ipairs(f.rows or {}) do keys[#keys + 1] = row.key end
+    for _, slider in ipairs(f.sliders or {}) do keys[#keys + 1] = slider.key end
     return keys
 end
 
@@ -342,6 +385,7 @@ end
 
 local frame, ui, current, tab
 local Refresh, Layout
+local SliderRow -- below, and used by a card's Effects tab above it
 
 local function Font(parent, template, text, justify)
     local fs = parent:CreateFontString(nil, "OVERLAY", template)
@@ -588,7 +632,19 @@ local function EffectsPane(drawer, bar)
         c:SetPoint("TOPLEFT", 4 + col * 140, -(34 + line * 24))
         p.fx[effect] = c
     end
-    p.height = 34 + 3 * 24 + 6
+    -- Speed and wave intensity: this bar's own, or the global ones shown greyed while it follows them.
+    local y = 34 + 3 * 24 + 2
+    p.levels = {}
+    for _, spec in ipairs(EffectSliders(function(key) return ns.Core.Effect(bar.on, key) end,
+                                        function(key, v) ns.Core.SetEffect(bar.on, key, v) end)) do
+        spec.bare, spec.desc = true, ""
+        local r = SliderRow(p, spec)
+        r:SetPoint("TOPLEFT", 0, -y)
+        r:SetPoint("TOPRIGHT", 0, -y)
+        p.levels[#p.levels + 1] = r
+        y = y + r.height
+    end
+    p.height = y + 4
     p:SetHeight(p.height)
     return p
 end
@@ -663,6 +719,69 @@ local function OptionRow(page, row)
     r.height = math.max(40, 32 + r.desc:GetStringHeight())
     r:SetHeight(r.height)
     r.row = row
+    return r
+end
+
+-- A number setting's row: its name and value, what it does, and the game's slider with steppers
+-- (MinimalSliderWithSteppersTemplate, which other addons use on Forever); where the client has no such template, a
+-- minus and a plus button. spec.step: what one step moves (1 unless it says); spec.suffix: after the value ("%");
+-- spec.get/spec.set: where the value lives, if not a registered setting (a bar's own effects).
+function SliderRow(page, spec)
+    -- Bare inside a card's drawer, which is a pane already.
+    local r = spec.bare and CreateFrame("Frame", nil, page) or Pane(page, 0.35)
+    r.label = Font(r, "GameFontNormal", spec.label, "LEFT")
+    r.label:SetPoint("TOPLEFT", 10, -10)
+    r.value = Font(r, "GameFontHighlight", "", "RIGHT")
+    r.value:SetPoint("TOPRIGHT", -10, -10)
+    r.desc = Muted(Font(r, "GameFontHighlightSmall", spec.desc, "LEFT"))
+    r.desc:SetPoint("TOPLEFT", 10, -26)
+    r.desc:SetWidth(LIST_W - 20)
+    r.desc:SetWordWrap(true)
+    local top = (spec.desc or "") == "" and 28 or 32 + r.desc:GetStringHeight()
+    local step, suffix = spec.step or 1, spec.suffix or ""
+    local get = spec.get or function() return Get(spec.key) end
+    local set = spec.set or function(v) Set(spec.key, v) end
+    local function Snap(v) return math.max(spec.min, math.min(spec.max, math.floor(v / step + 0.5) * step)) end
+    local function Value() return Snap(tonumber(get()) or spec.min) end
+    r.Set = function(v) set(Snap(v)) end
+    local ok, slider = pcall(CreateFrame, "Frame", nil, r, "MinimalSliderWithSteppersTemplate")
+    if ok and slider and slider.Init and slider.RegisterCallback and MinimalSliderWithSteppersMixin then
+        -- Both top corners, as the panes: a "RIGHT" point would pin its middle to the row's.
+        slider:SetPoint("TOPLEFT", 6, -top)
+        slider:SetPoint("TOPRIGHT", -6, -top)
+        slider:SetHeight(20)
+        r.refreshing = true
+        slider:Init(Value(), spec.min, spec.max, (spec.max - spec.min) / step)
+        r.refreshing = false
+        slider:RegisterCallback(MinimalSliderWithSteppersMixin.Event.OnValueChanged, function(_, v)
+            v = Snap(v)
+            r.value:SetText(v .. suffix)
+            if not r.refreshing and v ~= Value() then set(v) end
+        end, r)
+        r.slider = slider
+    else
+        local minus = Button(r, "-", 30, function() set(Snap(Value() - step)) end)
+        minus:SetPoint("TOPLEFT", 6, -top)
+        local plus = Button(r, "+", 30, function() set(Snap(Value() + step)) end)
+        plus:SetPoint("LEFT", minus, "RIGHT", 4, 0)
+        r.steppers = { minus, plus }
+    end
+    r.height = top + 28
+    r:SetHeight(r.height)
+    function r.Refresh()
+        local v = Value()
+        r.refreshing = true
+        if r.slider then r.slider:SetValue(v) end
+        r.refreshing = false
+        r.value:SetText(v .. suffix)
+    end
+    -- Greyed and still while it does not apply (a bar following the global effects).
+    function r.SetUsable(on)
+        if r.slider and r.slider.SetEnabled then r.slider:SetEnabled(on and true or false) end
+        for _, b in ipairs(r.steppers or {}) do b:SetEnabled(on) end
+        r:SetAlpha(on and 1 or 0.45)
+    end
+    r.spec = spec
     return r
 end
 
@@ -788,7 +907,7 @@ local function BuildPage(id)
     local page = CreateFrame("Frame", nil, ui.list)
     page:SetPoint("TOPLEFT")
     page:SetWidth(LIST_W)
-    page.items, page.cards, page.rows = {}, {}, {}
+    page.items, page.cards, page.rows, page.sliders = {}, {}, {}, {}
     local f = FRAMES[id] or TAB_BY_ID[id]
     if f.profiles then
         page.profiles = ProfilesPane(page)
@@ -810,6 +929,11 @@ local function BuildPage(id)
         page.rows[row.key] = r
         page.items[#page.items + 1] = r
     end
+    for _, spec in ipairs(f.sliders or {}) do
+        local r = SliderRow(page, spec)
+        page.sliders[spec.key] = r
+        page.items[#page.items + 1] = r
+    end
     return page
 end
 
@@ -824,10 +948,11 @@ end
 -- down the left, and beside it the nameplates on the party's top line with the raid frames under them.
 local EXAMPLES = {
     -- 490 wide rather than 480, so the outlines round the player and the target are 20 px apart, as on the mockup.
-    frames = { make = function(p) return ns.Preview.Create(p) end, x = 21, y = 38, width = 490 },
+    frames = { make = function(p) return ns.Preview.Create(p, nil, true) end, x = 21, y = 38, width = 490 },
     focus = { make = function(p) return ns.Preview.CreateSingle(p, "focus") end, x = 617, y = 38, scale = 0.8 },
-    pet = { make = function(p) return ns.Preview.CreateSingle(p, "pet") end, x = 21, y = 169, scale = 0.6 },
-    tot = { make = function(p) return ns.Preview.CreateSingle(p, "tot") end, x = 664, y = 169, scale = 0.6 },
+    -- The pet and the target of target in their own art (120 x 49), the target of target's right edge with the focus's.
+    pet = { make = function(p) return ns.Preview.CreateSingle(p, "pet") end, x = 21, y = 169 },
+    tot = { make = function(p) return ns.Preview.CreateSingle(p, "tot") end, x = 683, y = 169 },
     prd = { make = function(p) return ns.Preview.CreatePRD(p) end, x = 357, y = 186 },
     party = { make = function(p) return ns.Preview.CreateParty(p, "party", true) end, x = 21, y = 270 },
     plates = { make = function(p) return ns.Preview.CreatePlates(p) end, x = 242, y = 270 },
@@ -886,14 +1011,24 @@ local function Hotspot(id)
     return h
 end
 
--- A dashed outline round a frame of w x h: dashes of solid colour along each edge.
+-- A dashed outline round a frame of w x h: dashes of solid colour along each edge, in h.dashes. Drawn again (a frame's
+-- size changed), it reuses the textures it made before (h.dashPool).
 local DASH, GAP = 6, 4
 local function Dash(h, w, height)
+    h.dashPool = h.dashPool or {}
+    for _, t in ipairs(h.dashPool) do t:Hide() end
+    h.dashes = {}
     local function Piece(x, y, dw, dh)
-        local t = h:CreateTexture(nil, "BORDER")
-        t:SetColorTexture(0.78, 0.60, 0.29, 0.45)
+        local t = h.dashPool[#h.dashes + 1]
+        if not t then
+            t = h:CreateTexture(nil, "BORDER")
+            t:SetColorTexture(0.78, 0.60, 0.29, 0.45)
+            h.dashPool[#h.dashes + 1] = t
+        end
+        t:ClearAllPoints()
         t:SetPoint("TOPLEFT", x, -y)
         t:SetSize(dw, dh)
+        t:Show()
         h.dashes[#h.dashes + 1] = t
     end
     for x = 0, w - 1, DASH + GAP do
@@ -906,23 +1041,91 @@ local function Dash(h, w, height)
     end
 end
 
+-- How far a frame example's grown ring reaches past it (Preview.TallArt): left, top, right, bottom.
+local function Overhang(r)
+    local f = r.tall and r or r.target
+    local over = f and f.tall and f.tall.over
+    if not over then return 0, 0, 0, 0 end
+    return over[1], over[2], over[3], over[4]
+end
+
 local function PlaceHotspots()
     for _, id in ipairs(SCREEN) do
         local h, r = ui.hots[id], Region(id)
         if r then
+            -- Round the frame, and round its ring where a taller frame's has grown past it, in the screen's units (the
+            -- example's own times its scale).
+            local scale = r.GetScale and r:GetScale() or 1
+            local l, t, rr, b = Overhang(r)
+            l, t, rr, b = l * scale, t * scale, rr * scale, b * scale
             h:ClearAllPoints()
-            h:SetPoint("TOPLEFT", r, "TOPLEFT", -4, 4)
-            h:SetPoint("BOTTOMRIGHT", r, "BOTTOMRIGHT", 4, -4)
+            h:SetPoint("TOPLEFT", r, "TOPLEFT", -4 - l, 4 + t)
+            h:SetPoint("BOTTOMRIGHT", r, "BOTTOMRIGHT", 4 + rr, -4 - b)
             h:Show()
-            if not h.dashes[1] then
-                -- Its size on the screen: the frame's at its example's scale, and the margin.
-                local scale = EXAMPLES[EXAMPLE_OF[id]].scale or 1
-                Dash(h, math.floor(r:GetWidth() * scale + 8), math.floor(r:GetHeight() * scale + 8))
+            -- Its size on the screen: the frame's at its example's scale, the ring's overhang and the margin.
+            local w = math.floor(r:GetWidth() * scale + l + rr + 8)
+            local height = math.floor(r:GetHeight() * scale + t + b + 8)
+            if h.dashW ~= w or h.dashH ~= height then
+                h.dashW, h.dashH = w, height
+                Dash(h, w, height)
+                -- Shown or not as the frame is edited or not (Refresh).
+                local edited = tab == "frames" and current == id
+                for _, t in ipairs(h.dashes) do t:SetShown(not edited) end
             end
         else
             h:Hide()
         end
     end
+end
+
+-- The player's and target's bar heights (playerHealthHeight...) on the frames' example, laid out again when they change,
+-- and the outlines round them with it.
+-- How much taller than the game's a frame's bars are asked to be ({ health, power }), by its sliders.
+local function Taller(id)
+    local sliders = FRAMES[id].sliders
+    local out = {}
+    for i, slider in ipairs(sliders) do out[i] = math.max(0, (tonumber(Get(slider.key)) or slider.base) - slider.base) end
+    return out
+end
+
+local function ApplyHeights()
+    local e = ui.examples.frames
+    if not (e and e.SetTall) then return end
+    local want = { player = Taller("player"), target = Taller("target") }
+    local singles = { focus = Taller("focus"), pet = Taller("pet"), tot = Taller("tot"), party = Taller("party") }
+    local parts = { want.player[1], want.player[2], want.target[1], want.target[2] }
+    for _, id in ipairs({ "focus", "pet", "tot", "party" }) do
+        parts[#parts + 1] = singles[id][1]
+        parts[#parts + 1] = singles[id][2]
+    end
+    local applied = table.concat(parts, ",")
+    if applied == ui.heights then return end
+    ui.heights = applied
+    -- The single frames (Preview.CreateSingle), each laid out as its real frame is.
+    for id, tall in pairs(singles) do
+        if ui.examples[id] and ui.examples[id].SetTall then ui.examples[id]:SetTall(tall) end
+    end
+    -- The party's stack, taller, is drawn smaller to keep within the screen's bottom edge.
+    local party, spec = ui.examples.party, EXAMPLES.party
+    if party then
+        local room = (ui.stage:GetHeight() or (H - 62 - 50)) - spec.y - 8 -- the stage: the window less its bars
+        local s = math.min(1, room / math.max(1, party:GetHeight()))
+        party:SetScale(s)
+        party:ClearAllPoints()
+        party:SetPoint("TOPLEFT", ui.stage, "TOPLEFT", spec.x / s, -spec.y / s)
+    end
+    e:SetTall(want)
+    -- The examples under them (the pet's, the Personal Resource Display's) move down as far as they grew.
+    local extra = e:GetHeight() - 100
+    for _, key in ipairs({ "pet", "prd" }) do
+        local below, spec = ui.examples[key], EXAMPLES[key]
+        if below then
+            local s = spec.scale or 1
+            below:ClearAllPoints()
+            below:SetPoint("TOPLEFT", ui.stage, "TOPLEFT", spec.x / s, -(spec.y + extra) / s)
+        end
+    end
+    PlaceHotspots()
 end
 
 --------------------------------------------------------------------------------
@@ -976,6 +1179,12 @@ local function Summary(bar, f)
         for _, effect in ipairs(ns.Core.EFFECTS) do
             if not ns.Core.Effect(bar.on, effect) then off[#off + 1] = "no " .. EFFECT_LABELS[effect]:lower() end
         end
+        for _, level in ipairs(ns.Core.EFFECT_LEVELS) do
+            local v = ns.Core.EffectLevel(bar.on, level.key) * 100
+            if math.abs(v - 100) > 0.5 then
+                off[#off + 1] = EFFECT_SLIDER_TEXT[level.key].label:lower() .. " " .. math.floor(v + 0.5) .. "%"
+            end
+        end
         fx = "own effects" .. (#off > 0 and (": " .. table.concat(off, ", ")) or "")
     end
     return ChoiceName(Get(bar.color), bar, f) .. " · " .. fx
@@ -1018,6 +1227,10 @@ local function RefreshCards(page, f)
             box:SetEnabled(own)
             box.label:SetAlpha(own and 1 or 0.45)
         end
+        for _, r in ipairs(e.levels) do
+            r.Refresh()
+            r.SetUsable(own)
+        end
     end
 end
 
@@ -1044,7 +1257,9 @@ function Refresh()
         for key, chip in pairs(page.mob.chips) do chip:SetPicked(Get("mobClassColor") == key) end
     end
     for key, r in pairs(page.rows) do r.check:SetChecked(Get(key) and true or false) end
+    for _, r in pairs(page.sliders or {}) do r.Refresh() end
     if page.profiles then RefreshProfiles(page.profiles) end
+    ApplyHeights()
     Layout()
 end
 Editor.Refresh = function() Refresh() end

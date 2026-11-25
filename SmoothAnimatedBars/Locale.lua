@@ -109,6 +109,20 @@ local function number(s)
     return s and tonumber((s:gsub(",", "."))) or nil
 end
 
+-- Thousands separators joined: "1.177" (de, es, pt), "1 177" (fr, ru; their non-breaking spaces are plain by now).
+-- The comma ("1,177": en, ko, zh) is Heals.lua's `plain`, run before any language's reader. A decimal never has three
+-- digits after its point in Forever's text ("1,5 Sek."), so a group of exactly three is taken for thousands. A review
+-- found these readers took "Heilt ... um 1.177 bis 1.309." for 177 (the separator text Wowhead's cases leave out).
+-- Repeated until none is left, as one pass joins only every other group of "1.234.567".
+local function joinThousands(desc)
+    local n
+    repeat
+        desc, n = desc:gsub("([0-9])[%. ]([0-9][0-9][0-9])%f[^0-9]", "%1%2")
+    until n == 0
+    return desc
+end
+L.joinThousands = joinThousands
+
 -- spec: the language's wording, every pattern matched against the description as it is (digits as [0-9] next to
 -- multibyte text, as the DoT patterns spell them):
 --   heal   = patterns, any of which marks a heal, anchored at the text's start as the English reader's are ("^Cura",
@@ -128,7 +142,7 @@ end
 --            seconds; fed = patterns capturing how many seconds of eating bring a buff.
 function L.healReader(spec)
     local function parseHeal(desc)
-        desc = desc:gsub("^ +", "")
+        desc = joinThousands((desc:gsub("^ +", "")))
         if first(desc, spec.rest) or first(desc, spec.skip) or not first(desc, spec.heal) then return nil end
         local direct = number((desc:match(spec.range))) or 0
         local over, duration
@@ -151,6 +165,7 @@ function L.healReader(spec)
         return over, duration, direct
     end
     local function parseRest(desc)
+        desc = joinThousands(desc)
         if not first(desc, spec.rest) then return nil end
         local duration = number((first(desc, spec.restOver)))
         if not duration or duration <= 0 then return nil end

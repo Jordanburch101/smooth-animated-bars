@@ -135,10 +135,20 @@ local function parseRest(desc)
 end
 
 -- The readers the rest of this file uses: the English ones, then every other language's (Locale.lua, as the DoTs
--- are read), on the text with its non-breaking spaces made plain (Wowhead's have them; %s does not match them).
+-- are read), on the text with its non-breaking spaces made plain (Wowhead's have them; %s does not match them) and
+-- English thousands separators dropped: the client writes "Heals a friendly target for 1,177 to 1,309." (reported:
+-- Holy Light rank 8, the first rank over 999, showed nothing while the lower ranks worked; Wowhead's text has no
+-- commas, so the cases never had one). Korean and Chinese write the comma too; the other languages' "1.177" and
+-- "1 177" are joined by their readers (Locale.lua, `joinThousands`). Repeated until none is left, as one pass joins
+-- only every other group of "1,234,567".
 local function plain(desc)
     if type(desc) ~= "string" or isSecret(desc) then return nil end
-    return (desc:gsub("\194\160", " "))
+    desc = desc:gsub("\194\160", " "):gsub("\226\128\175", " ")
+    local n
+    repeat
+        desc, n = desc:gsub("(%d),(%d%d%d)%f[^%d]", "%1%2")
+    until n == 0
+    return desc
 end
 
 local function readHeal(desc)
@@ -786,6 +796,43 @@ function Heals.Debug(n)
     end
     for i = math.max(1, #log - (n or 10) + 1), #log do out[#out + 1] = log[i] end
     return out
+end
+
+-- A spell another group member casts: the school of the heal liquid it would show in (by the caster's class, as the
+-- player's own heals), or nil when it is no heal, its text cannot be read, or the class is not a healer's or is secret.
+-- For others' heals on the heal marker (HealMarker.lua), whose amount says nothing of who heals.
+-- Second value, why (for /sab heals): "heal", "helpful" (no text to read, the game calls it helpful), "no heal",
+-- "no text", "unreadable", "not a healer". The class is asked first, so a mage's casts read no spell text, and what a
+-- spell's text says is kept by its ID (every language's readers may run over it).
+local castKinds = {} -- spell ID -> "heal" or "no heal", once its text has been read
+function Heals.CastSchool(unit, spellID)
+    if spellID == nil or isSecret(spellID) then return nil, "unreadable" end
+    local okClass, _, class = pcall(UnitClass, unit)
+    if not readable(okClass, class) or not CLASS_SCHOOLS[class] then return nil, "not a healer" end
+    local why = castKinds[spellID]
+    if not why then
+        local ok, name, desc = pcall(spellNameAndDescription, spellID)
+        if not ok or not name then return nil, "unreadable" end
+        -- Over time, or direct only (Flash Heal reads as nil, nil and its direct amount).
+        local over, _, direct = readHeal(desc)
+        if over or (direct and direct > 0) then
+            why = "heal"
+            castKinds[spellID] = why
+        elseif type(desc) == "string" and desc ~= "" then
+            castKinds[spellID] = "no heal"
+            return nil, "no heal"
+        else
+            -- A spell the player does not know may have no text until the client loads it (a paladin's Holy Light on
+            -- a priest's client, seen in game as the shared look): the game's own word that it is helpful stands in,
+            -- and the text is asked for, for the next cast.
+            if C_Spell and C_Spell.RequestLoadSpellData then pcall(C_Spell.RequestLoadSpellData, spellID) end
+            local okHelp, helpful = pcall(C_Spell and C_Spell.IsSpellHelpful or IsHelpfulSpell, spellID)
+            if not (okHelp and helpful == true) then return nil, "no text" end
+            why = "helpful"
+        end
+    end
+    if why == "no heal" then return nil, why end
+    return CLASS_SCHOOLS[class], why
 end
 
 -- For the tests: the English readers, and the ones that try every language.
