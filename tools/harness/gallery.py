@@ -813,8 +813,11 @@ def tall(art):
                 canvas.alpha_composite(piece, (fx + round((pcx - psize / 2) * K), fy + round((pcy - psize / 2) * K)))
                 drawn = True
             src = ((ax0 + l * aw) * ppu, (ay0 + top * ah) * ppu, (ax0 + r * aw) * ppu, (ay0 + bottom * ah) * ppu)
-            piece = raw_art.crop(tuple(round(v) for v in src)).resize((max(1, round(sw_ * K)), max(1, round(sh_ * K))),
-                                                                      Image.LANCZOS)
+            # Each edge rounded to the pixel, not the size: rounding the size left a column of the backdrop between the
+            # panel's end and the strip carried under the ring once the ring grew (seen in the GIF; in game they meet).
+            px0, py0 = round(dx * K), round(dy * K)
+            pw, ph = max(1, round((dx + sw_) * K) - px0), max(1, round((dy + sh_) * K) - py0)
+            piece = raw_art.crop(tuple(round(v) for v in src)).resize((pw, ph), Image.LANCZOS)
             if mx is not False:
                 # CircleMask: a circle filling the mask's square.
                 yy, xx = np.mgrid[0:piece.height, 0:piece.width]
@@ -823,7 +826,7 @@ def tall(art):
                 a = np.asarray(piece).astype(np.float32)
                 a[..., 3] *= inside
                 piece = Image.fromarray(a.astype(np.uint8), "RGBA")
-            canvas.alpha_composite(piece, (fx + round(dx * K), fy + round(dy * K)))
+            canvas.alpha_composite(piece, (fx + px0, fy + py0))
         img = canvas.convert("RGB")
         for kind, bar0, d in (("health", 43, dh), ("power", 61, dp)):
             mask = tall_mask(masks[kind], bar0, boxes[kind][1], bands[kind], d, fh)
