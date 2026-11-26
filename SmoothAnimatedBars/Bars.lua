@@ -176,10 +176,20 @@ local POWER_COLORS = {
     RUNIC_POWER = { 0, 0.82, 1 },
 }
 
+-- Whether any of the values is secret. Called many times a frame with one to three values: those are taken without a
+-- select() per value (each a call of its own), the same checks in the same order.
 local function Secret(...)
-    if not issecretvalue then return false end
-    for i = 1, select("#", ...) do
-        if issecretvalue((select(i, ...))) then return true end
+    local is = issecretvalue
+    if not is then return false end
+    local n = select("#", ...)
+    local a, b, c = ...
+    if is(a) then return true end
+    if n < 2 then return false end
+    if is(b) then return true end
+    if n < 3 then return false end
+    if is(c) then return true end
+    for i = 4, n do
+        if is((select(i, ...))) then return true end
     end
     return false
 end
@@ -189,7 +199,8 @@ end
 -- (Bars.raid.SizeOf).
 local function Size(region, w0, h0)
     local w, h = region:GetWidth(), region:GetHeight()
-    local secret = Secret(w, h)
+    local is = issecretvalue -- Secret(w, h), asked every frame of each bar that shows
+    local secret = is and (is(w) or is(h))
     if secret or w < 1 or h < 1 then
         local rw, rh = Bars.raid.SizeOf(region)
         if rw then return rw, rh end
@@ -686,7 +697,8 @@ end
 -- (SecretReturnsForAspect Alpha), which cannot be compared, so it is then set without looking.
 local function AlphaTo(region, alpha)
     local now = region:GetAlpha()
-    if Secret(now) or now ~= alpha then region:SetAlpha(alpha) end
+    local is = issecretvalue -- Secret(now): every frame on each bar's game fill
+    if (is and is(now)) or now ~= alpha then region:SetAlpha(alpha) end
 end
 
 -- How a bar can be seen: "shown", "hidden" (IsVisible says no) or "faded" (shown, but its effective alpha under 0.01).
@@ -696,10 +708,11 @@ end
 -- is under pcall: Forever's docs mark it RequiresScriptObjectAlphaAccess, which may refuse some frames.
 local function Sight(region)
     local v = region:IsVisible()
-    if Secret(v) then return "shown" end
+    local is = issecretvalue -- Secret(v) and Secret(a), every frame of each bar
+    if is and is(v) then return "shown" end
     if not v then return "hidden" end
     local ok, a = pcall(region.GetEffectiveAlpha, region)
-    if not ok or Secret(a) or type(a) ~= "number" then return "shown" end
+    if not ok or (is and is(a)) or type(a) ~= "number" then return "shown" end
     return a < 0.01 and "faded" or "shown"
 end
 
@@ -749,13 +762,21 @@ end
 -- What the game draws in the bar that the liquid replaces: the fill, and on the player's health bar
 -- the red bar of the health-loss animation. That one sits behind the game's fill, but once shown it
 -- draws over the liquid at the same frame level, so it hides with the fill.
+-- Every frame of each bar that shows, so AlphaTo is written out here.
 local function HideGameFill(bar, alpha, external)
     local fill = bar:GetStatusBarTexture()
-    if fill then AlphaTo(fill, alpha) end
+    local is = issecretvalue
+    if fill then
+        local now = fill:GetAlpha()
+        if (is and is(now)) or now ~= alpha then fill:SetAlpha(alpha) end
+    end
     if external then return end -- another addon's: only its fill
     local loss = bar.AnimatedLossBar
     local lossFill = type(loss) == "table" and loss.GetStatusBarTexture and loss:GetStatusBarTexture()
-    if lossFill then AlphaTo(lossFill, alpha) end
+    if lossFill then
+        local now = lossFill:GetAlpha()
+        if (is and is(now)) or now ~= alpha then lossFill:SetAlpha(alpha) end
+    end
 end
 
 local FuryOff -- the rage bar's fury going (below)
@@ -1518,7 +1539,8 @@ FuryOff = function(b)
 end
 
 local function Fury(b, dt, w, h)
-    local c = ns.Core.Get("rageFury") and ShowsRage(b) and Curves()
+    -- Curves() written out: made once, false where the client has none.
+    local c = ns.Core.Get("rageFury") and ShowsRage(b) and (curves or (curves == nil and Curves()) or nil)
     local f = b.fury
     if not c then
         FuryOff(b)
@@ -1534,8 +1556,10 @@ local function Fury(b, dt, w, h)
         f.liquid:Snap(w)
         ListenForSpends()
     end
-    if w ~= f.liquid.width - ROOM or h ~= f.liquid.height then f.liquid:SetSize(w + ROOM, h) end
-    local now = GetTime()
+    local liquid = f.liquid
+    if w ~= liquid.width - ROOM or h ~= liquid.height then liquid:SetSize(w + ROOM, h) end
+    -- The frame's time, asked only on the frames that need it (a sample, a burst): it is the same all through a frame.
+    local now
 
     -- How much shows, from the rage itself. The last RELEASE_LAG seconds of it are kept for a burst.
     f.feed = f.feed - dt
@@ -1544,9 +1568,20 @@ local function Fury(b, dt, w, h)
         local ok, fury = pcall(UnitPowerPercent, b.unit, nil, false, c.fury)
         local ok2, ready = pcall(UnitPowerPercent, b.unit, nil, false, c.ready)
         if ok and ok2 then
-            local samples = f.samples
-            samples[#samples + 1] = { now, fury, ready }
-            while #samples > 1 and samples[2][1] <= now - RELEASE_LAG do table.remove(samples, 1) end
+            now = GetTime()
+            -- Each sample's table is used again once it is dropped (a new one twenty times a second was garbage). Nothing
+            -- keeps a sample past the frame it is read in (Release, the burst's end below).
+            local samples, spare = f.samples, f.spare
+            if not spare then
+                spare = {}
+                f.spare = spare
+            end
+            local n = #spare
+            local s = spare[n]
+            if s then spare[n] = nil else s = {} end
+            s[1], s[2], s[3] = now, fury, ready
+            samples[#samples + 1] = s
+            while #samples > 1 and samples[2][1] <= now - RELEASE_LAG do spare[#spare + 1] = table.remove(samples, 1) end
             if not f.held then
                 f.frame:SetAlpha(fury)
                 f.ready:SetAlpha(ready)
@@ -1557,7 +1592,7 @@ local function Fury(b, dt, w, h)
     -- A burst holds at the rage there was and fades, then the fury comes back in at what is left.
     local inner, bursting = 1, f.releaseAt ~= nil
     if bursting then
-        local age = now - f.releaseAt
+        local age = (now or GetTime()) - f.releaseAt
         if age < RELEASE_HOLD + RELEASE_FADE then
             inner = min(1, 1 - (age - RELEASE_HOLD) / RELEASE_FADE)
         else
@@ -1580,13 +1615,13 @@ local function Fury(b, dt, w, h)
 
     -- Always furious inside, and the full bar throbs like a heartbeat, two beats close together, each time spitting
     -- sparks from the front and making it tremble harder.
-    local liquid = f.liquid
     liquid:Warm(FURY_ENERGY)
     liquid:Storm(FURY_STORM)
     f.beat = f.beat + dt
     if f.beat >= READY_BEAT then
         f.beat = f.beat - READY_BEAT
-        local _, tip, to = FuryColors(f)
+        local theme = liquid.theme -- FuryColors(f), written out
+        local tip, to = theme.tip, theme.splashTo
         for _ = 1, READY_SPARKS do
             liquid:EmitMote(w - Rand(0, 6), Rand(2, math.max(2, h - 2)), Rand(-10, 50), Rand(20, 80), Rand(0.4, 0.9),
                 Rand(7, 11), tip, to, SPARK)
@@ -1595,11 +1630,18 @@ local function Fury(b, dt, w, h)
     local p = f.beat / READY_BEAT
     local throb = math.exp(-p * 10) + (p > 0.22 and 0.6 * math.exp(-(p - 0.22) * 10) or 0)
     f.flash = math.max(0, f.flash - dt / (RELEASE_HOLD + RELEASE_FADE))
-    local glow = FuryColors(f)
-    f.glow:SetVertexColor(glow[1], glow[2], glow[3])
+    local glow = liquid.theme.glow -- FuryColors(f), written out
+    local r, g, bl = glow[1], glow[2], glow[3]
+    -- The glow's and the wash's colour (the fury's glow) changes only with its theme, so it is set again only then. Each
+    -- one's alpha is set after it every frame, so the result is the same whether or not SetVertexColor puts it back to 1.
+    local newColor = r ~= f.glowR or g ~= f.glowG or bl ~= f.glowB
+    if newColor then
+        f.glowR, f.glowG, f.glowB = r, g, bl
+        f.glow:SetVertexColor(r, g, bl)
+    end
     f.glow:SetSize(h * 7 * (1 + 0.3 * throb + 0.5 * f.flash), h * 2.4)
     f.glow:SetAlpha(min(1, 0.4 + 0.5 * throb + 0.4 * f.flash))
-    f.wash:SetVertexColor(glow[1], glow[2], glow[3])
+    if newColor then f.wash:SetVertexColor(r, g, bl) end
     f.wash:SetAlpha(min(1, 0.05 + 0.2 * throb + 0.2 * f.flash))
     liquid:SetTremble(FURY_TREMBLE * (1 + 1.5 * throb))
 
@@ -1684,7 +1726,7 @@ function Bars.raid.Follow(b, dt)
 end
 
 local function UpdateBar(b, dt)
-    local bar = b.bar
+    local bar, spot = b.bar, b.spot -- spot read once: its fields are asked a dozen times a frame
     -- While /sab perf times every part, each step's time too (Bars.TimeStep).
     local lap = ns.Timing.on and debugprofilestop()
     b.sight = Sight(bar)
@@ -1698,21 +1740,21 @@ local function UpdateBar(b, dt)
         return
     end
     b.rested = nil -- seen again whatever Bar Height said
-    if b.spot.party then
+    if spot.party then
         PartyFollow(b, dt)
         if b.away then return end
-    elseif b.spot.raid then
+    elseif spot.raid then
         Bars.raid.Follow(b, dt)
         if b.away then return end
     end
     -- No size to draw at: the game's own fill shows meanwhile, never an empty bar.
     local w, h = Size(bar, b.width, b.height)
     if w < 1 or h < 1 then
-        HideGameFill(bar, 1, b.spot.external)
+        HideGameFill(bar, 1, spot.external)
         return
     end
     -- The game can swap or reset its fill textures; keep them hidden under the liquid.
-    HideGameFill(bar, 0, b.spot.external)
+    HideGameFill(bar, 0, spot.external)
     -- Back after being hidden (the Personal Resource Display shown in combat only, the mana under a druid's form, a
     -- frame with no unit): the liquid starts where the bar is, not easing over from where it was, and calm, not
     -- finishing a burst from before it was hidden.
@@ -1747,12 +1789,12 @@ local function UpdateBar(b, dt)
     local idleFps = IDLE_FPS
     -- A flat bar's own colour can change under it (a plate once tapped, the Personal Resource Display's health with
     -- its class colour setting), and its texts are copies.
-    if b.spot.flat then
+    if spot.flat then
         b.colorIn = (b.colorIn or 0) - dt
         if b.colorIn <= 0 then
             b.colorIn = PLATE_COLOR_EVERY
             ApplyColor(b)
-            if not b.spot.plate and not b.spot.preview then RaisePlate(b) end
+            if not spot.plate and not spot.preview then RaisePlate(b) end
         end
         b.textIn = (b.textIn or 0) - dt
         if b.textIn <= 0 then
@@ -1768,7 +1810,7 @@ local function UpdateBar(b, dt)
             SyncPlateTexts(b)
         end
     end
-    if b.spot.external then
+    if spot.external then
         b.colorIn = (b.colorIn or 0) - dt
         if b.colorIn <= 0 then
             b.colorIn = External.LOOK_EVERY
@@ -1777,15 +1819,16 @@ local function UpdateBar(b, dt)
         end
     end
     if lap then lap = Bars.TimeStep("bars > looks and texts", lap) end
-    if b.spot.party or b.spot.slow then idleFps = PARTY_FPS end
+    if spot.party or spot.slow then idleFps = PARTY_FPS end
     -- An example in the editor that is not being edited (Preview.SetActive) idles slower still.
-    if b.spot.calm then idleFps = 10 end
-    if b.spot.raid then idleFps = Bars.raid.Rate() end
-    if b.spot.plate then
-        idleFps = b.spot.calm and 10 or PLATE_IDLE_FPS
+    if spot.calm then idleFps = 10 end
+    if spot.raid then idleFps = Bars.raid.Rate() end
+    if spot.plate then
+        idleFps = spot.calm and 10 or PLATE_IDLE_FPS
     else
-        Inflow(b, dt, w, h)
-        BuildUp(b, dt, w, h)
+        -- Each looked at only when it has something to do (their own first test), a call saved every frame.
+        if b.inflow then Inflow(b, dt, w, h) end
+        if b.waited then BuildUp(b, dt, w, h) end
         if b.kind == "power" then
             -- Timed only while /sab perf times every part (lap), as the bar's own time is (OnUpdate).
             local t0 = lap and debugprofilestop()
@@ -1799,7 +1842,7 @@ local function UpdateBar(b, dt)
     -- Moving, it updates every frame, or at the Animation Frame Rate (Liquid:Due).
     if b.drawNow then
         b.drawNow, b.idle, b.liquid.busyAcc = nil, 0, 0
-    elseif b.spot.party or b.spot.slow or b.liquid:IsQuiet() then
+    elseif spot.party or spot.slow or b.liquid:IsQuiet() then
         b.idle = b.idle + dt
         if b.idle < 1 / idleFps then return end
         dt, b.idle = b.idle, 0
@@ -2135,8 +2178,12 @@ local function RunBar(b, dt)
         if b.spot.external then b.reported = true end
         if b.token then plateOf[b.token] = nil end
     end
-    -- Counted for /sab perf only while it shows: a hidden frame's bar (no focus, no pet) costs next to nothing.
-    return ok and Seen(b)
+    -- Counted for /sab perf only while it shows: a hidden frame's bar (no focus, no pet) costs next to nothing. Seen(b),
+    -- written out.
+    if not ok then return false end
+    local sight = b.sight
+    if sight == nil then sight = Sight(b.bar) end
+    return sight == "shown"
 end
 
 -- An error in one bar is kept for /sab debug and reported once, and that bar goes back to the
@@ -2175,26 +2222,45 @@ local function OnUpdate(_, elapsed)
     -- Each bar and group is timed only while /sab perf times every part (ns.Timing.on): two clock reads and the
     -- bookkeeping for each of the forty or so bars, every frame, were a few percent of what the addon cost.
     local groups = clock and ns.Timing.on and perf.groups or nil
+    -- Most of the forty or so bars here are off or asleep (Bars.Sleep), and a RunBar call each for nothing was a fifth of
+    -- this file's Lua work a frame. So RunBar's first tests are written out in each loop below: a bar that is not live
+    -- or has failed is passed over, and a sleeping one has its wait counted down as RunBar would, woken (asleep cleared,
+    -- so RunBar does not count it again) only once the wait is over.
     if groups then
         for _, g in ipairs(PERF_GROUPS) do groups[perf.MS[g]], groups[g] = 0, 0 end
         for _, b in pairs(bars) do
-            local g = PerfGroup(b)
-            local tb = clock()
-            local shows = RunBar(b, dt)
-            if shows then
-                units = units + 1
-                if b.spot.raid then raid = raid + 1 end
+            local due = b.live and not b.err
+            if due and b.asleep then
+                local wait = (b.wakeIn or 0) - dt
+                b.wakeIn = wait
+                if wait > 0 then due = false else b.asleep = nil end
             end
-            local ms = clock() - tb
-            b.perfMs = (b.perfMs or 0) + ms
-            if g then
-                groups[perf.MS[g]] = groups[perf.MS[g]] + ms
-                if shows then groups[g] = groups[g] + 1 end
+            -- Timed only when it runs: one that does not costs next to nothing.
+            if due then
+                local g = PerfGroup(b)
+                local tb = clock()
+                local shows = RunBar(b, dt)
+                if shows then
+                    units = units + 1
+                    if b.spot.raid then raid = raid + 1 end
+                end
+                local ms = clock() - tb
+                b.perfMs = (b.perfMs or 0) + ms
+                if g then
+                    groups[perf.MS[g]] = groups[perf.MS[g]] + ms
+                    if shows then groups[g] = groups[g] + 1 end
+                end
             end
         end
     else
         for _, b in pairs(bars) do
-            if RunBar(b, dt) then
+            local due = b.live and not b.err
+            if due and b.asleep then
+                local wait = (b.wakeIn or 0) - dt
+                b.wakeIn = wait
+                if wait > 0 then due = false else b.asleep = nil end
+            end
+            if due and RunBar(b, dt) then
                 units = units + 1
                 if b.spot.raid then raid = raid + 1 end
             end
@@ -2213,7 +2279,16 @@ local function OnUpdate(_, elapsed)
     end
     local t1 = clock and clock()
     if next(pending) then TryPending() end
-    for _, b in pairs(plates) do if RunBar(b, dt) then live = live + 1 end end
+    for _, b in pairs(plates) do
+        -- RunBar's first tests written out, as for the bars above: the pool's plates without a mob pass by.
+        local due = b.live and not b.err
+        if due and b.asleep then
+            local wait = (b.wakeIn or 0) - dt
+            b.wakeIn = wait
+            if wait > 0 then due = false else b.asleep = nil end
+        end
+        if due and RunBar(b, dt) then live = live + 1 end
+    end
     if partyWaiting then LookForParty(dt) end
     if Bars.raid.watch then Bars.raid.Look(dt) end
     if clock then
