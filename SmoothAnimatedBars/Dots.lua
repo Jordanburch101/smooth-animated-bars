@@ -156,10 +156,12 @@ local function trace(msg)
     if #log > MAX_TRACE_LINES then table.remove(log, 1) end
 end
 
+-- issecretvalue takes any value without erroring (Bars.lua calls it directly), so it is called without a pcall: it
+-- is asked a few dozen times an event.
 local function isSecret(v)
-    if type(issecretvalue) ~= "function" then return false end
-    local ok, r = pcall(issecretvalue, v)
-    return ok and r or false
+    local f = issecretvalue
+    if type(f) ~= "function" then return false end
+    return f(v) and true or false
 end
 
 -- The nameplate token ("nameplate3") of the mob behind `unit`, or nil (no plate, plates off, or unreadable).

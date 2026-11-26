@@ -167,3 +167,28 @@ drawing 0.096 ms an update to 0.061-0.065; another fight with them on, with half
 what is left in the slowest frames is a burst of events in one frame (DoT tracking up to 1.1 ms, the bars' events 0.8,
 heal tracking 0.5), and once the idle heal marker at 2.2 ms. Idle was 0.42 to 0.56 ms either way (it depends on what
 moves). The rig with all five: a fight at 92 fps 1.17 to 0.88 ms, idle at 120 fps 0.55 to 0.48.
+
+## Event handlers (offline, 2026-11-27)
+
+What is left in a fight's slowest frames is a burst of events landing in one frame. `tools/harness/events.py` counts
+every instruction each kind of event costs on the player's settings: a cast sent cost about 5000 instructions and one
+succeeded 3600 to 4000, against 300 to 1400 for a hit, health or power; a burst of a fight's events in one frame 25.4k
+(about 0.7 ms at 28 us a thousand, in line with the event bursts seen in game). Two causes, both cut exactly:
+
+- `Heals.lua`'s `recipient` searched all 44 group units (party1..4, raid1..40) twice for a cast sent at a named target,
+  each a `pcall`ed `UnitExists`, alone too. With neither party1 nor raid1 there (no group) it searches none (`members`).
+- Every cast's text went through every language's readers again (`Locale.lua`). Readings are kept by text (`Kept`,
+  `Keep`, `Again`, each with its number of values, so a kept reading gives back exactly what reading gave): the readers
+  are pure, every language running in the same order whatever the client's. A secret text is read each time; the store
+  starts over past 300 texts.
+
+Also: `Dots.lua`'s and `Heals.lua`'s `isSecret` call `issecretvalue` without a `pcall` (Bars.lua already did). A cast sent
+5009 instructions to 1925, one succeeded about 600 fewer at its first reading and most of the rest after; the burst 25.4k
+to 13.2k. Every reading case passes (the DoT and heal cases in every language). Not yet seen in game.
+
+Left alone: a raid member's health or power event costs the bars about 300 instructions with raid frames off (the
+handler looks through every bar for its unit); an index of the units with a live bar would need keeping wherever a bar's
+unit changes, for about 0.02 ms a frame in a busy raid. DoT tracking hears every unit's hits (about 190 instructions for a
+group member's), but its handling of them is not provably nothing. `/sab perf calib` now also times `SetAlpha` through
+the method kept in a local ("SetAlpha kept"), to tell whether keeping widget methods in locals in the liquid's loops is
+worth it (the rig cannot: the same instructions).

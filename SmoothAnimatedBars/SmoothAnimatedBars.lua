@@ -886,6 +886,12 @@ function Core.Calibrate()
     local tests = {
         { "loop", function() for _ = 1, half do rawequal(t, A); rawequal(t, B) end end },
         { "SetAlpha", function() for _ = 1, half do t:SetAlpha(A); t:SetAlpha(B) end end },
+        -- The same through the method kept in a local: whether skipping the widget's metatable lookup saves enough to
+        -- keep methods in locals in the liquid's loops (the rig cannot tell: it is the same instructions).
+        { "SetAlpha kept", function()
+            local SetAlpha = t.SetAlpha
+            for _ = 1, half do SetAlpha(t, A); SetAlpha(t, B) end
+        end },
         { "SetVertexColor", function() for _ = 1, half do t:SetVertexColor(1, 1, 1, A); t:SetVertexColor(0.9, 1, 1, B) end end },
         { "SetTexCoord", function() for _ = 1, half do t:SetTexCoord(0, 1, 0, 1); t:SetTexCoord(0.1, 0.9, 0, 1) end end },
         { "SetWidth", function() for _ = 1, half do t:SetWidth(1); t:SetWidth(1.5) end end },

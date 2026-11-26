@@ -63,10 +63,12 @@ local function trace(msg)
     if #log > MAX_TRACE_LINES then table.remove(log, 1) end
 end
 
+-- issecretvalue takes any value without erroring (Bars.lua calls it directly), so it is called without a pcall: it
+-- is asked a few dozen times an event.
 local function isSecret(v)
-    if type(issecretvalue) ~= "function" then return false end
-    local ok, r = pcall(issecretvalue, v)
-    return ok and r or false
+    local f = issecretvalue
+    if type(f) ~= "function" then return false end
+    return f(v) and true or false
 end
 
 local function readable(ok, v)
@@ -279,6 +281,14 @@ local function unitOf(who, units)
     end
 end
 
+-- The group's units to search: none when neither party1 nor raid1 exists (no group: the client fills both from 1), so
+-- a cast sent alone does not ask after 44 units twice (about 3500 instructions a cast, by tools/harness/events.py).
+local NO_GROUP = {}
+local function members()
+    if not exists("party1") and not exists("raid1") then return NO_GROUP end
+    return GROUP
+end
+
 -- Who a cast sent at targetName goes to: "player", a group member's key (keyOf), or nil for anyone else. A named target
 -- is known only by name; with no name the cast goes to the target if the player can help it, else to the player.
 -- The second value names the group unit, for the trace.
@@ -288,9 +298,10 @@ local function recipient(targetName)
     if isSecret(targetName) then return nil end
     if type(targetName) == "string" and targetName ~= "" then
         -- Exact readings first, the player's then each member's; then the loose "Name-..." ones in the same order.
+        local group = members()
         for _, loose in ipairs({ false, true }) do
             if isPlayerName(targetName, loose) then return "player" end
-            for _, unit in ipairs(GROUP) do
+            for _, unit in ipairs(group) do
                 if exists(unit) and isUnitName(unit, targetName, loose) then return keyOf(unit), unit end
             end
         end
@@ -299,7 +310,7 @@ local function recipient(targetName)
     if not UnitExists("target") then return "player" end
     local okMe, isMe = pcall(UnitIsUnit, "target", "player")
     if readable(okMe, isMe) and isMe then return "player" end
-    for _, unit in ipairs(GROUP) do
+    for _, unit in ipairs(members()) do
         if exists(unit) then
             local ok, same = pcall(UnitIsUnit, "target", unit)
             if readable(ok, same) and same then return keyOf(unit), unit end

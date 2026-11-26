@@ -118,6 +118,15 @@ The Lua counts (here and in `bench.py`) sample every 50 instructions with a coun
 act: in Lua 5.1 the hook's own instructions use up the count, and armed once it counted the addon's Lua about three
 times over, most where samples took its longer path. `bench.py --by luafn` sums the Lua by function.
 
+`tools/harness/events.py` counts what the event handlers cost, the other half of a slow frame: each kind of event a
+fight brings (hits, health and power, auras, a warrior's casts sent and succeeded) and all of them in one frame, every
+Lua instruction counted, with `--detail` (each costly event's costliest functions) and `--ref` (the same events at a git
+ref):
+
+```powershell
+cd tools/harness; ../venv/Scripts/python events.py ../../SmoothAnimatedBars --ref HEAD --detail
+```
+
 A change made for speed must not change the look. `tools/harness/samelook.py` plays the same scenarios (classes,
 themes, effects at their strongest and off, a reversed bar, quiet and fighting) on the addon at a git ref and on the
 working copy, and compares every texture that shows, every frame: place, size, texture coordinates, colours, alpha,

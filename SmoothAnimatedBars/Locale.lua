@@ -68,27 +68,71 @@ local function ask(fn, ...)
     if ok then return a, b, c, d end
 end
 
+-- Each reading kept by its text: every language's readers run in the same order whatever the client's language, so the
+-- same text always reads the same, and a cast's text was read again at every cast (about 3500 instructions a cast through
+-- the languages' patterns, by tools/harness/events.py). A secret text is never a key: read each time. The store starts
+-- over past READINGS_MAX texts (a spell's text changes with its rank and the player's power, not much more).
+local READINGS_MAX = 300
+local readings, readingsCount = {}, 0
+
+local function Kept(kind, desc)
+    if type(desc) ~= "string" or (issecretvalue and issecretvalue(desc)) then return nil end
+    local byText = readings[kind]
+    return byText and byText[desc]
+end
+
+-- A reading kept with how many values it had, so a kept one gives back exactly what reading gave (none, where nothing
+-- read the text): Again.
+local function Keep(kind, desc, ...)
+    if type(desc) ~= "string" or (issecretvalue and issecretvalue(desc)) then return ... end
+    if readingsCount >= READINGS_MAX then readings, readingsCount = {}, 0 end
+    local byText = readings[kind]
+    if not byText then
+        byText = {}
+        readings[kind] = byText
+    end
+    byText[desc] = { n = select("#", ...), ... }
+    readingsCount = readingsCount + 1
+    return ...
+end
+
+local function Again(r)
+    return unpack(r, 1, r.n)
+end
+
 -- The first registered language that reads `desc` as a DoT: total damage, school mask, duration, stated tick
 -- interval (the returns of parseDot in Dots.lua).
-function L.parseDot(desc, comboPoints)
+local function ParseDot(desc, comboPoints)
     for _, language in ipairs(L.languages) do
         local total, school, duration, interval = ask(language.parseDot, desc, comboPoints)
         if type(total) == "number" and type(duration) == "number" then return total, school, duration, interval end
     end
 end
 
+function L.parseDot(desc, comboPoints)
+    local kind = "dot" .. tostring(comboPoints)
+    local r = Kept(kind, desc)
+    if r then return Again(r) end
+    return Keep(kind, desc, ParseDot(desc, comboPoints))
+end
+
 function L.isFinisher(desc)
+    local r = Kept("finisher", desc)
+    if r then return Again(r) end
     for _, language in ipairs(L.languages) do
-        if ask(language.isFinisher, desc) then return true end
+        if ask(language.isFinisher, desc) then return (Keep("finisher", desc, true)) end
     end
-    return false
+    return (Keep("finisher", desc, false))
 end
 
 function L.comboPointsAwarded(desc)
+    local r = Kept("combo", desc)
+    if r then return Again(r) end
     for _, language in ipairs(L.languages) do
         local points = ask(language.comboPointsAwarded, desc)
-        if type(points) == "number" then return points end
+        if type(points) == "number" then return (Keep("combo", desc, points)) end
     end
+    return Keep("combo", desc)
 end
 
 --------------------------------------------------------------------------------
@@ -182,19 +226,31 @@ function L.healReader(spec)
 end
 
 -- The first registered language that reads `desc` as a heal: amount over time, its duration, the direct amount.
-function L.parseHeal(desc)
+local function ParseHeal(desc)
     for _, language in ipairs(L.languages) do
         local over, duration, direct = ask(language.parseHeal, desc)
         if over or (type(direct) == "number" and direct > 0) then return over, duration, direct end
     end
 end
 
+function L.parseHeal(desc)
+    local r = Kept("heal", desc)
+    if r then return Again(r) end
+    return Keep("heal", desc, ParseHeal(desc))
+end
+
 -- The first registered language that reads `desc` as food or drink: health, mana, seconds, seconds to a buff.
-function L.parseRest(desc)
+local function ParseRest(desc)
     for _, language in ipairs(L.languages) do
         local health, mana, duration, fed = ask(language.parseRest, desc)
         if type(duration) == "number" and (health or mana) then return health, mana, duration, fed end
     end
+end
+
+function L.parseRest(desc)
+    local r = Kept("rest", desc)
+    if r then return Again(r) end
+    return Keep("rest", desc, ParseRest(desc))
 end
 
 -- Words nearly every English description has and other languages' descriptions don't ("sec" is left out: French
