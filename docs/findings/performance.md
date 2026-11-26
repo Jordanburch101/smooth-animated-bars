@@ -154,3 +154,8 @@ difference):
 | Bar Height's poll spread over frames, or every 0.2 s | poll peak 5.9k to 1.5k instructions; or half its cost | | copies up to a frame or 0.1 s later |
 | Physics step 1/60 | -3% | -5% | 0.09; not worth it |
 | Drop the swirlB layer | -4% | | 2.86 / 22: visible, no |
+
+`/sab try` puts five of those behind switches to judge in game, all off by default (`Liquid.TRY`): `stagger`, `nocaps`
+(the four added-light layers: cloudLight, core, swirlA, swirlB), `idle20`, `furycap` and `poll2` (every other tick of
+the poll; a look asked for at once never waits). With all off, every texture is the same as before
+(`samelook.py --ref HEAD`). Not yet tried in game.

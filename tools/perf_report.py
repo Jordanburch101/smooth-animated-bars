@@ -76,14 +76,14 @@ def report(log, source):
             zone += " *"
         rows.append((snap, secs))
         out.append(f"{snap.get('when', '?'):<20} {zone[:26]:<26} {plates:6d} {ms(unit)}  {ms(plate)}  {per}  "
-                   f"{peak:7.2f}  {fps:3.0f}  {share:6.1f}%  {snap.get('note') or ''}")
+                   f"{peak:7.2f}  {fps:3.0f}  {share:6.1f}%  {snap.get('note') or ''}{'  [try: ' + snap['try'] + ']' if snap.get('try') else ''}")
     out.append("")
     out.append("ms are the liquid's own updates per frame, averaged over the 10 seconds before each /sab perf.")
     out.append("Frame % is that share of the frame time at the fps then. * = in combat.")
     out.append("The client drawing the textures is not in these numbers: compare fps with plates on and off.")
     # Then each report second by second.
     for i, (snap, secs) in enumerate(rows, 1):
-        out += ["", f"--- {i}. {snap.get('when', '?')}  {snap.get('note') or ''}".rstrip()]
+        out += ["", f"--- {i}. {snap.get('when', '?')}  {snap.get('note') or ''}{'  [try: ' + snap['try'] + ']' if snap.get('try') else ''}".rstrip()]
         out.append(f"plates {'on' if snap.get('platesOn') else 'off'} (at most {snap.get('maxPlates', '?')}, idle "
                    f"{snap.get('plateIdleFps', '?')} fps), textures in live liquids {snap.get('textures', '?')}, "
                    f"addon memory {snap.get('memoryKB', 0):.0f} KB, version {snap.get('version') or '?'}")

@@ -64,6 +64,10 @@ tools/venv/Scripts/python tools/whatsnew_data.py    # SmoothAnimatedBars/WhatsNe
 frames and the enemy nameplates apart, then times every part of the addon over the next 10 seconds (and meanwhile each
 bar: the Personal Resource Display's and the party's, and the costliest bars with their Rage Fury), and saves it all in
 the saved variables. `/sab perf calib` times each kind of widget call and a piece of Lua in the client, for the rig.
+`/sab try [name]` lists or turns over test switches for cuts that change the look or timing a little (`Liquid.TRY`:
+`stagger`, `nocaps`, `idle20`, `furycap`, `poll2`, or `all`), off by default and kept in the saved variables'
+`tryFlags`; each `/sab perf` report records the ones on. The bench's and the rig's `--saved` read them too, so a copy of
+the saved variables with `tryFlags` set predicts a switch's saving.
 After `/reload`:
 
 ```powershell

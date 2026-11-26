@@ -1365,9 +1365,18 @@ function TallFrames.Apply()
         end))
     end
     Look()
-    if AnyTall() and not ticker then ticker = C_Timer.NewTicker(POLL, ns.Timed("Bar Height: poll", Look)) end
+    if AnyTall() and not ticker then ticker = C_Timer.NewTicker(POLL, ns.Timed("Bar Height: poll", TallFrames.Poll)) end
 end
 TallFrames.Start = TallFrames.Apply
+
+-- The ticker's look. /sab try poll2: every other tick, so every 0.2 s (a look asked for at once, above, never waits).
+function TallFrames.Poll()
+    if ns.Liquid.TRY.poll2 then
+        TallFrames.pollSkip = not TallFrames.pollSkip
+        if TallFrames.pollSkip then return end
+    end
+    Look()
+end
 
 -- For /sab debug and the tests: each frame's state.
 function TallFrames.State()
