@@ -5034,6 +5034,10 @@ check(any("The unit frames' bars over the" in m for m in partsChat)
       and np.eval("SmoothAnimatedBarsDB.perfLog[1].seconds[1].detailed") is True
       and np.eval("SmoothAnimatedBarsDB.perfLog[1].seconds[1].bars ~= nil"),
       "with the costliest bars over the seconds timed, kept on the report")
+check(any("Slowest frame:" in m for m in partsChat)
+      and np.eval("SmoothAnimatedBarsDB.perfLog[1].slowest.ms") > 0
+      and np.eval("#SmoothAnimatedBarsDB.perfLog[1].slowest.parts") > 0,
+      "and the slowest frame's parts, to tell a spike in our parts from one outside them")
 # The client writes the saved variables as plain Lua; perf_report.py reads that back into a text report.
 saved = np.eval("""(function()
     local function ser(v, ind)
@@ -5058,7 +5062,7 @@ with tempfile.TemporaryDirectory() as tmp:
         f.write(saved)
     text = "\n".join(perf_report.report(perf_report.load_log(sv), sv))
 check("26 Mobs Pulled" in text and "Elwynn Forest *" in text and text.count("--- ") == 2
-      and "every part over the next 10 s" in text,
+      and "every part over the next 10 s" in text and "slowest frame:" in text,
       "perf_report.py turns the saved reports into a text file: a line each, then each second and every part")
 np.execute("SlashCmdList.SMOOTHANIMATEDBARS('perf clear')")
 check(np.eval("SmoothAnimatedBarsDB.perfLog") is None, "/sab perf clear forgets them")

@@ -938,12 +938,44 @@ end
 local PARTS_SECONDS = 10
 local partsFrame
 
+-- One of the game profiler's figures for the addon by its metric's name (Enum.AddOnProfilerMetric), or nil where the
+-- client has no such metric: the frames over 5 and 10 ms are counted over the timing, to set beside the slowest frame.
+function Core.ProfilerMetric(name)
+    local metric = C_AddOnProfiler and C_AddOnProfiler.GetAddOnMetric and Enum and Enum.AddOnProfilerMetric
+        and Enum.AddOnProfilerMetric[name]
+    if not metric then return nil end
+    local ok, v = pcall(C_AddOnProfiler.GetAddOnMetric, ADDON_NAME, metric)
+    if ok and type(v) == "number" and not (issecretvalue and issecretvalue(v)) then return v end
+end
+
+local SPIKE_METRICS = { "CountTimeOver5Ms", "CountTimeOver10Ms" }
+
 local function PartsReport(entry)
     local T = ns.Timing
     if not T or T.on then return end
     T.ms, T.calls, T.frames, T.on = {}, {}, 0, true
     partsFrame = partsFrame or CreateFrame("Frame")
-    partsFrame:SetScript("OnUpdate", function() T.frames = T.frames + 1 end)
+    -- The slowest frame's parts: each frame, what every part took since the last (only while timing, so the tables
+    -- made here cost nothing otherwise). A spike the game's profiler counts but no part shows is outside them: the
+    -- garbage collector, most likely.
+    local last, slowest = {}, { ms = 0 }
+    local spikesFrom = {}
+    for _, name in ipairs(SPIKE_METRICS) do spikesFrom[name] = Core.ProfilerMetric(name) end
+    partsFrame:SetScript("OnUpdate", function()
+        T.frames = T.frames + 1
+        local frameMs = 0
+        for part, ms in pairs(T.ms) do
+            if not part:find(" > ", 1, true) then frameMs = frameMs + ms - (last[part] or 0) end
+        end
+        if frameMs > slowest.ms then
+            slowest = { ms = frameMs, parts = {} }
+            for part, ms in pairs(T.ms) do
+                local d = ms - (last[part] or 0)
+                if d >= 0.01 then slowest.parts[#slowest.parts + 1] = { part = part, ms = d } end
+            end
+        end
+        for part, ms in pairs(T.ms) do last[part] = ms end
+    end)
     Core.Print("Timing every part for " .. PARTS_SECONDS .. " seconds...")
     C_Timer.After(PARTS_SECONDS, function()
         T.on = false
@@ -963,12 +995,30 @@ local function PartsReport(entry)
         end
         -- Each bar is timed only meanwhile (Bars.lua, OnUpdate), so its lines come now, over these seconds.
         for _, line in ipairs(ns.Bars.PerfDetail()) do Core.Print(line) end
+        table.sort(slowest.parts or {}, function(a, b) return a.ms > b.ms end)
+        local said = {}
+        for i = 1, math.min(5, #(slowest.parts or {})) do
+            local p = slowest.parts[i]
+            said[#said + 1] = string.format("%s %.2f", p.part, p.ms)
+        end
+        Core.Print(string.format("Slowest frame: %.2f ms in our parts (%s)", slowest.ms, table.concat(said, ", ")))
+        local spikes = {}
+        for _, name in ipairs(SPIKE_METRICS) do
+            local now = Core.ProfilerMetric(name)
+            if now and spikesFrom[name] then spikes[name] = now - spikesFrom[name] end
+        end
+        if spikes.CountTimeOver5Ms then
+            Core.Print(string.format("The game's profiler meanwhile: %d frames over 5 ms, %d over 10 ms",
+                spikes.CountTimeOver5Ms, spikes.CountTimeOver10Ms or 0))
+        end
         local profiler = ProfilerMs()
         if profiler then
             Core.Print(string.format("The game's profiler for the whole addon: %.3f ms a frame", profiler))
         end
         if entry then
             entry.parts, entry.partsMs, entry.partsFrames, entry.profilerMs = list, total, frames, profiler
+            entry.slowest = slowest.parts and slowest or nil
+            entry.spikes = next(spikes) and spikes or nil
             local snap = ns.Bars.PerfSnapshot()
             if snap then entry.seconds = snap.seconds end -- the seconds timed, each bar's among them
             Core.Print("Kept with the saved report: /reload writes it to disk.")

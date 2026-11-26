@@ -108,6 +108,15 @@ def report(log, source):
                 out.append(f"    {p.get('part', '?'):<36} {p.get('ms', 0):7.3f} ms a frame  {p.get('calls', 0):7d} calls")
             if snap.get("profilerMs") is not None:
                 out.append(f"  the game's profiler for the whole addon: {snap['profilerMs']:.3f} ms a frame")
+            slowest = snap.get("slowest")
+            if slowest:
+                worst = sorted(slowest.get("parts") or [], key=lambda p: -p.get("ms", 0))[:6]
+                out.append(f"  slowest frame: {slowest.get('ms', 0):.2f} ms in our parts: "
+                           + ", ".join(f"{p.get('part', '?')} {p.get('ms', 0):.2f}" for p in worst))
+            spikes = snap.get("spikes")
+            if spikes:
+                out.append(f"  the game's profiler meanwhile: {spikes.get('CountTimeOver5Ms', 0)} frames over 5 ms, "
+                           f"{spikes.get('CountTimeOver10Ms', 0)} over 10 ms")
     return out
 
 
