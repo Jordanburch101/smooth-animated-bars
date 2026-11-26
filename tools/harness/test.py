@@ -5078,49 +5078,6 @@ check(any("SetTexCoord:" in m for m in calibChat) and any("Lua:" in m for m in c
       and not np.eval("__ns.Core.calibFrame:IsShown()") and np.eval("__ns.Core.calibFrame.tex:GetAlpha()") <= 0.002,
       "/sab perf calib times each kind of call and the Lua, saves it, and leaves nothing showing: " + " | ".join(calibChat[:3]))
 check(np.eval("SmoothAnimatedBarsDB.perfLog") is None, "and it is not a /sab perf report")
-# /sab try: test switches for cuts that change the look or timing, off by default, kept for /reload.
-np.execute("__chat = {}; SlashCmdList.SMOOTHANIMATEDBARS('try list')")
-tryChat = chat(np)
-TRY_NAMES = ["stagger", "nocaps", "idle20", "furycap", "poll2"]
-check(all(any(f"{k}: off" in m for m in tryChat) for k in TRY_NAMES) and np.eval("SmoothAnimatedBarsDB.tryFlags") is None,
-      "/sab try <unknown> lists the test switches, all off by default: " + " | ".join(tryChat[:3]))
-# /sab try alone opens a window with a box a switch.
-np.execute("SlashCmdList.SMOOTHANIMATEDBARS('try')")
-check(np.eval("__ns.Core.tryPopup:IsShown()") and all(np.eval(f"__ns.Core.tryPopup.boxes.{k} ~= nil") for k in TRY_NAMES)
-      and not any(np.eval(f"__ns.Core.tryPopup.boxes.{k}:GetChecked()") for k in TRY_NAMES),
-      "/sab try opens a window with a box for each switch, all unticked")
-np.execute("local b = __ns.Core.tryPopup.boxes.nocaps; b:SetChecked(true); b.scripts.OnClick(b)")
-check(np.eval("__ns.Liquid.TRY.nocaps") is True and np.eval("SmoothAnimatedBarsDB.tryFlags.nocaps") is True,
-      "ticking a box turns its switch on and keeps it")
-np.execute("local b = __ns.Core.tryPopup.boxes.nocaps; b:SetChecked(false); b.scripts.OnClick(b)")
-check(np.eval("__ns.Liquid.TRY.nocaps") is False and np.eval("SmoothAnimatedBarsDB.tryFlags") is None, "and unticking it off")
-np.execute("__chat = {}; SlashCmdList.SMOOTHANIMATEDBARS('try all')")
-check(all(np.eval(f"__ns.Liquid.TRY.{k}") for k in TRY_NAMES)
-      and all(np.eval(f"SmoothAnimatedBarsDB.tryFlags.{k}") is True for k in TRY_NAMES)
-      and all(np.eval(f"__ns.Core.tryPopup.boxes.{k}:GetChecked()") for k in TRY_NAMES),
-      "/sab try all turns every switch on, kept in the saved variables, the window's boxes ticked")
-np.execute("__chat = {}")
-for _ in range(30):
-    np.execute("__fire('UNIT_HEALTH', 'player'); __fire('UNIT_HEALTH', 'target'); __fire('UNIT_HEALTH', 'nameplate1')")
-    run(np, 0.1)
-liveTry = np.eval("""(function()
-    local n = 0
-    for token, base in pairs(__plates) do
-        local bar = base.UnitFrame and base.UnitFrame.HealthBarsContainer.healthBar
-        if bar and select(2, __liquid(bar)) > 0 then n = n + 1 end
-    end
-    return n
-end)()""")
-check(not any("Error" in m for m in chat(np)) and liveTry > 0,
-      f"with every switch on the liquids draw and nothing errors ({liveTry} plates drawn)")
-np.execute("__chat = {}; SlashCmdList.SMOOTHANIMATEDBARS('try all')")
-check(not any(np.eval(f"__ns.Liquid.TRY.{k}") for k in TRY_NAMES) and np.eval("SmoothAnimatedBarsDB.tryFlags") is None,
-      "and all again turns them all off, the addon as released")
-np.execute("__chat = {}; SlashCmdList.SMOOTHANIMATEDBARS('try nocaps')")
-check(np.eval("__ns.Liquid.TRY.nocaps") is True and np.eval("__ns.Liquid.TRY.stagger") is False
-      and any("nocaps: |cff40ff40ON" in m for m in chat(np)), "one switch turns over alone")
-np.execute("SlashCmdList.SMOOTHANIMATEDBARS('try nocaps')")
-check(np.eval("__ns.Liquid.TRY.nocaps") is False, "and back")
 np.execute("__chat = {}; SlashCmdList.SMOOTHANIMATEDBARS('perf reset'); SlashCmdList.SMOOTHANIMATEDBARS('perf')")
 check(any("Nothing measured yet" in m for m in chat(np)) and np.eval("SmoothAnimatedBarsDB.perfLog") is None,
       "/sab perf reset starts over, and nothing is saved until something is measured")

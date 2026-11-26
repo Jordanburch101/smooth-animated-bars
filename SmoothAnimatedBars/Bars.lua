@@ -68,7 +68,7 @@ function Bars.raid.Rate()
     end
 end
 
-local IDLE_FPS = 30
+local IDLE_FPS = 20
 local FEED_EVERY = 0.05  -- seconds between handing the game bar's value to our hidden bar
 local STIR_EVERY = 0.4   -- at most one stir this often per bar
 local STIR = 0.15        -- splash intensity of a stir
@@ -1646,17 +1646,13 @@ local function Fury(b, dt, w, h)
     liquid:SetTremble(FURY_TREMBLE * (1 + 1.5 * throb))
 
     f.acc = f.acc + dt
-    local try = ns.Liquid.TRY
-    if bursting and try.furycap then
-        -- /sab try furycap: bursting, it keeps to the Animation Frame Rate as every moving liquid does (Liquid:Due; at
-        -- Unlimited, every frame). A warrior spends rage often enough that it bursts most of a fight.
+    if bursting then
+        -- Bursting, it keeps to the Animation Frame Rate as every moving liquid does (Liquid:Due; at Unlimited, every
+        -- frame). A warrior spends rage often enough that it bursts most of a fight, and every frame was most of the
+        -- fury's cost in game.
         if not liquid:Due(dt) then return end
-    elseif not bursting then
-        if try.stagger then
-            if not liquid:SlotDue(f.acc, 1 / FURY_FPS) then return end
-        elseif f.acc < 1 / FURY_FPS then
-            return
-        end
+    elseif not liquid:SlotDue(f.acc, 1 / FURY_FPS) then
+        return
     end
     liquid:Update(f.acc, w)
     f.acc, liquid.busyAcc = 0, 0
@@ -1797,7 +1793,7 @@ local function UpdateBar(b, dt)
         b.liquid:SetSize(w + ROOM, h)
     end
 
-    local idleFps = ns.Liquid.TRY.idle20 and 20 or IDLE_FPS -- /sab try idle20
+    local idleFps = IDLE_FPS
     -- A flat bar's own colour can change under it (a plate once tapped, the Personal Resource Display's health with
     -- its class colour setting), and its texts are copies.
     if spot.flat then
@@ -1855,11 +1851,7 @@ local function UpdateBar(b, dt)
         b.drawNow, b.idle, b.liquid.busyAcc = nil, 0, 0
     elseif spot.party or spot.slow or b.liquid:IsQuiet() then
         b.idle = b.idle + dt
-        if ns.Liquid.TRY.stagger then -- /sab try stagger: on a frame of its own
-            if not b.liquid:SlotDue(b.idle, 1 / idleFps) then return end
-        elseif b.idle < 1 / idleFps then
-            return
-        end
+        if not b.liquid:SlotDue(b.idle, 1 / idleFps) then return end -- on a frame of its own (Liquid:SlotDue)
         dt, b.idle = b.idle, 0
     else
         dt = b.liquid:Due(dt)
@@ -2231,7 +2223,7 @@ end
 local function OnUpdate(_, elapsed)
     local dt = min(elapsed, 0.1)
     if dt <= 0 then return end
-    if ns.Liquid.TRY.stagger then ns.Liquid.Tick(dt) end -- /sab try stagger
+    ns.Liquid.Tick(dt) -- the frame count the liquids take turns by (Liquid:SlotDue)
     local clock = debugprofilestop
     local t0 = clock and clock()
     local units, live, raid = 0, 0, 0

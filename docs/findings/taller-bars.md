@@ -22,7 +22,7 @@ Seen in game and right in the editor's examples. On the real frames (`TallFrames
 as a child of the game's frame, grown upward from its bottom edge (asked for: the target's auras start 9 above its art's
 bottom, and its cast bar, the target of target and the pet frame hang below). It fades the game's art, portrait, bars
 (with their texts and predictions), name and level, carries the icons round the portrait (elite dragon, skull, raid
-target, leader, PvP...) to where the moved ring puts them, copies the texts each 0.1 s, and hands its own bars, filled
+target, leader, PvP...) to where the moved ring puts them, copies the texts each poll (0.1 s, 0.2 since 1.14.2: no difference seen in game), and hands its own bars, filled
 from the game's each frame, to the liquid with `Bars.AddBar` and the frame's own key, as an adaptor does: so the DoT
 marker and the mana build-up follow. The game's segments on its bars (heal predictions, heal absorb, absorb, the
 player's mana cost prediction; StatusBarOverlaySegmentTemplate) are children of the faded bar, so ours copy them onto

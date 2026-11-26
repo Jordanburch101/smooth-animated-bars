@@ -26,7 +26,7 @@ local _, ns = ...
 local TallFrames = {}
 ns.TallFrames = TallFrames
 
-local POLL = 0.1
+local POLL = 0.2
 local OPTIONS_NAME = "Smooth Animated Bars"
 local EMPTY = {} -- for "or {}" in a poll, which made a table each time
 local artKnown = {} -- arts whose atlas the client has answered for (Wanted)
@@ -880,7 +880,7 @@ end
 -- A segment's look matters only while it shows: a hidden one's is copied once a second (FULL_EVERY polls), a shown
 -- one's each poll. Copying every segment's colour, blend mode and atlas each poll was a fifth of a poll's calls, with
 -- most of them hidden most of the time.
-local FULL_EVERY = 10
+local FULL_EVERY = math.floor(1 / POLL + 0.5) -- polls a second
 
 local function ShownNow(src)
     local ok, shown = pcall(src.IsShown, src)
@@ -1365,18 +1365,9 @@ function TallFrames.Apply()
         end))
     end
     Look()
-    if AnyTall() and not ticker then ticker = C_Timer.NewTicker(POLL, ns.Timed("Bar Height: poll", TallFrames.Poll)) end
+    if AnyTall() and not ticker then ticker = C_Timer.NewTicker(POLL, ns.Timed("Bar Height: poll", Look)) end
 end
 TallFrames.Start = TallFrames.Apply
-
--- The ticker's look. /sab try poll2: every other tick, so every 0.2 s (a look asked for at once, above, never waits).
-function TallFrames.Poll()
-    if ns.Liquid.TRY.poll2 then
-        TallFrames.pollSkip = not TallFrames.pollSkip
-        if TallFrames.pollSkip then return end
-    end
-    Look()
-end
 
 -- For /sab debug and the tests: each frame's state.
 function TallFrames.State()

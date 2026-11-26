@@ -307,22 +307,13 @@ end
 
 -- For a liquid that is moving, after dt more seconds: how far to update it now, or nil to wait for a later frame. Due
 -- within half a frame of its step, so 60 at 124 fps is every other frame, not every third.
--- Switches for trying cuts that change the look or timing in game, all off by default (/sab try, SmoothAnimatedBars.lua;
--- kept in SmoothAnimatedBarsDB.tryFlags; measured out of game in docs/findings/performance.md, "Held back"):
---   stagger  each liquid's capped and idle updates on frames of their own (Liquid.Tick, Liquid:SlotDue), so they do not
---            all land on the same frames: the same rates, lower peaks
---   nocaps   no cap per slice on the four added-light layers (cloudLight, core, swirlA, swirlB): they stop at the front's
---            rearmost point
---   idle20   a quiet liquid updates 20 times a second, not 30 (Bars.lua)
---   furycap  a bursting Rage Fury keeps to the Animation Frame Rate (Liquid:Due), not every frame (Bars.lua)
---   poll2    Bar Height polls every 0.2 s, not 0.1 (TallFrames.lua)
-local TRY = { stagger = false, nocaps = false, idle20 = false, furycap = false, poll2 = false }
-Liquid.TRY = TRY
-
--- Staggering (TRY.stagger): a frame count and a smoothed frame time, moved once a frame by Bars.lua's OnUpdate. A liquid
--- on a rate of one update every P frames updates on the frames where (frame + its slot) is a multiple of P, so liquids of
--- different slots take turns. Slots are handed out on a liquid's first staggered update (dozens are made hidden), to
--- the parity whose liquids have fewer slices so far.
+-- Staggering: a liquid kept to a rate (the Animation Frame Rate while moving, its idle rate while quiet) updates on
+-- frames of its own, so the liquids take turns rather than all updating on the same frames: the same rates, and the
+-- slowest frames' liquid work about a third (seen in game: with all on the same frames, a fight's slowest frame was 3.3
+-- ms of liquid work; staggered, about 1). A frame count and a smoothed frame time are moved once a frame by Bars.lua's
+-- OnUpdate. A liquid on a rate of one update every P frames updates on the frames where (frame + its slot) is a multiple
+-- of P. Slots are handed out on a liquid's first staggered update (dozens are made hidden), to the parity whose liquids
+-- have fewer slices so far.
 Liquid.frame, Liquid.frameDt, Liquid.slotLoad = 0, nil, { 0, 0 }
 
 function Liquid.Tick(dt)
@@ -356,15 +347,7 @@ function Liquid:Due(dt)
         return dt
     end
     local acc = (self.busyAcc or 0) + dt
-    if TRY.stagger then
-        if not self:SlotDue(acc, busyStep) then
-            self.busyAcc = acc
-            return nil
-        end
-        self.busyAcc = 0
-        return acc
-    end
-    if acc < busyStep - dt * 0.5 then
+    if not self:SlotDue(acc, busyStep) then
         self.busyAcc = acc
         return nil
     end
@@ -425,22 +408,27 @@ function Liquid.New(parent, width, height, theme, opts, rows)
     self:LayoutTips()
 
     -- Textures that fill the inside of the liquid. Each is one texture up to the rearmost point of the
-    -- front plus a cap per slice carrying it on to that slice's end, so nothing spills into a dip.
-    local function Layer(sublevel, file, blend)
+    -- front plus a cap per slice carrying it on to that slice's end, so nothing spills into a dip. The four added-light
+    -- layers (noCaps) stop at the rearmost point: faint light, their caps were about a sixth of a fight's work, and
+    -- without them no difference was seen in game (the dark clouds and the shading keep theirs: without the dark clouds'
+    -- caps a big bulge looked lighter and flatter, measured out of game).
+    local function Layer(sublevel, file, blend, noCaps)
         -- r, g, b, stamp: its colour and a count of its changes (LayerColor); drawn: the alpha its textures have
         local layer = { main = Tex("ARTWORK", sublevel, MEDIA .. file, blend, "REPEAT"), caps = {}, u = 0, v = 0,
                         r = -1, g = -1, b = -1, stamp = 0 }
-        for i = 1, self.n do
-            layer.caps[i] = Tex("ARTWORK", sublevel, MEDIA .. file, blend, "REPEAT")
+        if not noCaps then
+            for i = 1, self.n do
+                layer.caps[i] = Tex("ARTWORK", sublevel, MEDIA .. file, blend, "REPEAT")
+            end
         end
         return layer
     end
     self.ends = {}
     self.cloudDark = Layer(4, "Nebula", "BLEND")
-    self.cloudLight = Layer(5, "Nebula", "ADD")
-    self.core = Layer(5, "Core", "ADD")
-    self.swirlA = Layer(5, "Swirl", "ADD")
-    self.swirlB = Layer(5, "Swirl", "ADD")
+    self.cloudLight = Layer(5, "Nebula", "ADD", true)
+    self.core = Layer(5, "Core", "ADD", true)
+    self.swirlA = Layer(5, "Swirl", "ADD", true)
+    self.swirlB = Layer(5, "Swirl", "ADD", true)
     self.cloudLight.u, self.swirlB.u = 0.5, 0.37
     -- The hot base is added light, so its order among the other added layers does not matter. The dark layer
     -- lies over the veins so flames fade as they rise.
@@ -448,8 +436,6 @@ function Liquid.New(parent, width, height, theme, opts, rows)
     self.shadeDark = Layer(6, "Ramp", "BLEND")
     self.shadeHot.v = 1 -- read bottom to top: the ramp's opaque end at the bottom
     self.layers = { self.cloudDark, self.cloudLight, self.core, self.swirlA, self.swirlB, self.shadeHot, self.shadeDark }
-    -- The layers /sab try nocaps draws without caps.
-    self.cloudLight.glowLayer, self.core.glowLayer, self.swirlA.glowLayer, self.swirlB.glowLayer = true, true, true, true
 
     self.bolts = {}
     for i = 1, CFG.bolts do
@@ -714,24 +700,6 @@ function Liquid:DrawLayer(layer, ku, kv, alpha)
         main:Show()
     end
     layer.allOff = false
-    -- /sab try nocaps: an added-light layer stops at the front's rearmost point. Its caps are hidden once (each cap's
-    -- key cleared, so the loop below shows them again with the switch off).
-    if layer.glowLayer and TRY.nocaps then
-        if not layer.capsOff then
-            layer.capsOff = true
-            local caps = layer.caps
-            for i = 1, #caps do
-                local cap = caps[i]
-                cap.sabKey = nil
-                if cap.sabShown ~= false then
-                    cap.sabShown = false
-                    cap:Hide()
-                end
-            end
-        end
-        return
-    end
-    layer.capsOff = nil
     -- Each slice's offsets down the texture, (i - 1) * rowH and the slice's bottom, times kv: the same products each
     -- update until the slices' height or the layer's scale changes.
     local rowH, caps = self.rowH, layer.caps

@@ -13,8 +13,9 @@ Sections are `### New` and `### Fixed`; skip one that would be empty.
   before. The bars still follow your health every frame.
 
 ### Fixed
-- The bars use much less CPU, with no change to how they look: about half as
-  much in combat, and less than half while resting, more so with Bar Height on.
+- The bars use much less CPU, with no visible change to how they look: well
+  under half as much in combat and while resting, more so with Bar Height on,
+  and fights no longer have the odd slow frame.
 
 ## 1.14.1
 

@@ -155,7 +155,15 @@ difference):
 | Physics step 1/60 | -3% | -5% | 0.09; not worth it |
 | Drop the swirlB layer | -4% | | 2.86 / 22: visible, no |
 
-`/sab try` puts five of those behind switches to judge in game, all off by default (`Liquid.TRY`): `stagger`, `nocaps`
-(the four added-light layers: cloudLight, core, swirlA, swirlB), `idle20`, `furycap` and `poll2` (every other tick of
-the poll; a look asked for at once never waits). With all off, every texture is the same as before
-(`samelook.py --ref HEAD`). Not yet tried in game.
+Five of those were put behind test switches (`/sab try`, a throwaway window) and tried in game (2026-11-27, a warrior,
+Bar Height on): staggered updates, no caps on the four added-light layers (cloudLight, core, swirlA, swirlB), idle
+liquids at 20 fps, the bursting fury held to the Animation Frame Rate, Bar Height's poll every 0.2 s. No difference was
+seen with all five on (asked), so they are the defaults now and the switches are gone (`IDLE_FPS` 20, `POLL` 0.2 with its
+once-a-second copies counted from it, `FULL_EVERY`; the glow layers made without caps, `Layer`'s `noCaps`). Measured in
+game against all off, one fight each, alike in what moved: our parts 1.36 ms a frame to 0.98 (-28%; the rig said -25%),
+drawing 0.096 ms an update to 0.061-0.065; another fight with them on, with half again as many liquid updates a frame,
+1.51. The game's profiler counted no frame over 5 ms in any of six windows (idle and fights, on and off), against 26 and
+6 in two fights before this round. Staggered, the liquids' share of a fight's slowest frame went from 3.3 ms to about 1;
+what is left in the slowest frames is a burst of events in one frame (DoT tracking up to 1.1 ms, the bars' events 0.8,
+heal tracking 0.5), and once the idle heal marker at 2.2 ms. Idle was 0.42 to 0.56 ms either way (it depends on what
+moves). The rig with all five: a fight at 92 fps 1.17 to 0.88 ms, idle at 120 fps 0.55 to 0.48.
