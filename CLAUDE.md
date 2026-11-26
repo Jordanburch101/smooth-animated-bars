@@ -569,7 +569,20 @@ Facts found while building this, which the code relies on and which are not obvi
   `/sab perf` idle 0.30 ms a frame at 150 fps (0.41 before the sleeping bars), a 1v1 fight at 100 fps 1.4 ms Unlimited
   and 1.15 at 60, with no difference to the eye at 60, so 60 is the default (asked for). At 100 fps a cap of 60 is every
   other frame, and what runs every frame anyway stays, hence a fifth, not half. `samelook.py` runs at Unlimited, so it
-  compares the drawing, not the cap. Addons cannot write
+  compares the drawing, not the cap. The game's own profiler (Numy's Addon Profiler reads `C_AddOnProfiler`) then
+  counted about twice what `/sab perf` timed: `/sab perf` timed the liquid alone, and the addon's memory swung 43 to
+  110 MB, garbage the game collects on the addon's time (spikes over 10 ms). Functions made each frame or poll
+  (`pcall(function() ... end)` in Bar Height's copies, the markers' `Each`) and tables (`{ GetRegions() }`, atlas
+  lookups) were most of it; named functions and kept tables now, the mock's garbage count 4.9 KB a frame idle to 0.6, and
+  in game memory steady at 20 MB, no frame over 10 ms in a fight. `/sab perf` now also times every part for the next
+  10 s (`ns.Timed` round every update, event handler and ticker, `Bars.TimeStep` inside a bar's update, steps of a
+  liquid's) with the game's profiler's figure. Bar Height's poll took about 2 ms ten times a second (looks of hidden
+  segments and icons, each segment reading the bars' places, every region scanned for other addons' texts): 1.2 ms
+  after (hidden ones skipped, a bar's place read once, the scan once a second). `tools/harness/rig.py` (asked for: in
+  game testing was slow) plays `/sab perf` in the mock with the player's saved settings on a modelled clock, its costs
+  fitted to those reports: the first fit, on two reports (idle with a target at 121 fps, a 1v1 at 95), had Lua work at
+  about 21 us a thousand instructions against 0.5 us a setter and 1 us a getter, so the addon's own Lua, not its calls
+  to the game, is most of what it costs; it predicted the fight's 1.63 ms as 1.69. Addons cannot write
   files, so each `/sab perf` is kept in `SmoothAnimatedBarsDB.perfLog` (last 50), which the client writes on
   `/reload`; `tools/perf_report.py` turns the newest saved file under Forever's WTF folder into
   `perf/perf_report.txt` (git-ignored). The DoT marker on plates (`plateDots`, needs `plateHealth`): `Dots.lua`

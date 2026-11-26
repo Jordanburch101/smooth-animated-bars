@@ -1780,7 +1780,7 @@ tf.execute("""local bar = TargetFrame.healthbar
     __hbtf:SetPoint('CENTER', bar, 'CENTER', 0, 0); __hbtf:SetFont('Fonts\\\\FRIZQT__.TTF', 8, ''); __hbtf:SetText('3,040 / 3,040')
     __hbtfPct = bar:CreateFontString(nil, 'OVERLAY', 'TextStatusBarText')
     __hbtfPct:SetPoint('LEFT', bar.TextString, 'LEFT', 0, 0); __hbtfPct:SetText('100%'); __hbtfPct:SetAlpha(0)""")
-run(tf, 0.3)
+run(tf, 1.1)  # new texts are looked for once a second (TallFrames.OtherTexts)
 OTHERS = ST + ".target.others"
 check(tf.eval(ST + ".target.f.health.text.alpha") == 0, "the game's bar text faded by another addon: our copy of it too")
 check(tf.eval(OTHERS + "[__hbtf].text") == "3,040 / 3,040" and tf.eval(OTHERS + "[__hbtf].shown")
@@ -5018,6 +5018,16 @@ check(np.eval("#SmoothAnimatedBarsDB.perfLog") == 2 and np.eval("SmoothAnimatedB
       and np.eval("SmoothAnimatedBarsDB.perfLog[2].zone") == "Elwynn Forest"
       and any("/reload writes it" in m for m in chat(np)),
       "/sab perf saves each report in the saved variables, with a note as typed, the zone and combat")
+# Every part of the addon timed over the next 10 seconds (ns.Timed), printed and kept on the first report: the second
+# came while the first was still timing.
+np.execute("__chat = {}")
+run(np, 10.5)
+partsChat = chat(np)
+check(any("Every part over 10 s" in m for m in partsChat) and any("   bars: " in m for m in partsChat)
+      and any("   heal marker: " in m for m in partsChat)
+      and np.eval("SmoothAnimatedBarsDB.perfLog[1].parts ~= nil and #SmoothAnimatedBarsDB.perfLog[1].parts > 2")
+      and np.eval("SmoothAnimatedBarsDB.perfLog[2].parts") is None and not np.eval("__ns.Timing.on"),
+      "/sab perf then times every part for 10 s, prints each and keeps them with the report: " + " | ".join(partsChat[:6]))
 # The client writes the saved variables as plain Lua; perf_report.py reads that back into a text report.
 saved = np.eval("""(function()
     local function ser(v, ind)
@@ -5041,8 +5051,9 @@ with tempfile.TemporaryDirectory() as tmp:
     with open(sv, "w", encoding="utf-8") as f:
         f.write(saved)
     text = "\n".join(perf_report.report(perf_report.load_log(sv), sv))
-check("26 Mobs Pulled" in text and "Elwynn Forest *" in text and text.count("--- ") == 2,
-      "perf_report.py turns the saved reports into a text file: a line each, then each second")
+check("26 Mobs Pulled" in text and "Elwynn Forest *" in text and text.count("--- ") == 2
+      and "every part over the next 10 s" in text,
+      "perf_report.py turns the saved reports into a text file: a line each, then each second and every part")
 np.execute("SlashCmdList.SMOOTHANIMATEDBARS('perf clear')")
 check(np.eval("SmoothAnimatedBarsDB.perfLog") is None, "/sab perf clear forgets them")
 np.execute("__chat = {}; SlashCmdList.SMOOTHANIMATEDBARS('perf reset'); SlashCmdList.SMOOTHANIMATEDBARS('perf')")

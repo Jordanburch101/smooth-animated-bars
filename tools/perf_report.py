@@ -98,6 +98,15 @@ def report(log, source):
                           f" {s.get('addonMs', 0) / f:.3f} ({s.get('addon', 0)})")
             out.append(f"  {ago:5d}  {s['frames']:6d}  {s['units']:5d}  {s['plates']:6d}  {s['unitMs'] / f:13.3f}  "
                        f"{s['plateMs'] / f:14.3f}  {s['peak']:7.2f}{groups}")
+        # Every part of the addon, timed over the 10 seconds after this /sab perf, and the game's own profiler's figure.
+        parts = snap.get("parts")
+        if parts:
+            pf = snap.get("partsFrames") or 1
+            out.append(f"  every part over the next 10 s ({pf} frames): {snap.get('partsMs', 0):.3f} ms a frame in all")
+            for p in parts:
+                out.append(f"    {p.get('part', '?'):<36} {p.get('ms', 0):7.3f} ms a frame  {p.get('calls', 0):7d} calls")
+            if snap.get("profilerMs") is not None:
+                out.append(f"  the game's profiler for the whole addon: {snap['profilerMs']:.3f} ms a frame")
     return out
 
 

@@ -887,17 +887,21 @@ local function OnUpdate(_, elapsed)
             ns.Core.Print("Error in the DoT marker on nameplates, which is off until a reload: " .. plateErr)
         end
     end
-    Each(function(m)
-        if m.live and not m.err then
-            local ok, err = pcall(Update, m, dt)
-            if not ok then
-                m.err = tostring(err)
-                pcall(Hide, m)
-                ns.Core.Print("Error in the DoT marker" .. (m.spec.plate and " on a nameplate" or "")
-                    .. ", which is off until a reload: " .. m.err)
-            end
+    Marker.frameDt = dt
+    Each(Marker.Step)
+end
+
+-- One marker's update this frame (Marker.frameDt): a function of its own, not one made each frame, which was garbage.
+function Marker.Step(m)
+    if m.live and not m.err then
+        local ok, err = pcall(Update, m, Marker.frameDt)
+        if not ok then
+            m.err = tostring(err)
+            pcall(Hide, m)
+            ns.Core.Print("Error in the DoT marker" .. (m.spec.plate and " on a nameplate" or "")
+                .. ", which is off until a reload: " .. m.err)
         end
-    end)
+    end
 end
 
 local function OtherAddOn()
@@ -961,7 +965,7 @@ function Marker.Apply()
     end)
     if any and not driver then
         driver = CreateFrame("Frame")
-        driver:SetScript("OnUpdate", OnUpdate)
+        driver:SetScript("OnUpdate", ns.Timed("DoT marker", OnUpdate))
     end
     if driver then driver:SetShown(any and true or false) end
 end

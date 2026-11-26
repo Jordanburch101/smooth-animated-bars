@@ -664,14 +664,14 @@ local function onEvent(_, event, ...)
 end
 
 local reported = {}
-frame:SetScript("OnEvent", function(...)
+frame:SetScript("OnEvent", ns.Timed("heal tracking: events", function(...)
     local ok, err = pcall(onEvent, ...)
     if not ok and not reported[err] then
         reported[err] = true
         trace("ERROR " .. tostring(err))
         ns.Core.Print("Error in the heal tracking (it carries on): " .. tostring(err))
     end
-end)
+end))
 
 ---------------------------------------------------------------------------
 -- API

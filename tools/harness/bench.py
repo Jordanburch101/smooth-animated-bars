@@ -43,11 +43,14 @@ GROUPS = [
 ]
 
 
-def session(addon, on, extra, cls, party, saved_file=None):
+def session(addon, on, extra, cls, party, saved_file=None, pre=None):
+    """pre: Lua run after the mock and before the addon loads (rig.py's modelled clock)."""
     lua = LuaRuntime(unpack_returned_tuples=True)
     lua.execute(open(os.path.join(HERE, "wowmock.lua"), encoding="utf-8").read())
     lua.execute(samelook.STABLE_PAIRS)
     lua.execute("math.randomseed(20261126)")
+    if pre:
+        lua.execute(pre)
     if saved_file:
         # A player's own saved variables (the account's settings, every feature as they have it), as the game loads them.
         lua.execute(open(saved_file, encoding="utf-8").read())

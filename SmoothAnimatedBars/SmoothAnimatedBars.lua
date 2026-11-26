@@ -733,7 +733,7 @@ function Core.OpenEditor(section)
     return ns.Editor.Open(section)
 end
 
-events:SetScript("OnEvent", function(self, event, arg1, arg2)
+events:SetScript("OnEvent", ns.Timed("setup and settings: events", function(self, event, arg1, arg2)
     if event == "ADDON_LOADED" then
         if arg1 ~= ADDON_NAME then return end
         LoadProfiles()
@@ -761,7 +761,7 @@ events:SetScript("OnEvent", function(self, event, arg1, arg2)
         -- The setup wizard, once per account, a moment after the first login with the addon.
         if (isLogin or isReload) and not root.setupDone then C_Timer.After(2, ns.Wizard.OpenWhenReady) end
     end
-end)
+end))
 events:RegisterEvent("ADDON_LOADED")
 events:RegisterEvent("PLAYER_ENTERING_WORLD")
 
@@ -807,9 +807,60 @@ local function Where()
     return zone, kind
 end
 
+-- The game's own profiler's figure for the whole addon, ms a frame over its recent frames (C_AddOnProfiler, which
+-- profiler addons read): with every part timed below, what is left over is what no part's time holds (the garbage
+-- collector among it). nil where the client has none.
+local function ProfilerMs()
+    local metric = C_AddOnProfiler and C_AddOnProfiler.GetAddOnMetric and Enum and Enum.AddOnProfilerMetric
+        and Enum.AddOnProfilerMetric.RecentAverageTime
+    if not metric then return nil end
+    local ok, ms = pcall(C_AddOnProfiler.GetAddOnMetric, ADDON_NAME, metric)
+    if ok and type(ms) == "number" and not (issecretvalue and issecretvalue(ms)) then return ms end
+end
+
+-- Every part's time (each update, event handler and ticker, wrapped by ns.Timed in its file) over the PARTS_SECONDS
+-- after /sab perf, printed then and kept on that report in the saved log: /sab perf's own numbers are the liquid's
+-- alone, about half of what the game's profiler counted for the addon (seen in game).
+local PARTS_SECONDS = 10
+local partsFrame
+
+local function PartsReport(entry)
+    local T = ns.Timing
+    if not T or T.on then return end
+    T.ms, T.calls, T.frames, T.on = {}, {}, 0, true
+    partsFrame = partsFrame or CreateFrame("Frame")
+    partsFrame:SetScript("OnUpdate", function() T.frames = T.frames + 1 end)
+    Core.Print("Timing every part for " .. PARTS_SECONDS .. " seconds...")
+    C_Timer.After(PARTS_SECONDS, function()
+        T.on = false
+        partsFrame:SetScript("OnUpdate", nil)
+        local frames = math.max(1, T.frames)
+        local list, total = {}, 0
+        for part, ms in pairs(T.ms) do
+            list[#list + 1] = { part = part, ms = ms / frames, calls = T.calls[part] or 0 }
+            -- A step inside a part ("bars > feed values", Bars.TimeStep) is already in that part's time.
+            if not part:find(" > ", 1, true) then total = total + ms / frames end
+        end
+        table.sort(list, function(a, b) return a.ms > b.ms end)
+        Core.Print(string.format("Every part over %d s (%d frames, %d fps): %.3f ms a frame in all", PARTS_SECONDS,
+            frames, frames / PARTS_SECONDS + 0.5, total))
+        for _, p in ipairs(list) do
+            Core.Print(string.format("  %s: %.3f ms a frame (%d calls)", p.part, p.ms, p.calls))
+        end
+        local profiler = ProfilerMs()
+        if profiler then
+            Core.Print(string.format("The game's profiler for the whole addon: %.3f ms a frame", profiler))
+        end
+        if entry then
+            entry.parts, entry.partsMs, entry.partsFrames, entry.profilerMs = list, total, frames, profiler
+            Core.Print("Kept with the saved report: /reload writes it to disk.")
+        end
+    end)
+end
+
 local function SavePerf(note)
     local snap = ns.Bars.PerfSnapshot()
-    if not snap then return false end
+    if not snap then return nil end
     snap.when = date and date("%Y-%m-%d %H:%M:%S") or nil
     snap.zone, snap.instance = Where()
     snap.combat = InCombatLockdown() and true or false
@@ -818,7 +869,7 @@ local function SavePerf(note)
     root.perfLog = root.perfLog or {}
     table.insert(root.perfLog, snap)
     while #root.perfLog > PERF_LOG_MAX do table.remove(root.perfLog, 1) end
-    return true
+    return snap
 end
 
 -- /sab party: the same, its lines kept for reading after /reload, while the party frames have no liquid yet.
@@ -899,10 +950,12 @@ SlashCmdList.SMOOTHANIMATEDBARS = function(input)
     elseif cmd == "perf" or cmd:match("^perf ") and not PERF_WORDS[cmd] then
         for _, line in ipairs(ns.Bars.Perf()) do Core.Print(line) end
         local note = strtrim(input or ""):match("^%S+%s+(.+)$") -- /sab perf <note>: what was going on
-        if SavePerf(note) then
+        local entry = SavePerf(note)
+        if entry then
             Core.Print("Saved (" .. #root.perfLog .. " in the log). /reload writes it to disk; then run "
                 .. "tools/perf_report.py for a text file.")
         end
+        PartsReport(entry)
     elseif cmd == "party clear" then
         root.partyProbe = nil
         Core.Print("Saved party reports cleared.")

@@ -767,8 +767,8 @@ function Soul.Apply()
     end
     if live and player and not driver then
         driver = CreateFrame("Frame")
-        driver:SetScript("OnUpdate", OnUpdate)
-        driver:SetScript("OnEvent", OnEvent)
+        driver:SetScript("OnUpdate", ns.Timed("Weakened Soul", OnUpdate))
+        driver:SetScript("OnEvent", ns.Timed("Weakened Soul: events", OnEvent))
     end
     if not driver then return end
     driver:SetShown(live)

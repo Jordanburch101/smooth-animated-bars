@@ -28,6 +28,8 @@ ns.TallFrames = TallFrames
 
 local POLL = 0.1
 local OPTIONS_NAME = "Smooth Animated Bars"
+local EMPTY = {} -- for "or {}" in a poll, which made a table each time
+local artKnown = {} -- arts whose atlas the client has answered for (Wanted)
 
 -- The game shows and hides its segments (heal predictions, absorbs, the mana cost) on these events, and from its health
 -- bar's own updates as health changes (Mainline UnitFrame.lua: UnitFrame_OnEvent, UnitFrameHealthBar_OnUpdate, the mana
@@ -182,7 +184,8 @@ local SPEC = {
             if not (gf.unit == nil or gf.unit == "player") then return false end
             for _, region in ipairs({ Path(gf, "PlayerFrameContainer", "AlternatePowerFrameTexture"),
                                       rawget(_G, "PlayerFrameAlternatePowerBarArea") }) do
-                local ok, shown = pcall(function() return region:IsShown() end)
+                local ok, shown = false, nil
+                if region then ok, shown = pcall(region.IsShown, region) end
                 if ok and shown == true then return false end
             end
             return true
@@ -254,7 +257,8 @@ local PARTY = {
     -- In a vehicle the button shows the vehicle's art (VehicleTexture) and unit: left to the game.
     usable = function(gf)
         local vehicle = Path(gf, "VehicleTexture")
-        local ok, shown = pcall(function() return vehicle and vehicle:IsShown() end)
+        if not vehicle then return true end
+        local ok, shown = pcall(vehicle.IsShown, vehicle)
         return not (ok and shown == true)
     end,
 }
@@ -307,19 +311,30 @@ end
 -- ownAlpha: the text's own alpha copied too, for a text we never fade ourselves (the bars' texts, whose frames we fade):
 -- Health Bar Text Forever fades the game's bar texts to alpha 0 and draws its own, and our copies showed the game's
 -- again (seen in game, the target's "3,040 / 3,040" with that addon's percentage gone).
+-- Copies, each under pcall with its regions as arguments: a function made inside the poll for each (pcall(function()
+-- ... end)) is garbage the game has to collect, ten times a second for every text of every taller frame.
+local function FontFrom(dst, src) dst:SetFontObject(src:GetFontObject()) end
+local function TextFrom(dst, src) dst:SetText(src:GetText()) end
+-- The colour only: its alpha is the text's own alpha, 0 on a game text we faded (seen in game: the name and level
+-- copies drew invisible).
+local function TextColorFrom(dst, src)
+    local r, g, b = src:GetTextColor()
+    dst:SetTextColor(r, g, b)
+end
+local function AlphaFrom(dst, src) dst:SetAlpha(src:GetAlpha()) end
+local function ColorFrom(dst, src)
+    local r, g, b = src:GetVertexColor()
+    dst:SetVertexColor(r, g, b)
+end
+
 local function CopyText(src, dst, ownAlpha)
     if not (src and dst) then return end
     if not dst.fontCopied then
         dst.fontCopied = true
-        pcall(function() dst:SetFontObject(src:GetFontObject()) end)
+        pcall(FontFrom, dst, src)
     end
-    pcall(function() dst:SetText(src:GetText()) end)
-    -- The colour only: its alpha is the text's own alpha, 0 on a game text we faded (seen in game: the name and level
-    -- copies drew invisible).
-    pcall(function()
-        local r, g, b = src:GetTextColor()
-        dst:SetTextColor(r, g, b)
-    end)
+    pcall(TextFrom, dst, src)
+    pcall(TextColorFrom, dst, src)
     if ownAlpha then
         -- May be secret, which SetAlpha takes.
         local ok, a = pcall(src.GetAlpha, src)
@@ -384,7 +399,7 @@ local function CopyHit(st)
         dst.hitScale = scale
         dst:SetPoint(st.hit[3], st.f.portrait, st.hit[3], st.hit[4] * scale, st.hit[5] * scale)
     end
-    pcall(function() dst:SetAlpha(src:GetAlpha()) end)
+    pcall(AlphaFrom, dst, src)
 end
 
 -- The combo points, drawn round our ring by dots of the game's own template (RogueComboPointTemplate), lit as the
@@ -501,8 +516,9 @@ end
 -- How many of the game frame's units one of region's is. A region with a scale of its own (the player's PvP badge,
 -- PlayerPvpBackgroundIconTemplate's scale="0.8") answers its place and size in its own units: taken as the frame's,
 -- the badge was drawn far up and right of the frame (seen in game).
+local function Scales(region, gf) return region:GetEffectiveScale(), gf:GetEffectiveScale() end
 local function ScaleTo(region, gf)
-    local ok, a, b = pcall(function() return region:GetEffectiveScale(), gf:GetEffectiveScale() end)
+    local ok, a, b = pcall(Scales, region, gf)
     a, b = ok and Number(a), ok and Number(b)
     if a and b and a > 0 and b > 0 then return a / b end
     return 1
@@ -511,9 +527,20 @@ end
 -- A game texture drawn by ours: its atlas (or file and texture coordinates), colour and shown state, at the place it
 -- has on the game's frame moved as Place says. Read each poll: the game moves and swaps these (an elite's dragon, a raid
 -- target's icon).
-local function CopyTexture(st, src, dst)
+local function CopyTextureNow(st, src, dst)
     local gf = st.gf
-    local ok = pcall(function()
+    -- Hidden (most of them, most of the time: the elite's dragon, a raid target, the leader's crown): ours hidden, and
+    -- nothing else read. Laid out in full the poll it shows, as before.
+    local okShown, shownNow = pcall(src.IsShown, src)
+    if okShown and shownNow == false then
+        if dst.copyShown ~= false then
+            dst.copyShown = false
+            dst:Hide()
+        end
+        return
+    end
+    dst.copyShown = nil
+    do
         local atlas = src.GetAtlas and src:GetAtlas()
         if atlas and not Secret(atlas) and atlas ~= "" then
             if dst.atlas ~= atlas then
@@ -546,30 +573,34 @@ local function CopyTexture(st, src, dst)
         else
             dst:SetShown(shown and true or false)
         end
-    end)
-    if not ok then dst:Hide() end
+    end
+end
+
+local function CopyTexture(st, src, dst)
+    if not pcall(CopyTextureNow, st, src, dst) then dst:Hide() end
 end
 
 -- A game glow drawn by ours (Preview.TallGlow): laid out again when our frame's heights, the glow's atlas or its place on
 -- the game's frame change, and given its colour and blend mode.
-local function CopyGlow(st, glow)
+local function CopyGlowNow(st, glow)
     local src, gf = glow.src, st.gf
-    pcall(function()
+    do
         local atlas = src:GetAtlas()
         local left, top, fl, ft = src:GetLeft(), src:GetTop(), gf:GetLeft(), gf:GetTop()
         if not atlas or Secret(atlas) or not (left and top and fl and ft) or Secret(left) or Secret(top) then return end
         local k = ScaleTo(src, gf)
         local x0, y0 = left * k - fl, ft - top * k
-        local key = table.concat({ atlas, math.floor(x0 * 10 + 0.5), math.floor(y0 * 10 + 0.5), st.dh, st.dp }, ",")
-        if glow.key ~= key then
-            glow.key = key
+        -- Laid out again only when one of these changed (kept as fields: a key string a poll was garbage).
+        local kx, ky = math.floor(x0 * 10 + 0.5), math.floor(y0 * 10 + 0.5)
+        if glow.kAtlas ~= atlas or glow.kx ~= kx or glow.ky ~= ky or glow.kdh ~= st.dh or glow.kdp ~= st.dp then
+            glow.kAtlas, glow.kx, glow.ky, glow.kdh, glow.kdp = atlas, kx, ky, st.dh, st.dp
             glow.host = ns.Preview.TallGlow(st.f, glow.i, atlas, x0, y0)
         end
         local host = glow.host
         if not host then return end
         local r, g, b = src:GetVertexColor()
         local mode = src:GetBlendMode()
-        for _, tex in ipairs(host.slices or {}) do
+        for _, tex in ipairs(host.slices or EMPTY) do
             tex:SetVertexColor(r, g, b)
             tex:SetBlendMode(mode)
         end
@@ -577,7 +608,11 @@ local function CopyGlow(st, glow)
             host.ringTex:SetVertexColor(r, g, b)
             host.ringTex:SetBlendMode(mode)
         end
-    end)
+    end
+end
+
+local function CopyGlow(st, glow)
+    pcall(CopyGlowNow, st, glow)
 end
 
 -- A glow's shown state and alpha, each frame: the game pulses some (the player's status glow). A glow whose parent
@@ -783,16 +818,26 @@ end
 
 -- Lays a segment's box on the game's mask, moved by how far our bar is from the game's and as tall as ours: again only
 -- when that changes.
-local function Box(s)
+local function BoxPlace(s)
+    local gl, gt = Number(s.game:GetLeft()), Number(s.game:GetTop())
+    local ol, ot, oh = Number(s.bar:GetLeft()), Number(s.bar:GetTop()), Number(s.bar:GetHeight())
+    if not (gl and gt and ol and ot and oh) then return nil end
+    return ol - gl, ot - gt, oh
+end
+
+-- How far our bar is from the game's is the same for every segment on it: read once a poll for the bar (five calls a
+-- segment before).
+local function Box(s, poll)
     local mask = s.src.FillMask
     if type(mask) ~= "table" then return end
-    local ok, dx, dy, h = pcall(function()
-        local gl, gt = Number(s.game:GetLeft()), Number(s.game:GetTop())
-        local ol, ot, oh = Number(s.bar:GetLeft()), Number(s.bar:GetTop()), Number(s.bar:GetHeight())
-        if not (gl and gt and ol and ot and oh) then return nil end
-        return ol - gl, ot - gt, oh
-    end)
-    if not ok or not dx then return end
+    local bar = s.bar
+    if bar.boxPoll ~= poll then
+        local ok, dx, dy, h = pcall(BoxPlace, s)
+        bar.boxPoll = poll
+        if ok and dx then bar.boxDx, bar.boxDy, bar.boxH = dx, dy, h else bar.boxDx = nil end
+    end
+    local dx, dy, h = bar.boxDx, bar.boxDy, bar.boxH
+    if not dx then return end
     local key = string.format("%.1f,%.1f,%.1f", dx, dy, h)
     if s.boxKey == key then return end
     s.boxKey = key
@@ -803,14 +848,29 @@ local function Box(s)
 end
 
 -- Each poll: the segments' looks and places.
+-- A segment's look matters only while it shows: a hidden one's is copied once a second (FULL_EVERY polls), a shown
+-- one's each poll. Copying every segment's colour, blend mode and atlas each poll was a fifth of a poll's calls, with
+-- most of them hidden most of the time.
+local FULL_EVERY = 10
+
+local function ShownNow(src)
+    local ok, shown = pcall(src.IsShown, src)
+    return not ok or Secret(shown) or shown == true
+end
+
 local function CopySegments(st)
+    st.poll = (st.poll or 0) + 1
+    local full = st.poll % FULL_EVERY == 1
     for _, s in ipairs(st.segments) do
+        local look = full or ShownNow(s.src)
         if s.seg then
-            Look(s.src.Fill, s.seg.Fill)
-            for _, o in ipairs(s.seg.overlays) do Look(o.src, o.dst, o.tile) end
-            Box(s)
+            if look then
+                Look(s.src.Fill, s.seg.Fill)
+                for _, o in ipairs(s.seg.overlays) do Look(o.src, o.dst, o.tile) end
+            end
+            Box(s, st.poll)
         else
-            Look(s.src, s.tex)
+            if look then Look(s.src, s.tex) end
         end
     end
 end
@@ -936,7 +996,9 @@ local function Build(st)
         st.hit = { hitSrc, dst, at, hx, hy }
         local hits = CreateFrame("Frame")
         hits:RegisterUnitEvent("UNIT_COMBAT", st.unit)
-        hits:SetScript("OnEvent", function(_, _, _, action, flag) st.hitSize, st.hitWord = HitSize(action, flag) end)
+        hits:SetScript("OnEvent", ns.Timed("Bar Height: events", function(_, _, _, action, flag)
+            st.hitSize, st.hitWord = HitSize(action, flag)
+        end))
     end
     -- The game's glows over the art.
     st.glows = {}
@@ -948,7 +1010,7 @@ local function Build(st)
     local glows = st.glows
     BuildCombo(st)
     BuildSegments(st)
-    f:SetScript("OnUpdate", function()
+    f:SetScript("OnUpdate", ns.Timed("Bar Height: each frame", function()
         for _, glow in ipairs(glows) do GlowAlpha(glow) end
         if GetTime() < segmentsUntil then MirrorSegments(st) end
         if st.hit then CopyHit(st) end
@@ -962,14 +1024,16 @@ local function Build(st)
             end
         end
         -- The bars' values every frame, handed from the game's bars to ours (secret, never read).
-        for kind, game in pairs(st.bars) do
-            local ours = f[kind]
-            pcall(function()
-                ours:SetMinMaxValues(game:GetMinMaxValues())
-                ours:SetValue(game:GetValue())
-            end)
-        end
-    end)
+        for kind, game in pairs(st.bars) do pcall(TallFrames.HandValues, f[kind], game) end
+    end))
+end
+
+-- A game bar's range and value onto ours. A function of its own, not one made each frame: every function made is
+-- garbage the game has to collect, and with Bar Height on these were half of what the addon threw away
+-- (tools/harness/bench.py --saved with a garbage count).
+function TallFrames.HandValues(ours, game)
+    ours:SetMinMaxValues(game:GetMinMaxValues())
+    ours:SetValue(game:GetValue())
 end
 
 -- Its bars handed to the liquid with the frame's own settings (playerHealth... and its colour and effects).
@@ -1002,32 +1066,62 @@ end
 -- taller target of target). Each is copied onto our bar, found as they come (an addon may add its own after ours is
 -- built), placed as theirs is against our copy of the game text it hangs on (that addon puts its side texts on the
 -- game's LeftText and RightText) or else our bar, in its own font and size (it sets 8 on the small frames).
+-- A bar's regions into a table kept for it, emptied past them: a new table each poll was garbage.
+local function FillRegions(t, ...)
+    local n = select("#", ...)
+    for i = 1, n do t[i] = (select(i, ...)) end
+    for i = #t, n + 1, -1 do t[i] = nil end
+    return t
+end
+local function RegionsOf(game, t) return FillRegions(t, game:GetRegions()) end
+local function FontFromRegion(dst, r) dst:SetFont(r:GetFont()) end
+
 function TallFrames.OtherTexts(st)
-    for kind, game in pairs(st.bars) do
-        local ours = st.f[kind]
-        local ok, regions = pcall(function() return { game:GetRegions() } end)
-        if ok and ours and ours.text then
-            for _, r in ipairs(regions) do
-                local okType, objType = pcall(r.GetObjectType, r)
-                if okType and objType == "FontString" and not st.textCopy[r] then
-                    local dst = st.others[r]
-                    if not dst then
-                        dst = ours.text:GetParent():CreateFontString(nil, "OVERLAY", "TextStatusBarText")
-                        dst.fontCopied = true
-                        st.others[r] = dst
-                        local okP, point, rel, relPoint, x, y = pcall(r.GetPoint, r, 1)
-                        if not okP or type(point) ~= "string" or Secret(point) or Secret(x) or Secret(y) then
-                            point, rel, relPoint, x, y = "CENTER", nil, "CENTER", 0, 0
+    -- New texts are looked for once a second (an addon adds its own once, at its load); those found are copied each
+    -- poll. Every region of every bar was looked over each poll before, a twentieth of a poll's calls.
+    st.otherPoll = (st.otherPoll or 0) + 1
+    if st.otherPoll % FULL_EVERY == 1 then
+        st.regions = st.regions or {}
+        for kind, game in pairs(st.bars) do
+            local ours = st.f[kind]
+            st.regions[kind] = st.regions[kind] or {}
+            local ok, regions = pcall(RegionsOf, game, st.regions[kind])
+            if ok and ours and ours.text then
+                for _, r in ipairs(regions) do
+                    if not st.textCopy[r] and not st.others[r] then
+                        local okType, objType = pcall(r.GetObjectType, r)
+                        if okType and objType == "FontString" then
+                            local dst = ours.text:GetParent():CreateFontString(nil, "OVERLAY", "TextStatusBarText")
+                            dst.fontCopied = true
+                            st.others[r] = dst
+                            local okP, point, rel, relPoint, x, y = pcall(r.GetPoint, r, 1)
+                            if not okP or type(point) ~= "string" or Secret(point) or Secret(x) or Secret(y) then
+                                point, rel, relPoint, x, y = "CENTER", nil, "CENTER", 0, 0
+                            end
+                            local to = (rel ~= nil and st.textCopy[rel]) or ours
+                            dst:SetPoint(point, to, relPoint or point, x or 0, y or 0)
                         end
-                        local to = (rel ~= nil and st.textCopy[rel]) or ours
-                        dst:SetPoint(point, to, relPoint or point, x or 0, y or 0)
                     end
-                    pcall(function() dst:SetFont(r:GetFont()) end)
-                    CopyText(r, dst, true)
                 end
             end
         end
     end
+    for r, dst in pairs(st.others) do
+        pcall(FontFromRegion, dst, r)
+        CopyText(r, dst, true)
+    end
+end
+
+-- With the liquid off, our bar shows a fill as the game's does: its texture and colour.
+function TallFrames.PlainFill(ours, game)
+    local tex = game:GetStatusBarTexture()
+    local atlas = tex and tex:GetAtlas()
+    if atlas and not Secret(atlas) and atlas ~= "" and ours.fillAtlas ~= atlas then
+        ours.fill:SetAtlas(atlas)
+        ours.fillAtlas = atlas
+    end
+    local r, g, b = game:GetStatusBarColor()
+    ours.fill:SetVertexColor(r, g, b)
 end
 
 -- The copies from the game's frame, each poll while ours shows.
@@ -1038,7 +1132,8 @@ local function Copy(st)
     local nameSrc = st.spec.name(st.gf)
     CopyText(nameSrc, f.nameText)
     -- A new name the game shows is a new face too, whatever event was missed (a secret name is never compared).
-    local okName, name = pcall(function() return nameSrc:GetText() end)
+    local okName, name = false, nil
+    if nameSrc then okName, name = pcall(nameSrc.GetText, nameSrc) end
     if okName and type(name) == "string" and not Secret(name) and name ~= st.lastName then
         st.lastName = name
         Portrait(st)
@@ -1046,12 +1141,7 @@ local function Copy(st)
     if st.spec.level then CopyText(st.spec.level(st.gf), f.levelText) end
     if f.banner and st.spec.banner then
         local src = st.spec.banner(st.gf)
-        if src then
-            pcall(function()
-                local r, g, b = src:GetVertexColor()
-                f.banner:SetVertexColor(r, g, b)
-            end)
-        end
+        if src then pcall(ColorFrom, f.banner, src) end
     end
     for _, p in ipairs(st.carried) do CopyTexture(st, p[1], p[2]) end
     for _, glow in ipairs(st.glows) do CopyGlow(st, glow) end
@@ -1061,18 +1151,7 @@ local function Copy(st)
     -- With the liquid off, our bars show a fill as the game's does: its texture and colour.
     for kind, game in pairs(st.bars) do
         local ours = f[kind]
-        if not ns.Bars.IsLive(ours) then
-            pcall(function()
-                local tex = game:GetStatusBarTexture()
-                local atlas = tex and tex:GetAtlas()
-                if atlas and not Secret(atlas) and atlas ~= "" and ours.fillAtlas ~= atlas then
-                    ours.fill:SetAtlas(atlas)
-                    ours.fillAtlas = atlas
-                end
-                local r, g, b = game:GetStatusBarColor()
-                ours.fill:SetVertexColor(r, g, b)
-            end)
-        end
+        if not ns.Bars.IsLive(ours) then pcall(TallFrames.PlainFill, ours, game) end
     end
     -- What the game fades or restores of its own (a raid target icon shown anew) stays faded while ours shows.
     Fade(st.faded, 0)
@@ -1129,10 +1208,25 @@ local function Wanted(st)
     local health, power = st.spec.health(gf), st.spec.power(gf)
     if not (health and power) then return false end
     if st.spec.usable and not st.spec.usable(gf) then return false end
-    local L = ns.Preview.LAYOUT[st.spec.art]
-    if not ns.Preview.AtlasPlace(L.art, L.size and L.size[1], L.size and L.size[2], L.artAt) then return false end
-    st.gf, st.bars = gf, { health = health, power = power }
+    -- The art's atlas is looked up until the client has it, then known (a lookup each poll made two tables).
+    if not artKnown[st.spec.art] then
+        local L = ns.Preview.LAYOUT[st.spec.art]
+        if not ns.Preview.AtlasPlace(L.art, L.size and L.size[1], L.size and L.size[2], L.artAt) then return false end
+        artKnown[st.spec.art] = true
+    end
+    st.gf = gf
+    if not st.bars or st.bars.health ~= health or st.bars.power ~= power then
+        st.bars = { health = health, power = power }
+    end
     return true, dh, dp
+end
+
+function TallFrames.LookNow(st, want, dh, dp)
+    if want then
+        if not Show(st, dh, dp) then HideOurs(st) end
+    else
+        HideOurs(st)
+    end
 end
 
 -- One frame's look: shown taller, or the game's given back.
@@ -1140,13 +1234,7 @@ local function LookAt(st, inUse)
     local want, dh, dp = false, 0, 0
     if inUse ~= false then want, dh, dp = Wanted(st) end
     if want and not st.f and InCombatLockdown() then want = false end -- built out of combat, as children of secure frames
-    local ok, err = pcall(function()
-        if want then
-            if not Show(st, dh, dp) then HideOurs(st) end
-        else
-            HideOurs(st)
-        end
-    end)
+    local ok, err = pcall(TallFrames.LookNow, st, want, dh, dp)
     if not ok and not st.reported then
         st.reported = true
         ns.Core.Print("Bar Height: " .. tostring(err))
@@ -1178,7 +1266,7 @@ end
 function TallFrames.WatchSegments(on)
     if on and not segmentWatch then
         segmentWatch = CreateFrame("Frame")
-        segmentWatch:SetScript("OnEvent", function() segmentsUntil = GetTime() + SEGMENT_FOLLOW end)
+        segmentWatch:SetScript("OnEvent", ns.Timed("Bar Height: events", function() segmentsUntil = GetTime() + SEGMENT_FOLLOW end))
     end
     if not segmentWatch or (segmentWatch.watching or false) == on then return end
     segmentWatch.watching = on
@@ -1200,7 +1288,7 @@ function TallFrames.Apply()
                                  "GROUP_ROSTER_UPDATE" }) do
             driver:RegisterEvent(event)
         end
-        driver:SetScript("OnEvent", function(_, event, unit)
+        driver:SetScript("OnEvent", ns.Timed("Bar Height: events", function(_, event, unit)
             for _, key in ipairs(ORDER) do
                 local st = state[key]
                 if st.shown and Changes(st, event, unit) then Portrait(st) end
@@ -1208,10 +1296,10 @@ function TallFrames.Apply()
             for _, st in pairs(state.party) do
                 if st.shown and Changes(st, event, unit) then Portrait(st) end
             end
-        end)
+        end))
     end
     Look()
-    if AnyTall() and not ticker then ticker = C_Timer.NewTicker(POLL, Look) end
+    if AnyTall() and not ticker then ticker = C_Timer.NewTicker(POLL, ns.Timed("Bar Height: poll", Look)) end
 end
 TallFrames.Start = TallFrames.Apply
 

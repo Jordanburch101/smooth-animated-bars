@@ -88,6 +88,24 @@ Bar Height included), only the player's and target's frames shown, to match what
 frame rate, and `--cap 60` the Animation Frame Rate. `--by file` and `--by luafile` sum the calls or the Lua work by
 file.
 
+### The CPU rig
+
+`tools/harness/rig.py` says what `/sab perf` would say in game, without the game. It runs the addon in the mock with a
+player's saved variables, gives it a clock of its own that moves by a cost for each call to the game (setters,
+getters, status bars, other functions) and for its Lua work, and runs the addon's own `/sab perf` (its part-by-part
+timing). The costs are fitted to the reports with every part timed in game:
+
+```powershell
+cd tools/harness
+../venv/Scripts/python rig.py calibrate --since "2026-11-26 14:40" --pace 3   # after /sab perf in game and /reload
+../venv/Scripts/python rig.py predict --scenario fight --fps 95 --pace 3      # idle, notarget or fight
+../venv/Scripts/python rig.py predict --scenario idle --fps 120 --ref <commit> # beside an earlier version
+```
+
+`--since` picks the reports made with the code now in the working copy; `--pace` is a fight's changes a second;
+`--class` the player's (a warrior's rage has the fury). The fit is written to `rig_calibration.json` with each part's
+measured and predicted time. `--ref` needs a version with the part-by-part timing (`ns.Timed`) to compare against.
+
 A change made for speed must not change the look. `tools/harness/samelook.py` plays the same scenarios (classes,
 themes, effects at their strongest and off, a reversed bar, quiet and fighting) on the addon at a git ref and on the
 working copy, and compares every texture that shows, every frame: place, size, texture coordinates, colours, alpha,

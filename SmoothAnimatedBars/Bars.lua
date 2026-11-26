@@ -703,6 +703,15 @@ local function Sight(region)
     return a < 0.01 and "faded" or "shown"
 end
 
+-- A step's time since t0 added to the part's (ns.Timing, while /sab perf times every part), and the clock now.
+function Bars.TimeStep(part, t0)
+    local now = debugprofilestop()
+    local T = ns.Timing
+    T.ms[part] = (T.ms[part] or 0) + now - t0
+    T.calls[part] = (T.calls[part] or 0) + 1
+    return now
+end
+
 -- A bar nobody can see is not looked at every frame (RunBar): a hidden one until the client shows its frame again (the
 -- OnShow of our hidden bar on it, NewBar), a game bar Bar Height has faded under its own until it gives the frame back
 -- (Bars.Rest). Either way it is looked at again after SLEEP_CHECK, in case a wake never came.
@@ -886,6 +895,24 @@ end
 -- shown: true, false, or a secret (IsShown and IsVisible can answer with one, SecretReturnsForAspect Shown). A secret
 -- cannot be tested, and SetShown takes one only from untainted code, but SetAlphaFromBoolean takes one from addons
 -- (SimpleRegionAPI), so the copy then shows and the client fades it in or out by the game's own answer.
+-- mine:set(theirs:get()), under the caller's pcall with no function made for it: the copies run ten times a second for
+-- every text, and a function made each time (pcall(function() ... end)) is garbage the game has to collect.
+function Bars.Pass(mine, set, theirs, get)
+    mine[set](mine, theirs[get](theirs))
+end
+
+-- A frame's regions into a table kept for it, emptied past them (a new table each look was garbage).
+function Bars.RegionsInto(frame, t)
+    return Bars.Fill(t, frame:GetRegions())
+end
+
+function Bars.Fill(t, ...)
+    local n = select("#", ...)
+    for i = 1, n do t[i] = (select(i, ...)) end
+    for i = #t, n + 1, -1 do t[i] = nil end
+    return t
+end
+
 local function CopyText(mine, theirs, shown, whole, plate)
     local secret = Secret(shown)
     if not secret and not shown then
@@ -895,7 +922,7 @@ local function CopyText(mine, theirs, shown, whole, plate)
     CopyFont(mine, theirs, plate)
     if whole then CopyNameHeight(mine) end
     -- Each on its own, so one the client refuses cannot keep the rest from being copied.
-    pcall(function() mine:SetTextColor(theirs:GetTextColor()) end)
+    pcall(Bars.Pass, mine, "SetTextColor", theirs, "GetTextColor")
     -- The name's colour is a vertex colour over the text colour, the game's own (CompactUnitFrame_UpdateName: grey when
     -- tapped, reaction, class) and plate addons' (Better Blizzard Plates): the copy stayed white over a coloured name.
     -- Set only when it changes (a secret one every time): with no fourth value it may also reset the alpha, set below.
@@ -904,10 +931,10 @@ local function CopyText(mine, theirs, shown, whole, plate)
         if Secret(r, g, b) then mine.vr = nil else mine.vr, mine.vg, mine.vb = r, g, b end
         pcall(mine.SetVertexColor, mine, r, g, b)
     end
-    pcall(function() mine:SetShadowColor(theirs:GetShadowColor()) end)
-    pcall(function() mine:SetShadowOffset(theirs:GetShadowOffset()) end)
-    pcall(function() mine:SetJustifyH(theirs:GetJustifyH()) end)
-    pcall(function() mine:SetJustifyV(theirs:GetJustifyV()) end)
+    pcall(Bars.Pass, mine, "SetShadowColor", theirs, "GetShadowColor")
+    pcall(Bars.Pass, mine, "SetShadowOffset", theirs, "GetShadowOffset")
+    pcall(Bars.Pass, mine, "SetJustifyH", theirs, "GetJustifyH")
+    pcall(Bars.Pass, mine, "SetJustifyV", theirs, "GetJustifyV")
     -- Plate addons scale the name and the health text, some ignoring the plate's own scale (Better Blizzard Plates'
     -- name scale): the copy, at the plate's scale, showed as a second name behind the game's. GetScale can answer with a
     -- secret (SecretReturnsForAspect Scale), which SetScale takes only untainted, so a secret one is left alone. Done as
@@ -934,7 +961,7 @@ local function CopyText(mine, theirs, shown, whole, plate)
         if mine.SetMaxLines then pcall(mine.SetMaxLines, mine, 1) end
     else
         -- Forever's FontString has no GetWordWrap; CanWordWrap answers.
-        pcall(function() mine:SetWordWrap(theirs:CanWordWrap()) end)
+        pcall(Bars.Pass, mine, "SetWordWrap", theirs, "CanWordWrap")
     end
     -- The health texts are sized by their text, so a copy laid over their box would be cut short by any difference
     -- in width; it is pinned at the side its text is justified to instead. The name has a width of the game's (it is
@@ -981,9 +1008,9 @@ end
 -- its own made the first time it is seen.
 function Bars.CopyOtherTexts(b, named)
     local t = b.texts
-    local ok, regions = pcall(function() return { b.bar:GetRegions() } end)
+    t.other, t.regions = t.other or {}, t.regions or {}
+    local ok, regions = pcall(Bars.RegionsInto, b.bar, t.regions)
     if not ok then return end
-    t.other = t.other or {}
     for _, r in ipairs(regions) do
         local okType, kind = pcall(r.GetObjectType, r)
         if not named[r] and okType and kind == "FontString" and r.GetText then
@@ -1658,7 +1685,10 @@ end
 
 local function UpdateBar(b, dt)
     local bar = b.bar
+    -- While /sab perf times every part, each step's time too (Bars.TimeStep).
+    local lap = ns.Timing.on and debugprofilestop()
     b.sight = Sight(bar)
+    if lap then lap = Bars.TimeStep("bars > is it seen", lap) end
     if b.sight ~= "shown" then
         b.unseen = true
         -- A hidden frame's bar sleeps until the game shows it again (its hidden bar's OnShow wakes it, NewBar), rather
@@ -1699,12 +1729,14 @@ local function UpdateBar(b, dt)
         b.drawNow = true
         b.colorIn = 0 -- a flat bar's colour may have changed meanwhile (a druid shifting while it was hidden)
     end
+    if lap then lap = Bars.TimeStep("bars > size and game fill", lap) end
 
     b.feed = b.feed + dt
     if b.feed >= FEED_EVERY then
         b.feed = 0
         Feed(b, true)
     end
+    if lap then lap = Bars.TimeStep("bars > feed values", lap) end
 
     if w ~= b.width or h ~= b.height then
         b.width, b.height = w, h
@@ -1744,6 +1776,7 @@ local function UpdateBar(b, dt)
             if not b.live then return end -- turned vertical: dropped
         end
     end
+    if lap then lap = Bars.TimeStep("bars > looks and texts", lap) end
     if b.spot.party or b.spot.slow then idleFps = PARTY_FPS end
     -- An example in the editor that is not being edited (Preview.SetActive) idles slower still.
     if b.spot.calm then idleFps = 10 end
@@ -1762,6 +1795,7 @@ local function UpdateBar(b, dt)
     end
 
     -- Once settled only the idle wobble remains, so it drops to the idle rate. A party bar keeps to its rate busy too.
+    if lap then lap = Bars.TimeStep("bars > inflow, build-up, fury", lap) end
     -- Moving, it updates every frame, or at the Animation Frame Rate (Liquid:Due).
     if b.drawNow then
         b.drawNow, b.idle, b.liquid.busyAcc = nil, 0, 0
@@ -2429,8 +2463,8 @@ function Bars.Apply()
     local looking = waiting or Bars.raid.watch
     if (any > 0 or platesOn or looking) and not driver then
         driver = CreateFrame("Frame")
-        driver:SetScript("OnUpdate", OnUpdate)
-        driver:SetScript("OnEvent", OnEvent)
+        driver:SetScript("OnUpdate", ns.Timed("bars", OnUpdate))
+        driver:SetScript("OnEvent", ns.Timed("bars: events", OnEvent))
     end
     External.unitEvents = live > 0
     if driver then
@@ -2711,8 +2745,8 @@ end
 function External.Wake()
     if not driver then
         driver = CreateFrame("Frame")
-        driver:SetScript("OnUpdate", OnUpdate)
-        driver:SetScript("OnEvent", OnEvent)
+        driver:SetScript("OnUpdate", ns.Timed("bars", OnUpdate))
+        driver:SetScript("OnEvent", ns.Timed("bars: events", OnEvent))
     end
     driver:Show()
     if not External.unitEvents then

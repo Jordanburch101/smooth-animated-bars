@@ -1124,6 +1124,7 @@ local function TryBuildGroup()
     end
 end
 
+local frameDt, StepMarker = 0, nil
 local function OnUpdate(_, elapsed)
     local dt = math.min(elapsed, 0.1)
     if dt <= 0 then return end
@@ -1133,7 +1134,14 @@ local function OnUpdate(_, elapsed)
         TryBuildGroup()
         pcall(BuildTall) -- a taller frame's bar given its liquid since (its setting turned on)
     end
-    Each(function(m)
+    frameDt = dt
+    Each(StepMarker)
+end
+
+-- One marker's update this frame (frameDt): a function of its own, not one made each frame, which was garbage.
+function StepMarker(m)
+    local dt = frameDt
+    do
         if not m.live or m.err or m.retired then return end
         local step = dt
         -- A party or raid member's marker at most PARTY_FPS times a second, a raid frame's at the raid liquids' rate
@@ -1155,13 +1163,13 @@ local function OnUpdate(_, elapsed)
             ns.Core.Print("Error in the " .. (m.label or m.name) .. " heal marker, which is off until a reload: "
                 .. m.err)
         end
-    end)
+    end
 end
 
 -- Others' heals on a group member: the game says when they change (UNIT_HEAL_PREDICTION), which wakes the member's
 -- resting marker for a look at the game's bar. The player's own markers look every refresh anyway.
 local predict = CreateFrame("Frame")
-predict:SetScript("OnEvent", function(_, _, unit)
+predict:SetScript("OnEvent", ns.Timed("heal marker: others' heals events", function(_, _, unit)
     if type(unit) ~= "string" or Secret(unit) then return end
     -- The event fires for nameplates, the target and the focus too: only a group bar's unit can be on one.
     if unit ~= "player" and not unit:match("^party%d") and not unit:match("^raid%d") then return end
@@ -1171,11 +1179,11 @@ predict:SetScript("OnEvent", function(_, _, unit)
             m.since = REFRESH_EVERY
         end
     end
-end)
+end))
 
 -- Group members' heals being cast (casting, for the look of others' heals): from a cast's start to its end.
 local casts = CreateFrame("Frame")
-casts:SetScript("OnEvent", function(_, event, unit, _, spellID)
+casts:SetScript("OnEvent", ns.Timed("heal marker: group casts", function(_, event, unit, _, spellID)
     -- After a loading screen nothing from before holds. (A roster change is left to CAST_MAX: in a raid it comes often
     -- with nobody moved, and would drop casts on their way.)
     if event == "PLAYER_ENTERING_WORLD" then
@@ -1188,7 +1196,7 @@ casts:SetScript("OnEvent", function(_, event, unit, _, spellID)
     elseif casting[unit] and not casting[unit].ended then
         casting[unit].ended = GetTime() -- kept a moment (CAST_GRACE), while the heal lands
     end
-end)
+end))
 local CAST_EVENTS = { "UNIT_SPELLCAST_START", "UNIT_SPELLCAST_CHANNEL_START", "UNIT_SPELLCAST_STOP",
                       "UNIT_SPELLCAST_CHANNEL_STOP", "UNIT_SPELLCAST_FAILED", "UNIT_SPELLCAST_INTERRUPTED",
                       "PLAYER_ENTERING_WORLD" }
@@ -1217,7 +1225,7 @@ function HealMarker.Apply()
     local any = live and (player or mana or next(extra) or next(group) or previews[1]) and true or false
     if any and not driver then
         driver = CreateFrame("Frame")
-        driver:SetScript("OnUpdate", OnUpdate)
+        driver:SetScript("OnUpdate", ns.Timed("heal marker", OnUpdate))
     end
     if driver then driver:SetShown(any) end
 end

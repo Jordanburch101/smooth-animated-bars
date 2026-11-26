@@ -82,7 +82,7 @@ local function onUpdate()
     end
 end
 
-frame:SetScript("OnEvent", function(_, event, ...)
+frame:SetScript("OnEvent", ns.Timed("mana build-up: events", function(_, event, ...)
     if event == "UNIT_SPELLCAST_SENT" then
         local _, _, castGUID, spellID = ...
         sentGUID, sentCost = castGUID, manaCost(spellID)
@@ -94,14 +94,14 @@ frame:SetScript("OnEvent", function(_, event, ...)
             trace("SPEND " .. spellName(spellID) .. " cost " .. tostring(cost))
             startedAt = GetTime()
             findBars()
-            frame:SetScript("OnUpdate", onUpdate)
+            frame:SetScript("OnUpdate", ns.Timed("mana build-up", onUpdate))
         else
             trace("FREE " .. spellName(spellID))
         end
     elseif event == "PLAYER_DEAD" then
         stop()
     end
-end)
+end))
 
 -- After the setting changes, and at login.
 function ManaRule.Apply()

@@ -1720,14 +1720,14 @@ end
 
 -- Errors here are reported once each and the tracking carries on with the next event.
 local reported = {}
-frame:SetScript("OnEvent", function(...)
+frame:SetScript("OnEvent", ns.Timed("DoT tracking: events", function(...)
     local ok, err = pcall(onEvent, ...)
     if not ok and not reported[err] then
         reported[err] = true
         trace("ERROR " .. tostring(err))
         ns.Core.Print("Error in the DoT tracking (it carries on): " .. tostring(err))
     end
-end)
+end))
 
 local namesAdded = false
 -- The client's own names for the spells in the name-keyed tables (Forever renames a few).

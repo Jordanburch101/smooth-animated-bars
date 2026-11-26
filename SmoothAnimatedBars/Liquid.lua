@@ -6,6 +6,36 @@
 
 local _, ns = ...
 
+-- Timing every part of the addon for /sab perf (SmoothAnimatedBars.lua, PartsReport): each update, event handler and
+-- ticker is wrapped by ns.Timed with the name of its part, and while ns.Timing.on its time is added up. Off, a wrapper
+-- only tests the flag. Here, in the first file that runs code, as every part sets its scripts at load. The game's own
+-- profiler counted about twice what /sab perf's liquid timing did (seen in game): the rest was in these parts.
+local Timing = { on = false, ms = {}, calls = {} }
+ns.Timing = Timing
+local profileClock = debugprofilestop
+
+local function TimedDone(part, t0, ...)
+    Timing.ms[part] = (Timing.ms[part] or 0) + (profileClock() - t0)
+    Timing.calls[part] = (Timing.calls[part] or 0) + 1
+    return ...
+end
+
+-- A step's time since t0 added to the part's, and the clock now (Liquid:Update's steps).
+local function Lap(part, t0)
+    local now = profileClock()
+    Timing.ms[part] = (Timing.ms[part] or 0) + now - t0
+    Timing.calls[part] = (Timing.calls[part] or 0) + 1
+    return now
+end
+
+function ns.Timed(part, fn)
+    if not profileClock then return fn end
+    return function(...)
+        if not Timing.on then return fn(...) end
+        return TimedDone(part, profileClock(), fn(...))
+    end
+end
+
 local exp, min, max, abs, sin, cos, sqrt, floor, random, pi =
     math.exp, math.min, math.max, math.abs, math.sin, math.cos, math.sqrt, math.floor, math.random, math.pi
 local atan2 = math.atan2 or math.atan
@@ -909,7 +939,10 @@ function Liquid:EmitMote(x, y, vx, vy, life, size, from, to, style, ambient)
     m.wf = Rand(3, 7) -- wander pace, rad/s
     if style.orient then m.rot = atan2(-vx, vy) end
     local tex = m.tex
-    tex.sabA, tex.sabC = nil, nil -- a new mote: its first update sets its colour and alpha whatever the last one's were
+    -- A new mote: its first update sets its colour and alpha whatever the last one's were (the colour's table kept and
+    -- marked stale, not made again: a new one for every mote was garbage).
+    tex.sabA = nil
+    if tex.sabC then tex.sabC[1] = -1 end
     if m.file ~= style.texture then
         m.file = style.texture
         tex:SetTexture(MEDIA .. style.texture)
@@ -1206,6 +1239,7 @@ end
 -- dt is real time. The bar's fill speed and the lean are measured in it, as the edge follows the game's bar; everything
 -- the liquid does on its own runs on its own clock, dt scaled by the Animation Speed effect (opts.speed, 1 at 100%).
 function Liquid:Update(dt, edge)
+    local lap = Timing.on and profileClock and profileClock()
     local real = dt
     dt = dt * (self.opts.speed or 1)
     self.t = self.t + dt
@@ -1263,9 +1297,12 @@ function Liquid:Update(dt, edge)
         end
     end
 
+    if lap then lap = Lap("all liquids > waves and what they throw", lap) end
     self:Draw(dt)
+    if lap then lap = Lap("all liquids > drawing", lap) end
     self:UpdateBolts(dt)
     self:UpdateParticles(dt)
+    if lap then Lap("all liquids > lightning, bubbles, motes", lap) end
 end
 
 function Liquid:Draw(dt)
