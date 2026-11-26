@@ -717,6 +717,7 @@ end
 
 -- A game region's shown state onto ours. A secret one shows ours faded by it, which only a region nobody else fades
 -- may take (alphaFree): the shield sets the absorb overlay's alpha.
+-- Returns false when the game's says it is hidden (readably), else nothing.
 local function Mirror(src, dst, alphaFree)
     local ok, shown = pcall(src.IsShown, src)
     if not ok then return end
@@ -734,6 +735,7 @@ local function Mirror(src, dst, alphaFree)
         dst.mirrored = shown
         dst:SetShown(shown)
     end
+    if not shown then return false end
 end
 
 -- A copy of the game's segment src on our bar: a frame a level above the bar and its liquid (the game's draw over its
@@ -906,8 +908,11 @@ end
 local function MirrorSegments(st)
     for _, s in ipairs(st.segments) do
         if s.seg then
-            Mirror(s.src, s.seg, true)
-            for _, o in ipairs(s.seg.overlays) do Mirror(o.src, o.dst, o.alphaFree) end
+            -- Its overlays are drawn in it: while the game's segment is hidden they cannot be seen, and they are
+            -- mirrored in the same call that shows it again (a third of each frame's mirroring in a fight).
+            if Mirror(s.src, s.seg, true) ~= false then
+                for _, o in ipairs(s.seg.overlays) do Mirror(o.src, o.dst, o.alphaFree) end
+            end
         else
             Mirror(s.src, s.host, true)
         end
