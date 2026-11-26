@@ -1124,7 +1124,7 @@ local function TryBuildGroup()
     end
 end
 
-local frameDt, StepMarker = 0, nil
+local frameDt, frameBusy, StepMarker = 0, true, nil
 local function OnUpdate(_, elapsed)
     local dt = math.min(elapsed, 0.1)
     if dt <= 0 then return end
@@ -1135,6 +1135,9 @@ local function OnUpdate(_, elapsed)
         pcall(BuildTall) -- a taller frame's bar given its liquid since (its setting turned on)
     end
     frameDt = dt
+    -- Whether any heal is on the way, once a frame: a marker's read can only drop heals (finished ones), never add one,
+    -- so a true here at worst sends a marker the long way, through Update, which asks again.
+    frameBusy = ns.Heals.Busy()
     Each(StepMarker)
 end
 
@@ -1155,6 +1158,27 @@ function StepMarker(m)
             end
             if m.wait < every then return end
             step, m.wait = math.min(m.wait, 0.1), 0
+            -- Update's first test, here: a resting group marker returns from it at once.
+            if m.hidden and not m.othersWake and not frameBusy then return end
+        elseif m.hidden ~= false and m.name ~= "preview" and not frameBusy then
+            -- A marker showing nothing (its clip hidden: m.hidden is false only while it shows) with no heal on the way
+            -- anywhere: between its reads Update only keeps time and the bar's sight, so that is done here, exactly as
+            -- Update does it, without its call. Everything else (a read, a first Hide) goes to Update.
+            local sight = ns.Bars.Sight(m.bar)
+            if sight == "hidden" then
+                if m.hidden then
+                    m.landed, m.burst, m.othersWake = false, nil, nil -- Hide, on a marker already hidden
+                    return
+                end
+            elseif sight == "faded" then
+                -- Heals.Charge has nothing without a heal on the way.
+                m.landed, m.burst, m.calm = false, nil, true
+                m.since = REFRESH_EVERY
+                return
+            elseif m.since + dt < REFRESH_EVERY then
+                m.since = m.since + dt
+                return
+            end
         end
         local ok, err = pcall(Update, m, step)
         if not ok then

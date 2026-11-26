@@ -524,7 +524,11 @@ local function RaiseIcon(m)
     end
 end
 
+-- m.quiet: hidden and nothing shown since (Refresh clears it as it goes on to show): asked again at each read while
+-- there are no DoTs, the window's Hide and the skulls' search did nothing.
 local function Hide(m)
+    if m.quiet then return end
+    m.quiet = true
     if m.clip:IsShown() then
         m.clip:Hide()
         for _, d in ipairs(m.liquids) do
@@ -576,6 +580,7 @@ local function Refresh(m)
     if not spec.visible() then return false end
     local max, health, total, list = spec.source()
     if not list or #list == 0 or total <= 0 then return false end
+    m.quiet = nil -- shows from here on (Hide)
     -- Dots.lua says "applied" only for the target; on a nameplate a DoT landing shows as more damage to come.
     if spec.plate and not m.fresh and not calm and total > m.value + 0.5 then landed = true end
 
@@ -659,7 +664,9 @@ local function Update(m, dt)
     m.feed = m.feed + dt
     if m.feed >= FEED_EVERY then
         m.feed = 0
-        Feed(m, true)
+        -- Not while the marker is hidden (m.quiet): its hidden bar is only anchored to inside the hidden clip, and the
+        -- read that shows it again feeds it at once, unsmoothed (Refresh, m.fresh).
+        if not m.quiet then Feed(m, true) end
     end
     m.since = m.since + dt
     if m.since >= REFRESH_EVERY then
@@ -894,7 +901,25 @@ end
 -- One marker's update this frame (Marker.frameDt): a function of its own, not one made each frame, which was garbage.
 function Marker.Step(m)
     if m.live and not m.err then
-        local ok, err = pcall(Update, m, Marker.frameDt)
+        local dt = Marker.frameDt
+        if m.quiet then
+            -- Hidden with nothing shown since: between its reads Update only keeps time and the bar's sight, done here
+            -- exactly as Update does it, without its call. A read goes to Update.
+            local sight = ns.Bars.Sight(m.bar)
+            if sight == "hidden" then return end -- Hide, on a quiet marker
+            if sight == "faded" then
+                m.landed, m.calm = false, true
+                m.since = REFRESH_EVERY
+                return
+            end
+            if m.since + dt < REFRESH_EVERY then
+                m.feed = m.feed + dt
+                if m.feed >= FEED_EVERY then m.feed = 0 end
+                m.since = m.since + dt
+                return
+            end
+        end
+        local ok, err = pcall(Update, m, dt)
         if not ok then
             m.err = tostring(err)
             pcall(Hide, m)

@@ -51,12 +51,27 @@ local function Number(v)
     if type(v) == "number" and not Secret(v) then return v end
 end
 
-local function Path(t, ...)
-    for i = 1, select("#", ...) do
-        if type(t) ~= "table" then return nil end
-        t = t[(select(i, ...))]
-    end
-    return t
+-- t[a][b][c][d], as far as keys are given, or nil where a step is not a table. Up to four keys, written out: a loop over
+-- select("#", ...) was a twentieth of a poll's Lua.
+local function Path(t, a, b, c, d)
+    if type(t) ~= "table" then return nil end
+    t = t[a]
+    if b == nil then return t end
+    if type(t) ~= "table" then return nil end
+    t = t[b]
+    if c == nil then return t end
+    if type(t) ~= "table" then return nil end
+    t = t[c]
+    if d == nil then return t end
+    if type(t) ~= "table" then return nil end
+    return t[d]
+end
+
+-- Whether a region (or nil) says it is shown with a readable true.
+function TallFrames.ShownTrue(region)
+    if not region then return false end
+    local ok, shown = pcall(region.IsShown, region)
+    return ok and shown == true
 end
 
 -- The pieces found, in a list without holes (ipairs stops at the first nil, and a client can lack any of them).
@@ -182,13 +197,9 @@ local SPEC = {
         -- takes another art (AlternatePowerFrameTexture) with the bar in its own area: both left to the game.
         usable = function(gf)
             if not (gf.unit == nil or gf.unit == "player") then return false end
-            for _, region in ipairs({ Path(gf, "PlayerFrameContainer", "AlternatePowerFrameTexture"),
-                                      rawget(_G, "PlayerFrameAlternatePowerBarArea") }) do
-                local ok, shown = false, nil
-                if region then ok, shown = pcall(region.IsShown, region) end
-                if ok and shown == true then return false end
-            end
-            return true
+            -- Each poll: the two regions asked in turn (a table of them each poll was garbage).
+            if TallFrames.ShownTrue(Path(gf, "PlayerFrameContainer", "AlternatePowerFrameTexture")) then return false end
+            return not TallFrames.ShownTrue(rawget(_G, "PlayerFrameAlternatePowerBarArea"))
         end,
         down = function() return false end,
     },
@@ -264,11 +275,16 @@ local PARTY = {
 }
 
 -- The party's member buttons the game has in use now.
+-- Into tables kept for it, emptied first (two new tables each poll were garbage); the keys' names made once.
+local membersOut, membersSeen = {}, {}
+local MEMBER_KEYS = { "MemberFrame1", "MemberFrame2", "MemberFrame3", "MemberFrame4" }
 local function PartyMembers()
-    local out, seen = {}, {}
+    local out, seen = membersOut, membersSeen
+    for i = #out, 1, -1 do out[i] = nil end
+    for k in pairs(seen) do seen[k] = nil end
     local party = rawget(_G, "PartyFrame")
     for i = 1, 4 do
-        local gf = Path(party, "MemberFrame" .. i)
+        local gf = Path(party, MEMBER_KEYS[i])
         if type(gf) == "table" and not seen[gf] then
             seen[gf] = true
             out[#out + 1] = gf
@@ -284,12 +300,20 @@ local driver, ticker
 -- The heights asked for by a frame's settings (prefix), as how much taller than the game's each bar is. Small frames
 -- start from their own bars' heights.
 local BASE = { tot = { 11, 7 }, pet = { 11, 7 }, party = { 10, 7 } }
+local BASE_FULL = { 20, 10 }
+-- Read once a poll for each frame (heightStamp: the Look running now, nil outside one; settings do not change within
+-- it): the settings were read three times a poll for some frames, and the setting names made each time.
+local heightStamp, looks = nil, 0
 local function Heights(spec)
+    if heightStamp and spec.hStamp == heightStamp then return spec.hdh, spec.hdp end
     local get = ns.Core.Get
-    local base = BASE[spec.art] or { 20, 10 }
-    local dh = (tonumber(get(spec.prefix .. "HealthHeight")) or base[1]) - base[1]
-    local dp = (tonumber(get(spec.prefix .. "PowerHeight")) or base[2]) - base[2]
-    return math.max(0, dh), math.max(0, dp)
+    local base = BASE[spec.art] or BASE_FULL
+    if not spec.healthKey then spec.healthKey, spec.powerKey = spec.prefix .. "HealthHeight", spec.prefix .. "PowerHeight" end
+    local dh = (tonumber(get(spec.healthKey)) or base[1]) - base[1]
+    local dp = (tonumber(get(spec.powerKey)) or base[2]) - base[2]
+    dh, dp = math.max(0, dh), math.max(0, dp)
+    spec.hStamp, spec.hdh, spec.hdp = heightStamp, dh, dp
+    return dh, dp
 end
 TallFrames.BASE = BASE
 
@@ -693,6 +717,7 @@ end
 
 -- A game region's shown state onto ours. A secret one shows ours faded by it, which only a region nobody else fades
 -- may take (alphaFree): the shield sets the absorb overlay's alpha.
+-- Returns false when the game's says it is hidden (readably), else nothing.
 local function Mirror(src, dst, alphaFree)
     local ok, shown = pcall(src.IsShown, src)
     if not ok then return end
@@ -710,6 +735,7 @@ local function Mirror(src, dst, alphaFree)
         dst.mirrored = shown
         dst:SetShown(shown)
     end
+    if not shown then return false end
 end
 
 -- A copy of the game's segment src on our bar: a frame a level above the bar and its liquid (the game's draw over its
@@ -838,6 +864,9 @@ local function Box(s, poll)
     end
     local dx, dy, h = bar.boxDx, bar.boxDy, bar.boxH
     if not dx then return end
+    -- The same numbers as when the key was last made give the same key: no string made (most polls).
+    if s.boxDx == dx and s.boxDy == dy and s.boxH == h then return end
+    s.boxDx, s.boxDy, s.boxH = dx, dy, h
     local key = string.format("%.1f,%.1f,%.1f", dx, dy, h)
     if s.boxKey == key then return end
     s.boxKey = key
@@ -858,9 +887,9 @@ local function ShownNow(src)
     return not ok or Secret(shown) or shown == true
 end
 
-local function CopySegments(st)
-    st.poll = (st.poll or 0) + 1
-    local full = st.poll % FULL_EVERY == 1
+-- full: a poll that copies hidden segments' looks too (every FULL_EVERY polls, counted in Show), or the copy as our
+-- frame shows (CopyShown).
+local function CopySegments(st, full)
     for _, s in ipairs(st.segments) do
         local look = full or ShownNow(s.src)
         if s.seg then
@@ -868,7 +897,7 @@ local function CopySegments(st)
                 Look(s.src.Fill, s.seg.Fill)
                 for _, o in ipairs(s.seg.overlays) do Look(o.src, o.dst, o.tile) end
             end
-            Box(s, st.poll)
+            Box(s, st.copies)
         else
             if look then Look(s.src, s.tex) end
         end
@@ -879,8 +908,11 @@ end
 local function MirrorSegments(st)
     for _, s in ipairs(st.segments) do
         if s.seg then
-            Mirror(s.src, s.seg, true)
-            for _, o in ipairs(s.seg.overlays) do Mirror(o.src, o.dst, o.alphaFree) end
+            -- Its overlays are drawn in it: while the game's segment is hidden they cannot be seen, and they are
+            -- mirrored in the same call that shows it again (a third of each frame's mirroring in a fight).
+            if Mirror(s.src, s.seg, true) ~= false then
+                for _, o in ipairs(s.seg.overlays) do Mirror(o.src, o.dst, o.alphaFree) end
+            end
         else
             Mirror(s.src, s.host, true)
         end
@@ -1024,7 +1056,9 @@ local function Build(st)
             end
         end
         -- The bars' values every frame, handed from the game's bars to ours (secret, never read).
-        for kind, game in pairs(st.bars) do pcall(TallFrames.HandValues, f[kind], game) end
+        local bars, handValues = st.bars, TallFrames.HandValues
+        pcall(handValues, f.health, bars.health)
+        pcall(handValues, f.power, bars.power)
     end))
 end
 
@@ -1076,11 +1110,10 @@ end
 local function RegionsOf(game, t) return FillRegions(t, game:GetRegions()) end
 local function FontFromRegion(dst, r) dst:SetFont(r:GetFont()) end
 
-function TallFrames.OtherTexts(st)
-    -- New texts are looked for once a second (an addon adds its own once, at its load); those found are copied each
-    -- poll. Every region of every bar was looked over each poll before, a twentieth of a poll's calls.
-    st.otherPoll = (st.otherPoll or 0) + 1
-    if st.otherPoll % FULL_EVERY == 1 then
+function TallFrames.OtherTexts(st, full)
+    -- New texts are looked for once a second (an addon adds its own once, at its load), on a full copy; those found are
+    -- copied each poll. Every region of every bar was looked over each poll before, a twentieth of a poll's calls.
+    if full then
         st.regions = st.regions or {}
         for kind, game in pairs(st.bars) do
             local ours = st.f[kind]
@@ -1124,11 +1157,13 @@ function TallFrames.PlainFill(ours, game)
     ours.fill:SetVertexColor(r, g, b)
 end
 
--- The copies from the game's frame, each poll while ours shows.
-local function Copy(st)
+-- The copies from the game's frame, each poll while ours can be seen, and as it comes into sight (CopyShown). full: the
+-- hidden segments' looks and the search for other addons' texts too (Show: every FULL_EVERY polls).
+local function Copy(st, full)
     local f = st.f
+    st.copies = (st.copies or 0) + 1 -- each copy reads the bars' places afresh (Box)
     for _, p in ipairs(st.texts) do CopyText(p[1], p[2], p[3]) end
-    TallFrames.OtherTexts(st)
+    TallFrames.OtherTexts(st, full)
     local nameSrc = st.spec.name(st.gf)
     CopyText(nameSrc, f.nameText)
     -- A new name the game shows is a new face too, whatever event was missed (a secret name is never compared).
@@ -1145,7 +1180,7 @@ local function Copy(st)
     end
     for _, p in ipairs(st.carried) do CopyTexture(st, p[1], p[2]) end
     for _, glow in ipairs(st.glows) do CopyGlow(st, glow) end
-    CopySegments(st)
+    CopySegments(st, full)
     MirrorSegments(st) -- between the events that change them too (SEGMENT_EVENTS)
     if st.combo and not st.combo.err then LayoutCombo(st) end
     -- With the liquid off, our bars show a fill as the game's does: its texture and colour.
@@ -1158,8 +1193,28 @@ local function Copy(st)
     for _, p in ipairs(st.carried) do pcall(p[1].SetAlpha, p[1], 0) end
 end
 
+-- Whether our frame can be seen: its own frame's IsVisible, a secret or failed answer taken as seen.
+function TallFrames.Seen(f)
+    local ok, v = pcall(f.IsVisible, f)
+    return not ok or Secret(v) or v == true
+end
+
+-- Our frame coming into sight (the game showing its frame, OnShow): copied at once, in full, as the polls skipped it
+-- while it was out of sight.
+function TallFrames.CopyShown(st)
+    if not st.shown or st.inShow or not TallFrames.Seen(st.f) then return end
+    local ok, err = pcall(Copy, st, true)
+    if not ok and not st.reported then
+        st.reported = true
+        ns.Core.Print("Bar Height: " .. tostring(err))
+    end
+end
+
 local function Show(st, dh, dp)
-    if not st.f then Build(st) end
+    if not st.f then
+        Build(st)
+        st.f:SetScript("OnShow", function() TallFrames.CopyShown(st) end)
+    end
     Anchor(st)
     local changed = st.dh ~= dh or st.dp ~= dp or not st.shown
     st.dh, st.dp = dh, dp
@@ -1169,7 +1224,9 @@ local function Show(st, dh, dp)
     if not st.shown then
         st.shown = true
         st.faded = st.spec.fade(st.gf)
+        st.inShow = true -- copied below, once handed over, not from its OnShow
         st.f:Show()
+        st.inShow = nil
     end
     -- Handed over again, with its portrait, whenever the button's unit changes (a party member's moved).
     if st.handed ~= st.unit then
@@ -1177,7 +1234,12 @@ local function Show(st, dh, dp)
         Portrait(st)
         Hand(st)
     end
-    Copy(st)
+    -- Counted while ours cannot be seen too, so the full copies come when they did.
+    st.poll = (st.poll or 0) + 1
+    -- Our frame is a child of the game's, so it is out of sight while the game hides its frame (no focus, no pet, no
+    -- party): nothing copied onto it can be seen then, and copying the frames nobody saw was half a poll. It is copied
+    -- the moment it comes into sight instead (CopyShown, its OnShow), in full.
+    if TallFrames.Seen(st.f) then Copy(st, st.poll % FULL_EVERY == 1) end
     -- The game's bars, faded under ours, rest rather than being looked at every frame (Bars.Rest).
     for _, game in pairs(st.bars) do ns.Bars.Rest(game, true) end
     return true
@@ -1243,6 +1305,8 @@ end
 
 local function Look()
     if not (ns.Core.ready and ns.Preview and ns.Preview.SetFrameTall) then return end
+    looks = looks + 1
+    heightStamp = looks
     for _, key in ipairs(ORDER) do
         local st = state[key]
         st.which, st.spec = key, SPEC[key]
@@ -1255,11 +1319,13 @@ local function Look()
     end
     for gf, st in pairs(state.party) do LookAt(st, inUse[gf] or false) end
     -- Nothing taller any more: stop looking.
-    if not AnyTall() and ticker then
+    local any = AnyTall()
+    heightStamp = nil
+    if not any and ticker then
         ticker:Cancel()
         ticker = nil
     end
-    TallFrames.WatchSegments(AnyTall())
+    TallFrames.WatchSegments(any)
 end
 
 -- The events that change the game's segments (SEGMENT_EVENTS), listened to only while a frame is taller.
