@@ -108,11 +108,39 @@ function Region:GetFrameLevel()
 end
 -- Showing a hidden frame runs its OnShow and hiding a shown one its OnHide, as in the client.
 -- SetShown does not go through Show or Hide.
+-- A frame becoming visible or not takes its shown descendants with it, and the client runs their OnShow or OnHide too
+-- (the bars' hidden bar wakes a sleeping liquid from its OnShow when the game shows its frame: Bars.Sleep).
+local function visible(r)
+    while r do
+        if not r.shown then return false end
+        r = r.parent
+    end
+    return true
+end
+local function propagate(root, show)
+    local script = show and "OnShow" or "OnHide"
+    for _, f in ipairs(__frames) do
+        if f ~= root and f.scripts[script] then
+            -- Under root, with every frame between them shown: it is visible exactly when root is.
+            local p, chain = f, true
+            while p and p ~= root do
+                if not p.shown then chain = false break end
+                p = p.parent
+            end
+            if chain and p == root then f.scripts[script](f) end
+        end
+    end
+end
 local function setShown(self, v)
     local was = self.shown
+    local wasVisible = self.kind == "Frame" and visible(self)
     self.shown = not not v
     if self.shown and not was and self.scripts.OnShow then self.scripts.OnShow(self) end
     if was and not self.shown and self.scripts.OnHide then self.scripts.OnHide(self) end
+    if self.kind == "Frame" then
+        local nowVisible = visible(self)
+        if nowVisible ~= wasVisible then propagate(self, nowVisible) end
+    end
 end
 function Region:Show() setShown(self, true) end
 function Region:Hide() setShown(self, false) end
@@ -357,7 +385,16 @@ function Region:Rect()
     end
     local left, right, cx, top, bottom, cy
     for p, a in pairs(self.points) do
-        local ax, ay = anchorPos(a.relPoint, pw, ph)
+        local ax, ay
+        local rel = a.rel
+        if rel and rel ~= self.parent and rel.kind == "Texture" and rel.parent == self.parent then
+            -- On another texture of the same frame (a liquid layer's caps on its main texture), as the client lays it.
+            local rl, rt, rw, rh = rel:Rect()
+            ax, ay = anchorPos(a.relPoint, rw, rh)
+            ax, ay = ax + rl, ay + rt
+        else
+            ax, ay = anchorPos(a.relPoint, pw, ph)
+        end
         local x, y = ax + a.x, ay - a.y
         if p:find("LEFT") then left = x elseif p:find("RIGHT") then right = x else cx = x end
         if p:find("TOP") then top = y elseif p:find("BOTTOM") then bottom = y else cy = y end

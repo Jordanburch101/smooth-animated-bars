@@ -703,6 +703,34 @@ local function Sight(region)
     return a < 0.01 and "faded" or "shown"
 end
 
+-- A bar nobody can see is not looked at every frame (RunBar): a hidden one until the client shows its frame again (the
+-- OnShow of our hidden bar on it, NewBar), a game bar Bar Height has faded under its own until it gives the frame back
+-- (Bars.Rest). Either way it is looked at again after SLEEP_CHECK, in case a wake never came.
+Bars.SLEEP_CHECK = 0.5
+
+function Bars.Sleep(b)
+    b.asleep, b.wakeIn = true, Bars.SLEEP_CHECK
+end
+
+function Bars.Wake(b)
+    b.asleep = nil
+end
+
+-- Bar Height (TallFrames.lua) fades the game's frame (alpha 0) while ours shows in its place, and gives it back after:
+-- its bars rest meanwhile, as they would sit faded, and are looked at the frame they are given back.
+function Bars.Rest(bar, on)
+    local b = Bars.stateOf[bar]
+    if not b then return end
+    if on then
+        -- Only once it has been seen faded: Bar Height asks each poll, from before its fade has taken.
+        if b.rested or b.sight ~= "faded" then return end
+        b.rested, b.unseen = true, true
+        Bars.Sleep(b)
+    else
+        b.rested, b.asleep = nil, nil
+    end
+end
+
 -- Whether one of our bars can be seen, as UpdateBar found it this frame (b.sight): asked again on every event and by
 -- the markers, it would cost the same widget calls again.
 local function Seen(b)
@@ -1090,6 +1118,9 @@ local function NewBar(spot, bar)
     -- The hidden bar: its fill is never drawn, only anchored to.
     local proxy = CreateFrame("StatusBar", nil, bar)
     proxy:SetAllPoints(bar)
+    -- Ours and never hidden by us, so the client runs its OnShow whenever the game's bar becomes visible again: that
+    -- wakes a bar asleep while its frame was hidden (Bars.Sleep).
+    proxy:SetScript("OnShow", function() Bars.Wake(b) end)
     local track = proxy:CreateTexture(nil, "BACKGROUND")
     track:SetColorTexture(1, 1, 1, 1)
     proxy:SetStatusBarTexture(track)
@@ -1630,8 +1661,13 @@ local function UpdateBar(b, dt)
     b.sight = Sight(bar)
     if b.sight ~= "shown" then
         b.unseen = true
+        -- A hidden frame's bar sleeps until the game shows it again (its hidden bar's OnShow wakes it, NewBar), rather
+        -- than being asked every frame: with Bar Height and the party's bars, most of the bars the addon knows are hidden
+        -- or faded at once, and those checks were a third of the idle cost (tools/harness/bench.py --saved).
+        if b.sight == "hidden" or b.rested then Bars.Sleep(b) end
         return
     end
+    b.rested = nil -- seen again whatever Bar Height said
     if b.spot.party then
         PartyFollow(b, dt)
         if b.away then return end
@@ -1726,14 +1762,17 @@ local function UpdateBar(b, dt)
     end
 
     -- Once settled only the idle wobble remains, so it drops to the idle rate. A party bar keeps to its rate busy too.
+    -- Moving, it updates every frame, or at the Animation Frame Rate (Liquid:Due).
     if b.drawNow then
-        b.drawNow, b.idle = nil, 0
+        b.drawNow, b.idle, b.liquid.busyAcc = nil, 0, 0
     elseif b.spot.party or b.spot.slow or b.liquid:IsQuiet() then
         b.idle = b.idle + dt
         if b.idle < 1 / idleFps then return end
         dt, b.idle = b.idle, 0
     else
+        dt = b.liquid:Due(dt)
         b.idle = 0
+        if not dt then return end
     end
     b.liquid:Update(dt, w)
 end
@@ -2036,6 +2075,12 @@ end
 
 local function RunBar(b, dt)
     if not b.live or b.err then return false end
+    -- Asleep (Bars.Sleep): not looked at until woken, or looked at again after Bars.SLEEP_CHECK.
+    if b.asleep then
+        b.wakeIn = (b.wakeIn or 0) - dt
+        if b.wakeIn > 0 then return false end
+        b.asleep = nil
+    end
     local ok, err = pcall(UpdateBar, b, dt)
     if not ok then
         b.err = tostring(err)

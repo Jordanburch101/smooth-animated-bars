@@ -4,6 +4,18 @@ Player-facing notes for each release. Write for players: what they can now
 do or see, and what was broken and now works. Leave out internal changes.
 Sections are `### New` and `### Fixed`; skip one that would be empty.
 
+## 1.14.2
+
+### New
+- **Animation Frame Rate** on the Effects tab: how many times a second a
+  moving liquid redraws its waves, swirl and sparks. 60 by default, which
+  costs much less CPU at high frame rates; Unlimited redraws every frame as
+  before. The bars still follow your health every frame.
+
+### Fixed
+- The bars use much less CPU, with no change to how they look: about half as
+  much in combat, and less than half while resting, more so with Bar Height on.
+
 ## 1.14.1
 
 ### Fixed

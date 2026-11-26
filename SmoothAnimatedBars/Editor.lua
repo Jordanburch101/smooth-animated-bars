@@ -146,7 +146,16 @@ local TABS = {
           { key = "lightning", label = "Lightning",
             desc = "Faint flashes that build into a storm when the bar changes a lot." },
       },
-      sliders = EffectSliders() },
+      sliders = (function()
+          local sliders = EffectSliders()
+          local top = ns.Liquid.UNLIMITED_FPS
+          sliders[#sliders + 1] = {
+              key = "animationFps", label = "Animation Frame Rate", min = 30, max = top, step = 10,
+              desc = "How many times a second a moving liquid redraws its waves, swirl and sparks. Lower costs less "
+                  .. "CPU at high frame rates; the bar still follows your health every frame.",
+              text = function(v) return v >= top and "Unlimited" or (v .. " fps") end }
+          return sliders
+      end)() },
     { id = "combat", label = "Combat",
       desc = "Markers on your bars for what is still to come, and how your mana and rage behave.",
       rows = {
@@ -725,6 +734,7 @@ end
 -- A number setting's row: its name and value, what it does, and the game's slider with steppers
 -- (MinimalSliderWithSteppersTemplate, which other addons use on Forever); where the client has no such template, a
 -- minus and a plus button. spec.step: what one step moves (1 unless it says); spec.suffix: after the value ("%");
+-- spec.text: the value as shown, if not the number and suffix ("Unlimited");
 -- spec.get/spec.set: where the value lives, if not a registered setting (a bar's own effects).
 function SliderRow(page, spec)
     -- Bare inside a card's drawer, which is a pane already.
@@ -739,6 +749,7 @@ function SliderRow(page, spec)
     r.desc:SetWordWrap(true)
     local top = (spec.desc or "") == "" and 28 or 32 + r.desc:GetStringHeight()
     local step, suffix = spec.step or 1, spec.suffix or ""
+    local function Text(v) return spec.text and spec.text(v) or (v .. suffix) end
     local get = spec.get or function() return Get(spec.key) end
     local set = spec.set or function(v) Set(spec.key, v) end
     local function Snap(v) return math.max(spec.min, math.min(spec.max, math.floor(v / step + 0.5) * step)) end
@@ -755,7 +766,7 @@ function SliderRow(page, spec)
         r.refreshing = false
         slider:RegisterCallback(MinimalSliderWithSteppersMixin.Event.OnValueChanged, function(_, v)
             v = Snap(v)
-            r.value:SetText(v .. suffix)
+            r.value:SetText(Text(v))
             if not r.refreshing and v ~= Value() then set(v) end
         end, r)
         r.slider = slider
@@ -773,7 +784,7 @@ function SliderRow(page, spec)
         r.refreshing = true
         if r.slider then r.slider:SetValue(v) end
         r.refreshing = false
-        r.value:SetText(v .. suffix)
+        r.value:SetText(Text(v))
     end
     -- Greyed and still while it does not apply (a bar following the global effects).
     function r.SetUsable(on)

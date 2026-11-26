@@ -700,6 +700,7 @@ local function Update(m, dt)
                 if step then d.idle = 0 end
             else
                 d.idle = 0
+                step = d.liquid:Due(dt) -- moving: every frame, or at the Animation Frame Rate
             end
             if step then d.liquid:Update(step, m.width) end
             if d.themeKey == "plague" then

@@ -29,6 +29,19 @@ ns.TallFrames = TallFrames
 local POLL = 0.1
 local OPTIONS_NAME = "Smooth Animated Bars"
 
+-- The game shows and hides its segments (heal predictions, absorbs, the mana cost) on these events, and from its health
+-- bar's own updates as health changes (Mainline UnitFrame.lua: UnitFrame_OnEvent, UnitFrameHealthBar_OnUpdate, the mana
+-- bar's). Ours follow every frame for SEGMENT_FOLLOW seconds after any of them, and at each poll otherwise: mirrored
+-- every frame always, they were a ninth of the idle cost with Bar Height on (tools/harness/bench.py --saved).
+local SEGMENT_EVENTS = { "UNIT_HEAL_PREDICTION", "UNIT_ABSORB_AMOUNT_CHANGED", "UNIT_HEAL_ABSORB_AMOUNT_CHANGED",
+                         "UNIT_MAXHEALTH", "UNIT_HEALTH", "UNIT_MAX_HEALTH_MODIFIERS_CHANGED", "UNIT_SPELLCAST_START",
+                         "UNIT_SPELLCAST_STOP", "UNIT_SPELLCAST_FAILED", "UNIT_SPELLCAST_SUCCEEDED", "UNIT_POWER_UPDATE",
+                         "UNIT_MAXPOWER", "UNIT_DISPLAYPOWER", "PLAYER_TARGET_CHANGED", "PLAYER_FOCUS_CHANGED",
+                         "UNIT_PET", "UNIT_TARGET", "GROUP_ROSTER_UPDATE", "PLAYER_ENTERING_WORLD",
+                         "UNIT_ENTERED_VEHICLE", "UNIT_EXITED_VEHICLE" }
+local SEGMENT_FOLLOW = 0.5
+local segmentsUntil, segmentWatch = 0, nil
+
 local function Secret(v) return issecretvalue ~= nil and issecretvalue(v) end
 
 -- A readable number, or nil.
@@ -937,7 +950,7 @@ local function Build(st)
     BuildSegments(st)
     f:SetScript("OnUpdate", function()
         for _, glow in ipairs(glows) do GlowAlpha(glow) end
-        MirrorSegments(st)
+        if GetTime() < segmentsUntil then MirrorSegments(st) end
         if st.hit then CopyHit(st) end
         if st.combo and not st.combo.err then
             local ok, err = pcall(MirrorCombo, st.combo)
@@ -1043,6 +1056,7 @@ local function Copy(st)
     for _, p in ipairs(st.carried) do CopyTexture(st, p[1], p[2]) end
     for _, glow in ipairs(st.glows) do CopyGlow(st, glow) end
     CopySegments(st)
+    MirrorSegments(st) -- between the events that change them too (SEGMENT_EVENTS)
     if st.combo and not st.combo.err then LayoutCombo(st) end
     -- With the liquid off, our bars show a fill as the game's does: its texture and colour.
     for kind, game in pairs(st.bars) do
@@ -1085,6 +1099,8 @@ local function Show(st, dh, dp)
         Hand(st)
     end
     Copy(st)
+    -- The game's bars, faded under ours, rest rather than being looked at every frame (Bars.Rest).
+    for _, game in pairs(st.bars) do ns.Bars.Rest(game, true) end
     return true
 end
 
@@ -1093,6 +1109,7 @@ local function HideOurs(st)
     st.shown = false
     st.dh, st.dp, st.handed = nil, nil, nil
     Fade(st.faded or {}, 1)
+    for _, game in pairs(st.bars or {}) do ns.Bars.Rest(game, false) end
     for _, p in ipairs(st.carried or {}) do pcall(p[1].SetAlpha, p[1], 1) end
     FadeCombo(st.combo, 1)
     for _, kind in ipairs({ "health", "power" }) do pcall(ns.Bars.RemoveBar, st.f[kind]) end
@@ -1154,6 +1171,22 @@ local function Look()
         ticker:Cancel()
         ticker = nil
     end
+    TallFrames.WatchSegments(AnyTall())
+end
+
+-- The events that change the game's segments (SEGMENT_EVENTS), listened to only while a frame is taller.
+function TallFrames.WatchSegments(on)
+    if on and not segmentWatch then
+        segmentWatch = CreateFrame("Frame")
+        segmentWatch:SetScript("OnEvent", function() segmentsUntil = GetTime() + SEGMENT_FOLLOW end)
+    end
+    if not segmentWatch or (segmentWatch.watching or false) == on then return end
+    segmentWatch.watching = on
+    -- Each under pcall: an event the client does not know is an error to register.
+    for _, event in ipairs(SEGMENT_EVENTS) do
+        if on then pcall(segmentWatch.RegisterEvent, segmentWatch, event) else segmentWatch:UnregisterEvent(event) end
+    end
+    if on then segmentsUntil = GetTime() + SEGMENT_FOLLOW end
 end
 TallFrames.Look = Look
 

@@ -72,11 +72,29 @@ updates are timed, not the client drawing the textures, so compare fps with a se
 
 Without the game, `tools/harness/bench.py` counts the liquid's calls to the game's widgets per frame, by group of
 bars, quiet and in a combat-like stream of changes. Those calls are what costs in the client: matched against
-`/sab perf` in game, each took about 1.9 microseconds, which gives its ms estimate. Run it on a copy of the addon with
-a change to see what the change saves:
+`/sab perf` in game, each took about 1.9 microseconds, which gives its ms estimate and its share of the frame at
+`--fps`. It also counts the addon's own Lua work (Lua 5.1 instructions in its files), so work saved in calls is not
+spent again in Lua. Runs are repeatable, and `--ref` measures the addon at a git ref on the same frames to show what a
+change saves; `--by line|method|lua` shows where the calls or the Lua work go:
 
 ```powershell
-tools/venv/Scripts/python tools/harness/bench.py SmoothAnimatedBars --party 3 --fps 24 --class WARRIOR
+cd tools/harness
+../venv/Scripts/python bench.py ../../SmoothAnimatedBars --party 3 --ref HEAD
+../venv/Scripts/python bench.py ../../SmoothAnimatedBars --party 0 --max --only player --by line
+```
+
+`--saved <SmoothAnimatedBars.lua>` runs one group with a player's own saved variables (every feature as they have it,
+Bar Height included), only the player's and target's frames shown, to match what they measure in game; `--fps` their
+frame rate, and `--cap 60` the Animation Frame Rate. `--by file` and `--by luafile` sum the calls or the Lua work by
+file.
+
+A change made for speed must not change the look. `tools/harness/samelook.py` plays the same scenarios (classes,
+themes, effects at their strongest and off, a reversed bar, quiet and fighting) on the addon at a git ref and on the
+working copy, and compares every texture that shows, every frame: place, size, texture coordinates, colours, alpha,
+blend and layer. It exits 1 on any difference past float rounding, or past half an 8-bit step in colour and alpha:
+
+```powershell
+cd tools/harness; ../venv/Scripts/python samelook.py ../../SmoothAnimatedBars --ref HEAD
 ```
 
 ## Gallery

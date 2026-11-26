@@ -30,6 +30,76 @@ local function Off(t)
     end
 end
 
+-- The same for what a texture is given each update: every widget call costs (about 1.9 microseconds in game, against a
+-- few hundredths for the Lua here), and player and target in combat made about 1300 a frame (tools/harness/bench.py).
+-- Sizes and texture coordinates are set again only when they change at all. Alpha and colours change a little every
+-- update (pulses, slow colour drifts, energy dying away), so they are set again once they have moved by COLOR_STEP, half
+-- of one 8-bit step: less than the screen can show (tools/harness/samelook.py checks the look is unchanged).
+local COLOR_STEP = 0.5 / 255
+
+local function Alpha(t, a)
+    local was = t.sabA
+    if not was or a - was > COLOR_STEP or was - a > COLOR_STEP then
+        t.sabA = a
+        t:SetAlpha(a)
+    end
+end
+
+local function Color(t, r, g, b)
+    local c = t.sabC
+    if not c then
+        c = {}
+        t.sabC = c
+    elseif abs(r - c[1]) <= COLOR_STEP and abs(g - c[2]) <= COLOR_STEP and abs(b - c[3]) <= COLOR_STEP then
+        return
+    end
+    c[1], c[2], c[3] = r, g, b
+    t:SetVertexColor(r, g, b)
+    -- A texture has one alpha, which SetVertexColor's fourth value sets too; given none, it may be put back to 1, so the
+    -- next Alpha sets it again rather than trusting what it set last.
+    t.sabA = nil
+end
+
+-- Colour and alpha both: one SetVertexColor with the alpha as its fourth value when the colour moved, else SetAlpha
+-- alone when the alpha did (a mote's, both changing over its life).
+local function Look(t, r, g, b, a)
+    local c = t.sabC
+    if not c or abs(r - c[1]) > COLOR_STEP or abs(g - c[2]) > COLOR_STEP or abs(b - c[3]) > COLOR_STEP then
+        if not c then
+            c = {}
+            t.sabC = c
+        end
+        c[1], c[2], c[3] = r, g, b
+        t.sabA = a
+        t:SetVertexColor(r, g, b, a)
+    else
+        Alpha(t, a)
+    end
+end
+
+local function Width(t, w)
+    if t.sabW ~= w then
+        t.sabW = w
+        t:SetWidth(w)
+    end
+end
+
+-- A texture always placed by the same point (rows, tips, the glow) is moved only when its offsets change. SetMirror,
+-- which changes those points, forgets them.
+local function Place(t, point, rel, relPoint, x, y)
+    if t.sabX ~= x or t.sabY ~= y then
+        t.sabX, t.sabY = x, y
+        t:SetPoint(point, rel, relPoint, x, y)
+    end
+end
+
+local function Coords(t, l, r, top, bottom)
+    if t.sabL ~= l or t.sabR ~= r or t.sabT ~= top or t.sabB ~= bottom then
+        t.sabL, t.sabR, t.sabT, t.sabB = l, r, top, bottom
+        t:SetTexCoord(l, r, top, bottom)
+    end
+end
+
 local CFG = {
     rows        = 15,      -- most horizontal slices that make up the liquid front (Liquid.RowsFor)
     rowPx       = 1.25,    -- a slice for every this many px of height, down to minRows
@@ -191,6 +261,36 @@ ns.Liquid = Liquid
 -- size the front looked the same. A 20 px bar (the player's and target's health) keeps fifteen. Every liquid of a
 -- height takes the same count: the bar's own, its Rage Fury and the markers' liquids on it, whose fronts are matched
 -- slice by slice (Follow, FrontOffset).
+-- Animation Frame Rate (animationFps, asked for): at most this many updates a second for a liquid that is moving, or
+-- every frame at UNLIMITED_FPS, the default. A moving liquid is otherwise drawn every frame, so its cost per second grows
+-- with the frame rate (at 124 fps a fight with the player and target took about a fifth of each frame, seen in game).
+-- Where the liquid is on the bar never waits: the client lays it out from the game's bar every frame. Only what moves
+-- inside it (waves, swirl, particles) steps at the cap.
+local UNLIMITED_FPS = 150
+Liquid.UNLIMITED_FPS = UNLIMITED_FPS
+local busyStep = 0 -- seconds between a moving liquid's updates, 0 for every frame
+
+function Liquid.SetFrameRate(fps)
+    fps = tonumber(fps)
+    busyStep = (fps and fps >= 10 and fps < UNLIMITED_FPS) and 1 / fps or 0
+end
+
+-- For a liquid that is moving, after dt more seconds: how far to update it now, or nil to wait for a later frame. Due
+-- within half a frame of its step, so 60 at 124 fps is every other frame, not every third.
+function Liquid:Due(dt)
+    if busyStep == 0 then
+        self.busyAcc = 0
+        return dt
+    end
+    local acc = (self.busyAcc or 0) + dt
+    if acc < busyStep - dt * 0.5 then
+        self.busyAcc = acc
+        return nil
+    end
+    self.busyAcc = 0
+    return acc
+end
+
 function Liquid.RowsFor(height)
     return math.max(CFG.minRows, math.min(CFG.rows, math.floor(height / CFG.rowPx)))
 end
@@ -246,7 +346,9 @@ function Liquid.New(parent, width, height, theme, opts, rows)
     -- Textures that fill the inside of the liquid. Each is one texture up to the rearmost point of the
     -- front plus a cap per slice carrying it on to that slice's end, so nothing spills into a dip.
     local function Layer(sublevel, file, blend)
-        local layer = { main = Tex("ARTWORK", sublevel, MEDIA .. file, blend, "REPEAT"), caps = {}, u = 0, v = 0 }
+        -- r, g, b, stamp: its colour and a count of its changes (LayerColor); drawn: the alpha its textures have
+        local layer = { main = Tex("ARTWORK", sublevel, MEDIA .. file, blend, "REPEAT"), caps = {}, u = 0, v = 0,
+                        r = -1, g = -1, b = -1, stamp = 0 }
         for i = 1, self.n do
             layer.caps[i] = Tex("ARTWORK", sublevel, MEDIA .. file, blend, "REPEAT")
         end
@@ -264,6 +366,7 @@ function Liquid.New(parent, width, height, theme, opts, rows)
     self.shadeHot = Layer(5, "Ramp", "ADD")
     self.shadeDark = Layer(6, "Ramp", "BLEND")
     self.shadeHot.v = 1 -- read bottom to top: the ramp's opaque end at the bottom
+    self.layers = { self.cloudDark, self.cloudLight, self.core, self.swirlA, self.swirlB, self.shadeHot, self.shadeDark }
 
     self.bolts = {}
     for i = 1, CFG.bolts do
@@ -285,6 +388,9 @@ function Liquid.New(parent, width, height, theme, opts, rows)
     end
 
     self.gradA, self.gradB, self.gradC = CreateColor(1, 1, 1, 1), CreateColor(1, 1, 1, 1), CreateColor(1, 1, 1, 1)
+    -- The three gradient colours as last given to the body and slices, and a count that goes up whenever they change:
+    -- a texture whose gradStamp is not the liquid's is given them again (Draw).
+    self.gradNow, self.gradStamp = { -1, -1, -1, -1, -1, -1, -1, -1, -1 }, 0
     self.t, self.acc, self.energy, self.fizzAcc, self.driftAcc, self.crackleAcc = 0, 0, 0, 0, 0, 0
     self.edge, self.speed, self.back = 0, 0, 0
     self.flowX, self.flowY, self.storm, self.charge = 0, 0, 0, 0
@@ -306,6 +412,24 @@ function Liquid:Anchor()
         t:SetPoint(tl)
         t:SetPoint(bl)
     end
+    self:AnchorCaps()
+end
+
+-- Each layer's cap for a slice runs from the far end of the layer's main texture to the far end of that slice of the front
+-- (a cap shows only where the slice does, and ends where it ends: Draw's ends), so the client lays it out as the main's
+-- and the slice's widths change: placing and sizing the caps by hand cost two calls per cap every update (about 380 a
+-- frame for player and target in combat). Laid out again when the slices' height changes (SetSize) or the liquid is
+-- mirrored (SetMirror, via Anchor).
+function Liquid:AnchorCaps()
+    local rowH = self.rowH
+    local from, to, far = self.aTL, self.mirror and "TOPLEFT" or "TOPRIGHT", self.mirror and "BOTTOMLEFT" or "BOTTOMRIGHT"
+    for _, layer in ipairs(self.layers) do
+        for i, cap in ipairs(layer.caps) do
+            cap:ClearAllPoints()
+            cap:SetPoint(from, layer.main, to, 0, -(i - 1) * rowH)
+            cap:SetPoint(far, self.rows[i], far, 0, 0)
+        end
+    end
 end
 
 -- Mirrored, the liquid fills from the parent's right edge and its front faces left: for a bar that fills from the right
@@ -321,7 +445,11 @@ function Liquid:SetMirror(on)
         self.aTL, self.aBL, self.aL, self.sx = "TOPLEFT", "BOTTOMLEFT", "LEFT", 1
     end
     -- A point of another name would be added to the old one, not replace it.
-    for _, t in ipairs(self.textures) do t:ClearAllPoints() end
+    for _, t in ipairs(self.textures) do
+        t:ClearAllPoints()
+        t.sabX, t.sabY = nil, nil
+    end
+    self.gradStamp = self.gradStamp + 1 -- the gradients run the other way
     self:Anchor()
     self:LayoutTips()
     self:HideAll()
@@ -361,8 +489,9 @@ function Liquid:SetTheme(theme)
     self.ambientAcc = {}
     self.accent = nil
 
+    local tc = theme.tip
     for _, tip in ipairs(self.tips) do
-        tip:SetVertexColor(unpack(theme.tip))
+        Color(tip, tc[1], tc[2], tc[3])
     end
     self:LayerTexture(self.swirlA, self.swirl.texture)
     self:LayerTexture(self.swirlB, self.swirl.texture)
@@ -373,14 +502,15 @@ function Liquid:SetTheme(theme)
     self:LayerColor(self.cloudDark, self.deep)
     self:LayerColor(self.cloudLight, theme.swirlB)
     self:LayerColor(self.core, theme.glow)
-    self.glow:SetVertexColor(unpack(theme.glow))
+    Color(self.glow, theme.glow[1], theme.glow[2], theme.glow[3])
 
     -- Bubbles take on some of the veins' colour so they belong to the liquid.
     local bs, bc, vc = self.bubbleStyle, theme.bubble, theme.swirlA
     for _, b in ipairs(self.bubbles) do
         b.tex:SetTexture(MEDIA .. bs.texture)
         b.tex:SetBlendMode(bs.blend)
-        b.tex:SetVertexColor(Lerp(bc[1], vc[1], 0.5), Lerp(bc[2], vc[2], 0.5), Lerp(bc[3], vc[3], 0.5))
+        b.tex.sabC = nil -- set again after SetTexture, whatever it was
+        Color(b.tex, Lerp(bc[1], vc[1], 0.5), Lerp(bc[2], vc[2], 0.5), Lerp(bc[3], vc[3], 0.5))
     end
     -- Particles from the previous theme would look out of place.
     for _, m in ipairs(self.motes) do
@@ -396,15 +526,41 @@ function Liquid:SetTheme(theme)
     if self.inflowTheme then self:SetInflow(self.inflowTheme, self.inflowMix) end
 end
 
+-- A texture given a new file has everything it is given each update set again, whatever SetTexture keeps.
+local function Fresh(t)
+    t.sabA, t.sabC, t.sabL, t.sabR, t.sabT, t.sabB, t.layerStamp = nil, nil, nil, nil, nil, nil, nil
+end
+
 function Liquid:LayerTexture(layer, name)
     local file = MEDIA .. name
     layer.main:SetTexture(file, "REPEAT", "REPEAT")
-    for _, cap in ipairs(layer.caps) do cap:SetTexture(file, "REPEAT", "REPEAT") end
+    Fresh(layer.main)
+    for _, cap in ipairs(layer.caps) do
+        cap:SetTexture(file, "REPEAT", "REPEAT")
+        Fresh(cap)
+    end
 end
 
+-- A layer's colour is kept on the layer and given to its textures as they are drawn (DrawLayer, LayerLook), together
+-- with their alpha in one call. It counts as changed once it has moved by COLOR_STEP, as Color does.
 function Liquid:LayerColor(layer, c)
-    layer.main:SetVertexColor(c[1], c[2], c[3])
-    for _, cap in ipairs(layer.caps) do cap:SetVertexColor(c[1], c[2], c[3]) end
+    local r, g, b = c[1], c[2], c[3]
+    if abs(r - layer.r) > COLOR_STEP or abs(g - layer.g) > COLOR_STEP or abs(b - layer.b) > COLOR_STEP then
+        layer.r, layer.g, layer.b = r, g, b
+        layer.stamp = layer.stamp + 1
+    end
+end
+
+-- One of a layer's textures takes the layer's colour, if it changed since, and its alpha a (both in one SetVertexColor:
+-- a texture has one alpha, which its fourth value sets), or the alpha alone.
+local function LayerLook(layer, t, a)
+    if t.layerStamp ~= layer.stamp then
+        t.layerStamp, t.sabA = layer.stamp, a
+        t:SetVertexColor(layer.r, layer.g, layer.b, a)
+    elseif t.sabA ~= a then
+        t.sabA = a
+        t:SetAlpha(a)
+    end
 end
 
 local function HideLayer(layer)
@@ -415,35 +571,40 @@ end
 -- ku, kv: texture units per px across and down. Caps use the same mapping as the main texture,
 -- so each continues it without a seam.
 function Liquid:DrawLayer(layer, ku, kv, alpha)
-    local back, ends, rowH, parent = self.back, self.ends, self.rowH, self.parent
+    local back, ends, rowH = self.back, self.ends, self.rowH
     if back < 1 or alpha <= 0.002 then
         HideLayer(layer)
         return
     end
+    -- The alpha the layer's textures are drawn at, moved once alpha has moved by COLOR_STEP.
+    local drawn = layer.drawn
+    if not drawn or alpha - drawn > COLOR_STEP or drawn - alpha > COLOR_STEP then
+        drawn = alpha
+        layer.drawn = alpha
+    end
     local u, v = layer.u, layer.v
     local main = layer.main
-    main:SetWidth(back)
+    Width(main, back)
     local m = self.mirror
     if m then
-        main:SetTexCoord(u + back * ku, u, v, v + self.height * kv)
+        Coords(main, u + back * ku, u, v, v + self.height * kv)
     else
-        main:SetTexCoord(u, u + back * ku, v, v + self.height * kv)
+        Coords(main, u, u + back * ku, v, v + self.height * kv)
     end
-    main:SetAlpha(alpha)
+    LayerLook(layer, main, drawn)
     On(main)
     local ub = u + back * ku
     for i, cap in ipairs(layer.caps) do
         local e = ends[i]
         if e and e - back >= 0.5 then
+            -- Each cap is laid between the main texture's far end and its slice's (AnchorCaps): only its coordinates change.
             local y = (i - 1) * rowH
-            cap:SetPoint(self.aTL, parent, self.aTL, back * self.sx, -y)
-            cap:SetSize(e - back, rowH)
             if m then
-                cap:SetTexCoord(u + e * ku, ub, v + y * kv, v + (y + rowH) * kv)
+                Coords(cap, u + e * ku, ub, v + y * kv, v + (y + rowH) * kv)
             else
-                cap:SetTexCoord(ub, u + e * ku, v + y * kv, v + (y + rowH) * kv)
+                Coords(cap, ub, u + e * ku, v + y * kv, v + (y + rowH) * kv)
             end
-            cap:SetAlpha(alpha)
+            LayerLook(layer, cap, drawn)
             On(cap)
         else
             Off(cap)
@@ -453,8 +614,11 @@ end
 
 -- Each slice's line is 1.5 slices tall so they overlap their neighbours on the
 -- textures' ramps. The first and last drop their outer ramp so they stay inside the bar.
+-- It hangs on its slice's far end, its core edgeCore across it half a pixel inside the end, so the client moves it with
+-- the slice (placing it by hand was a SetPoint per slice every update). Mirrored, its right edge goes where its left would.
 function Liquid:LayoutTips()
     local rowH, n = self.rowH, self.n
+    local to = self.mirror and "TOPLEFT" or "TOPRIGHT"
     for i, tip in ipairs(self.tips) do
         local top, h, v0, v1 = rowH * 0.25, rowH * 1.5, 0, 1
         if i == 1 then
@@ -464,7 +628,8 @@ function Liquid:LayoutTips()
         end
         tip:SetSize(CFG.edgeW, h)
         if self.mirror then tip:SetTexCoord(1, 0, v0, v1) else tip:SetTexCoord(0, 1, v0, v1) end
-        tip.dy = top
+        tip:ClearAllPoints()
+        tip:SetPoint(self.aTL, self.rows[i], to, -(0.5 + CFG.edgeCore * CFG.edgeW) * self.sx, top)
     end
 end
 
@@ -474,6 +639,7 @@ function Liquid:SetSize(width, height)
     for i = 1, self.n do
         self.rows[i]:SetHeight(self.rowH)
     end
+    self:AnchorCaps()
     self:LayoutTips()
     self.glow:SetSize(36, height * 1.7)
 end
@@ -615,8 +781,8 @@ function Liquid:SetInflow(theme, mix)
     local own = self.theme
     local tip = theme and Mix(own.tip, theme.tip, self.inflowMix) or own.tip
     local glow = theme and Mix(own.glow, theme.glow, self.inflowMix) or own.glow
-    for _, t in ipairs(self.tips) do t:SetVertexColor(tip[1], tip[2], tip[3]) end
-    self.glow:SetVertexColor(glow[1], glow[2], glow[3])
+    for _, t in ipairs(self.tips) do Color(t, tip[1], tip[2], tip[3]) end
+    Color(self.glow, glow[1], glow[2], glow[3])
 end
 
 -- Keep the liquid at least this lively (its energy: brighter veins and glow, livelier waves) for now.
@@ -743,6 +909,7 @@ function Liquid:EmitMote(x, y, vx, vy, life, size, from, to, style, ambient)
     m.wf = Rand(3, 7) -- wander pace, rad/s
     if style.orient then m.rot = atan2(-vx, vy) end
     local tex = m.tex
+    tex.sabA, tex.sabC = nil, nil -- a new mote: its first update sets its colour and alpha whatever the last one's were
     if m.file ~= style.texture then
         m.file = style.texture
         tex:SetTexture(MEDIA .. style.texture)
@@ -916,7 +1083,7 @@ function Liquid:UpdateParticles(dt)
                     Off(b.tex)
                 else
                     b.tex:SetSize(b.size * (1 + p), b.size * (1 + p))
-                    b.tex:SetAlpha(bubbleAlpha * (1 - p))
+                    Alpha(b.tex, bubbleAlpha * (1 - p))
                 end
             else
                 b.age = b.age + dt
@@ -928,7 +1095,7 @@ function Liquid:UpdateParticles(dt)
                     b.pop, b.size = 0, size -- the pop grows from here
                 end
                 b.tex:SetSize(size, size)
-                b.tex:SetAlpha(bubbleAlpha * min(1, b.age / 0.25))
+                Alpha(b.tex, bubbleAlpha * min(1, b.age / 0.25))
             end
             local a = b.phase + t * b.freq
             b.tex:SetPoint("CENTER", parent, bl, (b.x + sin(a) * b.sway) * sx, b.y + cos(a) * b.sway * 0.6)
@@ -993,8 +1160,7 @@ function Liquid:UpdateParticles(dt)
                     m.tex:SetRotation(m.rot * sx)
                 end
                 m.tex:SetSize(size, size)
-                m.tex:SetVertexColor(Lerp(m.r1, m.r2, p), Lerp(m.g1, m.g2, p), Lerp(m.b1, m.b2, p))
-                m.tex:SetAlpha(alpha * (st.alpha or 1))
+                Look(m.tex, Lerp(m.r1, m.r2, p), Lerp(m.g1, m.g2, p), Lerp(m.b1, m.b2, p), alpha * (st.alpha or 1))
                 m.tex:SetPoint("CENTER", parent, bl, m.x * sx, m.y)
             end
         end
@@ -1119,7 +1285,7 @@ function Liquid:Draw(dt)
         fa, fb, accent = theme:Colors(t, w > 0 and edge / w or 0)
         self.accent = accent
         if accent then
-            self.glow:SetVertexColor(accent[1], accent[2], accent[3])
+            Color(self.glow, accent[1], accent[2], accent[3])
             self:LayerColor(self.swirlA, accent)
             self:LayerColor(self.core, accent)
         end
@@ -1138,22 +1304,38 @@ function Liquid:Draw(dt)
     self.flick = k
 
     -- Gradient stretched over the whole fill, like the WeakAura; the body stops where the front begins.
+    -- The colours change a little every update (the cut behind the front moves with the wobble, a flicker), so they are
+    -- given to the body and slices again once one has moved by COLOR_STEP, as Color does.
     local tb = edge > 0 and base / edge or 0
-    self.gradA:SetRGBA(min(1, fa[1] * k), min(1, fa[2] * k), min(1, fa[3] * k), 1)
-    self.gradB:SetRGBA(min(1, Lerp(fa[1], fb[1], tb) * k), min(1, Lerp(fa[2], fb[2], tb) * k),
-        min(1, Lerp(fa[3], fb[3], tb) * k), 1)
-    self.gradC:SetRGBA(min(1, fb[1] * k), min(1, fb[2] * k), min(1, fb[3] * k), 1)
+    local g = self.gradNow
+    local ar, ag, ab = min(1, fa[1] * k), min(1, fa[2] * k), min(1, fa[3] * k)
+    local br, bg, bb = min(1, Lerp(fa[1], fb[1], tb) * k), min(1, Lerp(fa[2], fb[2], tb) * k), min(1, Lerp(fa[3], fb[3], tb) * k)
+    local cr, cg, cb = min(1, fb[1] * k), min(1, fb[2] * k), min(1, fb[3] * k)
+    if abs(ar - g[1]) > COLOR_STEP or abs(ag - g[2]) > COLOR_STEP or abs(ab - g[3]) > COLOR_STEP
+        or abs(br - g[4]) > COLOR_STEP or abs(bg - g[5]) > COLOR_STEP or abs(bb - g[6]) > COLOR_STEP
+        or abs(cr - g[7]) > COLOR_STEP or abs(cg - g[8]) > COLOR_STEP or abs(cb - g[9]) > COLOR_STEP then
+        g[1], g[2], g[3], g[4], g[5], g[6], g[7], g[8], g[9] = ar, ag, ab, br, bg, bb, cr, cg, cb
+        self.gradA:SetRGBA(ar, ag, ab, 1)
+        self.gradB:SetRGBA(br, bg, bb, 1)
+        self.gradC:SetRGBA(cr, cg, cb, 1)
+        self.gradStamp = self.gradStamp + 1
+    end
+    local stamp = self.gradStamp
 
+    local body = self.body
     if base >= 0.5 then
-        if self.mirror then
-            self.body:SetGradient("HORIZONTAL", self.gradB, self.gradA)
-        else
-            self.body:SetGradient("HORIZONTAL", self.gradA, self.gradB)
+        if body.gradStamp ~= stamp then
+            body.gradStamp = stamp
+            if self.mirror then
+                body:SetGradient("HORIZONTAL", self.gradB, self.gradA)
+            else
+                body:SetGradient("HORIZONTAL", self.gradA, self.gradB)
+            end
         end
-        self.body:SetWidth(base)
-        On(self.body)
+        Width(body, base)
+        On(body)
     else
-        Off(self.body)
+        Off(body)
     end
 
     local tipAlpha = (0.25 + 0.5 * min(1, energy)) * k
@@ -1172,20 +1354,22 @@ function Liquid:Draw(dt)
             Off(tip)
         else
             local y = -(i - 1) * rowH
-            if self.mirror then
-                row:SetGradient("HORIZONTAL", self.gradC, self.gradB)
-            else
-                row:SetGradient("HORIZONTAL", self.gradB, self.gradC)
+            if row.gradStamp ~= stamp then
+                row.gradStamp = stamp
+                if self.mirror then
+                    row:SetGradient("HORIZONTAL", self.gradC, self.gradB)
+                else
+                    row:SetGradient("HORIZONTAL", self.gradB, self.gradC)
+                end
             end
-            row:SetPoint(self.aTL, parent, self.aTL, base * self.sx, y)
-            row:SetWidth(rw)
+            Place(row, self.aTL, parent, self.aTL, base * self.sx, y)
+            Width(row, rw)
             On(row)
             if right < w - 1 then
-                -- Mirrored, the tip's right edge goes where its left edge would.
-                tip:SetPoint(self.aTL, parent, self.aTL, (right - 0.5 - CFG.edgeCore * CFG.edgeW) * self.sx, y + tip.dy)
+                -- The tip hangs on the slice's end (LayoutTips).
                 local src = self.leader or self
                 -- A moving slice glows brighter, as much as Wave Intensity lets it move.
-                tip:SetAlpha(min(1, tipAlpha + abs(src.vel[src:SliceAt(i, self.n)]) * 0.01 * (opts.intensity or 1)))
+                Alpha(tip, min(1, tipAlpha + abs(src.vel[src:SliceAt(i, self.n)]) * 0.01 * (opts.intensity or 1)))
                 On(tip)
             else
                 Off(tip)
@@ -1252,8 +1436,8 @@ function Liquid:Draw(dt)
     self:DrawLayer(self.shadeDark, 0, 1 / h, sh.dark * (1 - 0.3 * min(1, energy)))
 
     if edge > 1 and edge < w - 1 then
-        self.glow:SetPoint("CENTER", parent, self.aL, edge * self.sx, 0)
-        self.glow:SetAlpha(min(1, (0.12 + 0.55 * energy) * k))
+        Place(self.glow, "CENTER", parent, self.aL, edge * self.sx, 0)
+        Alpha(self.glow, min(1, (0.12 + 0.55 * energy) * k))
         On(self.glow)
     else
         Off(self.glow)

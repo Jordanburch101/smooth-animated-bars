@@ -42,6 +42,11 @@ for players; `docs/DEVELOPMENT.md` covers the layout and tools; this file holds 
 - **Tests:** run `tools/venv/Scripts/python tools/harness/test.py SmoothAnimatedBars` before every commit; it
   exits 1 on any failed check. The mock (`tools/harness/wowmock.lua`) should be as strict as the client:
   when the client rejects something the mock accepted, make the mock reject it too.
+- **Speed changes:** a change made to cost less must not change the look (asked for). Measure it with
+  `tools/harness/bench.py --ref HEAD` (widget calls and the addon's Lua work, the same frames before and after) and check
+  it with `tools/harness/samelook.py --ref HEAD`, which must pass (every texture the same each frame, colours within half
+  an 8-bit step). Both are repeatable: a fixed random seed, and `pairs` in a fixed order (`samelook.STABLE_PAIRS`), as
+  table addresses, and so the order the liquids took their random numbers in, differed from run to run.
 - **Visual changes:** render a preview (`tools/harness/preview.py`) and look at it. Rebuild the gallery
   (`tools/harness/gallery.py`) when the liquid's look changes, and look at it before committing.
 - **Gallery:** `branding/gallery/` holds the README's images: animated WebP for each scenario (`hero`,
@@ -535,7 +540,36 @@ Facts found while building this, which the code relies on and which are not obvi
   where its curve has faded it out (below half rage), which the addon cannot know. So the fury runs at 20 fps
   (`FURY_FPS`), and every liquid's front has a slice per 1.25 px of height (`Liquid.RowsFor`: 15 on 20 px health, 8 on
   10 px bars), all liquids of a height alike, their fronts matched by position (`SliceAt`) where counts differ.
-  Together, by the bench, a warrior with a party of three in combat went from about 9.9 ms to 6.1. Addons cannot write
+  Together, by the bench, a warrior with a party of three in combat went from about 9.9 ms to 6.1. Reported by a player
+  (1.14.1): 5 to 10% CPU, 15% and more at peaks, with only the player and target on and every effect up; the bench
+  agreed (player and target in combat about 1350 calls, 2.6 ms, a frame at 60 fps, the same per frame at any frame
+  rate as a moving liquid is drawn every frame). Asked for: cheaper, with the look unchanged. Half of those calls were
+  the layers' caps (seven layers, a cap per slice, each placed, sized, given coordinates and alpha every update). Now
+  (`Liquid.lua`): each cap is anchored between its layer's main texture's far end and its slice's (`AnchorCaps`; a shown
+  cap always ends where its slice does) and each tip on its slice (`LayoutTips`), so the client lays them out; sizes,
+  coordinates and points are set only when they change; colours and alpha once they move by half an 8-bit step
+  (`COLOR_STEP`); a layer's colour goes to its textures as they are drawn, with the alpha in the same `SetVertexColor`
+  (`LayerLook`); the gradients go to the body and slices only when they change (`gradStamp`). By the bench: player and
+  target in combat 1349 calls a frame to 673, quiet 416 to 162, the whole set 46% fewer in combat, Lua work up about a
+  tenth. `tools/harness/samelook.py` found every texture's place and coordinates the same as before to float rounding
+  in every scenario, colours within half a step. Seen in game after that (the player's CPU addon, 124 fps, Bar Height
+  on): 8 to 10% idle, about 20% in a fight alone; the bench, run on the player's own saved variables
+  (`bench.py --saved`, every frame but the player's and target's hidden), agreed (about 880 calls, 1.7 ms, a frame in
+  that fight). A third of the idle cost was asking every frame what no update needed: whether each of the ~40 bars the
+  addon knows shows (hidden party bars, the game's bars faded under Bar Height) and whether each of the game's segments
+  shows. So a hidden bar sleeps until our hidden bar on it gets an `OnShow` (the client runs a frame's shown
+  descendants' OnShow and OnHide with it; the mock now does too), the game's bars Bar Height fades rest until it gives
+  the frame back (`Bars.Sleep`, `Bars.Wake`, `Bars.Rest`; either is looked at again after `SLEEP_CHECK` in case no wake
+  came), and Bar Height mirrors the segments every frame only for `SEGMENT_FOLLOW` after an event that changes them
+  (`SEGMENT_EVENTS`, from Mainline `UnitFrame.lua`, listened to only while a frame is taller), else at each poll. By the
+  bench on those settings at 124 fps: idle with no target 466 calls a frame to 239. In a fight the liquid's drawing is
+  most of it, so Animation Frame Rate (`animationFps`, asked for as a setting; `Liquid:Due`) caps how often a moving
+  liquid updates, the bars', DoT marker's and heal marker's: 850 calls a frame Unlimited, 574 at 60, 418 at 30. Its
+  place on the bar is the client's every frame either way. Seen in game: the look unchanged (caps, tips, waking bars);
+  `/sab perf` idle 0.30 ms a frame at 150 fps (0.41 before the sleeping bars), a 1v1 fight at 100 fps 1.4 ms Unlimited
+  and 1.15 at 60, with no difference to the eye at 60, so 60 is the default (asked for). At 100 fps a cap of 60 is every
+  other frame, and what runs every frame anyway stays, hence a fifth, not half. `samelook.py` runs at Unlimited, so it
+  compares the drawing, not the cap. Addons cannot write
   files, so each `/sab perf` is kept in `SmoothAnimatedBarsDB.perfLog` (last 50), which the client writes on
   `/reload`; `tools/perf_report.py` turns the newest saved file under Forever's WTF folder into
   `perf/perf_report.txt` (git-ignored). The DoT marker on plates (`plateDots`, needs `plateHealth`): `Dots.lua`

@@ -154,6 +154,52 @@ check(lua.eval("""(function()
         and short:SliceAt(8, 15) == 5 and tall:SliceAt(8, 8) == 15
 end)()"""), "fronts of different slice counts are matched by where the slice sits, without an error (a seam or a fury "
       "along a liquid of another count)")
+# The layers' caps and the tips are anchored once (Liquid.lua, AnchorCaps, LayoutTips) rather than placed each update:
+# laid out by the client, each shown cap must still run from the layer's body to its slice's end, and each tip sit on it.
+caps, tips, bad = lua.eval("""(function()
+    local L, theme = __ns.Liquid, __ns.Themes.Get("fire")
+    local caps, tips, bad = 0, 0, {}
+    for _, mirror in ipairs({ false, true }) do
+        local liq = L.New(UIParent, 100, 20, theme, __ns.Core.db)
+        liq:SetMirror(mirror)
+        liq:Splash(1, 50, 60)
+        local W = UIParent.w
+        for frame = 1, 40 do
+            if frame == 20 then liq:SetSize(100, 24) end
+            liq:Update(1 / 60, 60)
+            local rowH = liq.rowH
+            for _, layer in ipairs(liq.layers) do
+                for i, cap in ipairs(layer.caps) do
+                    if cap.shown then
+                        caps = caps + 1
+                        local l, t, w, h = cap:Rect()
+                        local lo, hi = liq.back, liq.ends[i]
+                        if mirror then lo, hi = W - liq.ends[i], W - liq.back end
+                        if math.abs(l - lo) > 1e-6 or math.abs(l + w - hi) > 1e-6 or math.abs(t - (i - 1) * rowH) > 1e-6
+                            or math.abs(h - rowH) > 1e-6 then
+                            bad[#bad + 1] = string.format("cap %d %s: %.3f..%.3f, want %.3f..%.3f", i, tostring(mirror), l, l + w, lo, hi)
+                        end
+                    end
+                end
+            end
+            for i, tip in ipairs(liq.tips) do
+                if tip.shown then
+                    tips = tips + 1
+                    local l, _, w = tip:Rect()
+                    local core = liq.ends[i] - 0.5 - 0.7 * 6 -- edgeCore across the 6 px line, half a pixel inside the end
+                    local want = mirror and (W - core - w) or core
+                    if math.abs(l - want) > 1e-6 then
+                        bad[#bad + 1] = string.format("tip %d %s at %.3f, want %.3f", i, tostring(mirror), l, want)
+                    end
+                end
+            end
+        end
+    end
+    return caps, tips, table.concat(bad, "; ", 1, math.min(#bad, 4))
+end)()""")
+check(caps > 500 and tips > 200 and not bad,
+      f"each cap runs from its layer's body to its slice's end and each tip sits on it, either way round and after a "
+      f"resize ({caps} caps, {tips} tips) {bad or ''}")
 loss = "PlayerFrame.healthbar.AnimatedLossBar"
 check(lua.eval(f"{loss}.fill.alpha") == 0, "the game's red health-loss bar is hidden with the fill")
 lua.execute(f"{loss}:Show(); {loss}:SetValue(__secret()); {loss}.fill:SetAlpha(1)")
@@ -295,6 +341,58 @@ lua.execute("""SlashCmdList.SMOOTHANIMATEDBARS('raid clear')
 check(lua.eval("SmoothAnimatedBarsDB.raidProbe") is None, "/sab raid clear forgets them")
 check(not any("Error in" in m for m in chat(lua)), "no errors")
 
+# What the liquid costs: widget calls a frame for the player's and target's four bars in a fight, every change stirring
+# them so they never rest (tools/harness/bench.py measures it fully). In this session about 1860 before the calls were
+# cut (1.14.1), 860 after.
+cost = session("{ setupDone = true, heals = false, manaBuild = false, rageFury = false, prdHealth = false, "
+               "prdPower = false, partyHealth = false, partyPower = false }")
+cost.execute("__target = { guid = 'Creature-0-1-2-3-299-0001', name = 'Defias Pillager' }; __fire('PLAYER_TARGET_CHANGED')")
+run(cost, 1)
+cost.execute("""
+    __calls = 0
+    local R = getmetatable(UIParent)
+    for k, fn in pairs(R) do
+        if type(fn) == 'function' and k ~= '__index' then
+            R[k] = function(...) __calls = __calls + 1; return fn(...) end
+        end
+    end""")
+for _ in range(20):
+    cost.execute("__fire('UNIT_HEALTH', 'player'); __fire('UNIT_POWER_UPDATE', 'player', 'RAGE'); "
+                 "__fire('UNIT_HEALTH', 'target'); __fire('UNIT_POWER_UPDATE', 'target', 'MANA')")
+    run(cost, 0.1)
+per_frame = cost.eval("__calls") / 120
+check(per_frame < 1100, f"player and target in a fight make few widget calls a frame ({per_frame:.0f}, under 1100)")
+# A hidden frame's bars sleep, not asked every frame whether they show, and wake the moment the game shows the frame
+# (the OnShow of our hidden bar on it, Bars.Sleep).
+cost.execute("TargetFrame:Hide()")
+run(cost, 0.1)
+asleep = cost.eval("__ns.Bars.stateOf[TargetFrame.healthbar].asleep == true")
+cost.execute("TargetFrame:Show()")
+woken = cost.eval("__ns.Bars.stateOf[TargetFrame.healthbar].asleep == nil")
+run(cost, 0.05)
+check(asleep and woken and cost.eval("__ns.Bars.stateOf[TargetFrame.healthbar].sight") == "shown",
+      "a hidden frame's bar sleeps, and wakes when the game shows the frame again")
+# Animation Frame Rate: a moving liquid updated every frame at Unlimited, every other frame at 60 when the game runs at
+# 120 (Liquid:Due), the bar's place still the client's every frame.
+def updates(fps_setting):
+    cost.execute(f"__settings.animationFps:SetValue({fps_setting})")
+    cost.execute("""__updates = 0
+        local liquid = __ns.Bars.Liquid(PlayerFrame.healthbar)
+        local update = __ns.Liquid.Update
+        liquid.Update = function(self, ...) __updates = __updates + 1; return update(self, ...) end""")
+    step = cost.globals().__step
+    for i in range(120):
+        if i % 6 == 0:
+            cost.execute("__fire('UNIT_HEALTH', 'player')")
+        step(1 / 120)
+    cost.execute("__ns.Bars.Liquid(PlayerFrame.healthbar).Update = nil")
+    return cost.eval("__updates")
+unlimited, capped, low = updates(150), updates(60), updates(30)
+check(unlimited == 120 and 55 <= capped <= 62 and 27 <= low <= 32,
+      f"Animation Frame Rate: a moving liquid every frame at Unlimited ({unlimited} of 120), about 60 a second at 60 "
+      f"({capped}), 30 at 30 ({low})")
+cost.execute("__settings.animationFps:SetValue(150)")
+
 print("== settings")
 OPTION_KEYS = ["playerHealth", "healthColor", "playerPower", "powerColor", "targetHealth", "targetHealthColor",
                "targetPower", "targetPowerColor", "mobClassColor", "petHealth", "petHealthColor", "petPower",
@@ -303,7 +401,7 @@ OPTION_KEYS = ["playerHealth", "healthColor", "playerPower", "powerColor", "targ
                "partyPowerColor", "raidHealth", "raidHealthColor", "raidPower", "raidPowerColor", "prdHealth",
                "prdHealthColor", "prdPower", "prdPowerColor", "plateHealth", "plateHealthColor", "plateFriendly",
                "plateFriendlyColor", "plateDots", "plateKillIcon", "waves", "swirl", "bubbles", "sparkles", "ambient",
-               "lightning", "animationSpeed", "waveIntensity", "dots", "dotKillIcon", "heals", "shield", "weakenedSoul", "manaBuild", "rageFury", "externalBars", "externalColors",
+               "lightning", "animationSpeed", "waveIntensity", "animationFps", "dots", "dotKillIcon", "heals", "shield", "weakenedSoul", "manaBuild", "rageFury", "externalBars", "externalColors",
                "playerHealthHeight", "playerPowerHeight", "targetHealthHeight", "targetPowerHeight",
                "focusHealthHeight", "focusPowerHeight", "petHealthHeight", "petPowerHeight", "totHealthHeight",
                "totPowerHeight", "partyHealthHeight", "partyPowerHeight"]
@@ -1579,6 +1677,9 @@ check(tf.eval("issecretvalue(" + OURS + ".health.value)") and tf.eval("issecretv
 check(tf.eval("PlayerFrame.PlayerFrameContainer.alpha") == 0 and tf.eval("PlayerFrame.PlayerFrameContent.PlayerFrameContentMain.alpha") == 0,
       "the game's art and main content (bars, name, level, glows) are faded while ours shows, by their frames")
 check(tf.eval("__ns.Bars.Sight(PlayerFrame.healthbar)") == "faded", "so the liquid on the game's own bar pauses")
+check(tf.eval("__ns.Bars.stateOf[PlayerFrame.healthbar].rested == true")
+      and tf.eval("__ns.Bars.stateOf[PlayerFrame.manabar].rested == true"),
+      "and rests, not looked at every frame while ours shows (Bars.Rest)")
 tf.execute("""local flash = PlayerFrame.PlayerFrameContainer.FrameFlash
     flash:SetVertexColor(1, 0.5, 0); flash:Show()
     local status = PlayerFrame.PlayerFrameContent.PlayerFrameContentMain.StatusTexture
@@ -1597,6 +1698,9 @@ tf.execute("PlayerFrame.PlayerFrameContainer.AlternatePowerFrameTexture:Show()")
 run(tf, 0.3)
 check(not tf.eval(ST + ".player.shown") and tf.eval("PlayerFrame.PlayerFrameContainer.alpha") == 1,
       "a druid's extra mana bar, with its own frame art: the game's frame given back")
+check(tf.eval("__ns.Bars.stateOf[PlayerFrame.healthbar].rested == nil")
+      and tf.eval("__ns.Bars.Sight(PlayerFrame.healthbar)") == "shown",
+      "its bars woken and drawn again as it is given back")
 tf.execute("PlayerFrame.PlayerFrameContainer.AlternatePowerFrameTexture:Hide()")
 run(tf, 0.3)
 check(tf.eval(OURS + ".nameText.text") == tf.eval("PlayerName.text") and tf.eval(OURS + ".levelText.text") == "38",

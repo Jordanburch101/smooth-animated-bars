@@ -77,6 +77,9 @@ local DEFAULTS = {
     -- How fast everything in the liquid moves, and how far its front's waves bulge and dip, in percent
     animationSpeed = 100,
     waveIntensity  = 100,
+    -- At most this many updates a second for a liquid that is moving (Liquid.SetFrameRate): 60 by default (seen in game
+    -- at 60: no difference to the eye, a fifth less cost in a fight at 100 fps); 150 is Unlimited, every frame
+    animationFps   = 60,
     -- The DoT marker on the target's health bar (Marker.lua), offered by the setup wizard
     dots        = false,
     dotKillIcon = true,
@@ -254,6 +257,7 @@ local EFFECT_LEVELS = {
 Core.EFFECT_LEVELS = EFFECT_LEVELS
 local IS_EFFECT, LEVEL = {}, {}
 local function ApplyEffects()
+    ns.Liquid.SetFrameRate(db and db.animationFps)
     ns.Bars.ApplyOptions()
     ns.Marker.ApplyOptions()
     ns.HealMarker.ApplyOptions()
@@ -267,6 +271,7 @@ for _, level in ipairs(EFFECT_LEVELS) do
     IS_EFFECT[level.key], LEVEL[level.key] = true, level
     SETTING_APPLY[level.key] = ApplyEffects
 end
+SETTING_APPLY.animationFps = function() ns.Liquid.SetFrameRate(db.animationFps) end
 
 -- An effect level as a factor (1 at 100%), kept in its range: a saved value from an older or edited file never drives
 -- the liquid out of it.
@@ -741,6 +746,7 @@ events:SetScript("OnEvent", function(self, event, arg1, arg2)
     elseif event == "PLAYER_ENTERING_WORLD" then
         local isLogin, isReload = arg1, arg2
         Core.ready = true -- other addons' bars go live from here on (Bars.AddBar)
+        ns.Liquid.SetFrameRate(db.animationFps)
         ApplyBars(true)
         ns.Bars.ApplyColors() -- class and faction themes know the player now
         ns.Marker.Apply()
