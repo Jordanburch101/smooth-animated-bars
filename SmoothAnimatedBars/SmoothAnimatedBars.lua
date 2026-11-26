@@ -961,11 +961,7 @@ function Core.TrySwitch(name)
     elseif name then
         out[#out + 1] = "No switch called " .. name .. "."
     end
-    root.tryFlags = {}
-    for k, v in pairs(TRY) do
-        if v then root.tryFlags[k] = true end
-    end
-    if not next(root.tryFlags) then root.tryFlags = nil end
+    Core.TrySave()
     out[#out + 1] = "Test switches (/sab try <name> turns one over; all off is the addon as released):"
     for _, k in ipairs(Core.TRY_ORDER) do
         if k ~= "all" then
@@ -975,6 +971,92 @@ function Core.TrySwitch(name)
         end
     end
     return out
+end
+
+-- The switches on, kept for /reload (SmoothAnimatedBarsDB.tryFlags), and the popup's boxes brought up to date.
+function Core.TrySave()
+    local TRY = ns.Liquid.TRY
+    root.tryFlags = {}
+    for k, v in pairs(TRY) do
+        if v then root.tryFlags[k] = true end
+    end
+    if not next(root.tryFlags) then root.tryFlags = nil end
+    local popup = Core.tryPopup
+    if popup then
+        for k, box in pairs(popup.boxes) do box:SetChecked(TRY[k] and true or false) end
+    end
+end
+
+-- A throwaway window for the switches (/sab try with no name): a box each, All Off, and /sab perf with them noted.
+Core.TRY_SHORT = {
+    stagger = "Liquids take turns on frames (fewer spikes)",
+    nocaps = "Glow layers stop at the front's rearmost point",
+    idle20 = "Still liquids update 20 times a second, not 30",
+    furycap = "A bursting Rage Fury keeps to the frame rate cap",
+    poll2 = "Bar Height copies the game's frames every 0.2 s",
+}
+
+function Core.TryPopup()
+    local f = Core.tryPopup
+    if not f then
+        f = CreateFrame("Frame", "SmoothAnimatedBarsTry", UIParent, "BackdropTemplate")
+        f:SetSize(360, 252)
+        f:SetPoint("CENTER", UIParent, "CENTER", 0, 120)
+        f:SetFrameStrata("DIALOG")
+        f:SetClampedToScreen(true)
+        f:EnableMouse(true)
+        f:SetMovable(true)
+        f:RegisterForDrag("LeftButton")
+        f:SetScript("OnDragStart", f.StartMoving)
+        f:SetScript("OnDragStop", f.StopMovingOrSizing)
+        if f.SetBackdrop then
+            -- The tooltip's border and ground by file ID, as the editor's panes.
+            f:SetBackdrop({ edgeFile = 137057, edgeSize = 12, bgFile = 137056, insets = { left = 3, right = 3, top = 3, bottom = 3 } })
+            f:SetBackdropColor(0, 0, 0, 0.9)
+        end
+        if UISpecialFrames then table.insert(UISpecialFrames, "SmoothAnimatedBarsTry") end -- Escape closes it
+        local title = f:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+        title:SetPoint("TOP", f, "TOP", 0, -12)
+        title:SetText("Smooth Animated Bars: test switches")
+        f.boxes = {}
+        local y = -36
+        for _, k in ipairs(Core.TRY_ORDER) do
+            if k ~= "all" then
+                local box = CreateFrame("CheckButton", nil, f, "UICheckButtonTemplate")
+                box:SetSize(24, 24)
+                box:SetPoint("TOPLEFT", f, "TOPLEFT", 14, y)
+                box:SetScript("OnClick", function(self)
+                    ns.Liquid.TRY[k] = self:GetChecked() and true or false
+                    Core.TrySave()
+                end)
+                local label = f:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
+                label:SetPoint("TOPLEFT", box, "TOPRIGHT", 4, -1)
+                label:SetText(k)
+                local says = f:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall")
+                says:SetPoint("TOPLEFT", label, "BOTTOMLEFT", 0, -1)
+                says:SetText(Core.TRY_SHORT[k])
+                f.boxes[k] = box
+                y = y - 36
+            end
+        end
+        local function Button(text, x, onClick)
+            local b = CreateFrame("Button", nil, f, "UIPanelButtonTemplate")
+            b:SetSize(104, 22)
+            b:SetPoint("BOTTOMLEFT", f, "BOTTOMLEFT", x, 12)
+            b:SetText(text)
+            b:SetScript("OnClick", onClick)
+            return b
+        end
+        Button("All Off", 14, function()
+            for k in pairs(ns.Liquid.TRY) do ns.Liquid.TRY[k] = false end
+            Core.TrySave()
+        end)
+        Button("/sab perf", 128, function() SlashCmdList.SMOOTHANIMATEDBARS("perf") end)
+        Button("Close", 242, function() f:Hide() end)
+        Core.tryPopup = f
+    end
+    Core.TrySave()
+    f:Show()
 end
 
 -- Every part's time (each update, event handler and ticker, wrapped by ns.Timed in its file) over the PARTS_SECONDS
@@ -1223,7 +1305,9 @@ SlashCmdList.SMOOTHANIMATEDBARS = function(input)
         Core.Print("Saved timings cleared.")
     elseif cmd == "perf calib" then
         for _, line in ipairs(Core.Calibrate()) do Core.Print(line) end
-    elseif cmd == "try" or cmd:match("^try ") then
+    elseif cmd == "try" then
+        Core.TryPopup()
+    elseif cmd:match("^try ") then
         for _, line in ipairs(Core.TrySwitch(cmd:match("^try%s+(%S+)"))) do Core.Print(line) end
     else
         for _, line in ipairs(HELP) do Core.Print(line) end
