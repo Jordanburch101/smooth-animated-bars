@@ -579,10 +579,19 @@ Facts found while building this, which the code relies on and which are not obvi
   liquid's) with the game's profiler's figure. Bar Height's poll took about 2 ms ten times a second (looks of hidden
   segments and icons, each segment reading the bars' places, every region scanned for other addons' texts): 1.2 ms
   after (hidden ones skipped, a bar's place read once, the scan once a second). `tools/harness/rig.py` (asked for: in
-  game testing was slow) plays `/sab perf` in the mock with the player's saved settings on a modelled clock, its costs
-  fitted to those reports: the first fit, on two reports (idle with a target at 121 fps, a 1v1 at 95), had Lua work at
-  about 21 us a thousand instructions against 0.5 us a setter and 1 us a getter, so the addon's own Lua, not its calls
-  to the game, is most of what it costs; it predicted the fight's 1.63 ms as 1.69. Addons cannot write
+  game testing was slow) plays `/sab perf` in the mock with the player's saved settings on a modelled clock. Its first
+  costs were fitted to two reports (idle with a target at 121 fps, a 1v1 at 95) and said the addon's own Lua, not its
+  calls to the game, was most of the cost; that was wrong twice over. The Lua counts (rig and `bench.py`) came from a
+  count hook armed once, and in Lua 5.1 a hook's own instructions use up its count, so they were about three times too
+  high (most for loop-heavy code: `Simulate` four times); the hook now re-arms itself as its last act, checked against a
+  hook on every instruction. And with every part's Lua and calls growing together, two reports cannot tell the two
+  apart: refitted on true counts it still chose Lua, at an implausible 46 us a thousand instructions. So `/sab perf
+  calib` measures them in the client (each kind of widget call on a texture of its own, and `Core.CalibLua`, whose
+  instructions the rig counts exactly), and the rig uses those, the reports only checking them. Not yet run in game.
+  Lua cut meanwhile, the look exactly the same (`samelook.py`: colours within 0.00/255): `Simulate` in one pass,
+  `FrontOffset` worked out in `Draw`, the caps' helpers written out in `DrawLayer`, and each bar timed only while
+  `/sab perf` times every part; a fight on the player's settings (player and target only) 32.7 to 27.6 thousand instructions a
+  frame, 601 widget calls either way. Addons cannot write
   files, so each `/sab perf` is kept in `SmoothAnimatedBarsDB.perfLog` (last 50), which the client writes on
   `/reload`; `tools/perf_report.py` turns the newest saved file under Forever's WTF folder into
   `perf/perf_report.txt` (git-ignored). The DoT marker on plates (`plateDots`, needs `plateHealth`): `Dots.lua`

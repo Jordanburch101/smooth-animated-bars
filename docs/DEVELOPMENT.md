@@ -60,8 +60,10 @@ tools/venv/Scripts/python tools/whatsnew_data.py    # SmoothAnimatedBars/WhatsNe
 ## Measuring
 
 `/sab perf [note]` in game prints what the liquid's updates cost each frame over the last 10 seconds, the unit
-frames and the enemy nameplates apart (and of the unit frames, the Personal Resource Display's and the party's, and
-the costliest bars with their Rage Fury), and saves it in the saved variables. After `/reload`:
+frames and the enemy nameplates apart, then times every part of the addon over the next 10 seconds (and meanwhile each
+bar: the Personal Resource Display's and the party's, and the costliest bars with their Rage Fury), and saves it all in
+the saved variables. `/sab perf calib` times each kind of widget call and a piece of Lua in the client, for the rig.
+After `/reload`:
 
 ```powershell
 tools/venv/Scripts/python tools/perf_report.py    # perf/perf_report.txt: a line per report, then each second
@@ -93,18 +95,25 @@ file.
 `tools/harness/rig.py` says what `/sab perf` would say in game, without the game. It runs the addon in the mock with a
 player's saved variables, gives it a clock of its own that moves by a cost for each call to the game (setters,
 getters, status bars, other functions) and for its Lua work, and runs the addon's own `/sab perf` (its part-by-part
-timing). The costs are fitted to the reports with every part timed in game:
+timing). The costs are measured in game by `/sab perf calib` (each kind of widget call, and a piece of the addon's Lua
+whose instructions the rig counts exactly), and checked against the reports with every part timed:
 
 ```powershell
 cd tools/harness
-../venv/Scripts/python rig.py calibrate --since "2026-11-26 14:40" --pace 3   # after /sab perf in game and /reload
+../venv/Scripts/python rig.py calibrate --since "2026-11-26 14:40" --pace 3   # after /sab perf calib, /sab perf, /reload
 ../venv/Scripts/python rig.py predict --scenario fight --fps 95 --pace 3      # idle, notarget or fight
 ../venv/Scripts/python rig.py predict --scenario idle --fps 120 --ref <commit> # beside an earlier version
 ```
 
-`--since` picks the reports made with the code now in the working copy; `--pace` is a fight's changes a second;
-`--class` the player's (a warrior's rage has the fury). The fit is written to `rig_calibration.json` with each part's
-measured and predicted time. `--ref` needs a version with the part-by-part timing (`ns.Timed`) to compare against.
+`--since` picks the reports made with the code now in the working copy (`--ref` for the code they ran); `--pace` is a
+fight's changes a second; `--class` the player's (a warrior's rage has the fury). The costs are written to
+`rig_calibration.json` with each part's measured and predicted time. Without a `/sab perf calib` (or with `--fit`) the
+costs are fitted to the reports instead, which cannot tell the Lua from the widget calls apart well. `--ref` in predict
+needs a version with the part-by-part timing (`ns.Timed`) to compare against.
+
+The Lua counts (here and in `bench.py`) sample every 50 instructions with a count hook that re-arms itself as its last
+act: in Lua 5.1 the hook's own instructions use up the count, and armed once it counted the addon's Lua about three
+times over, most where samples took its longer path. `bench.py --by luafn` sums the Lua by function.
 
 A change made for speed must not change the look. `tools/harness/samelook.py` plays the same scenarios (classes,
 themes, effects at their strongest and off, a reversed bar, quiet and fighting) on the addon at a git ref and on the

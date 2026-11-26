@@ -783,9 +783,10 @@ local HELP = {
     "/sab mana - the wait before your mana regenerates, and what it saw lately",
     "/sab self on | off - note what the game lets the addon read about DoTs and hits on you, saved for /reload; "
         .. "/sab self shows it (self clear: start afresh)",
-    "/sab perf [note] - what the liquid costs each frame, the unit frames (the display and party apart) and the "
-        .. "nameplates, and the costliest bars, saved for "
-        .. "tools/perf_report.py after /reload (perf reset: time afresh, perf clear: forget the saved ones)",
+    "/sab perf [note] - what the liquid costs each frame, the unit frames and the nameplates, then every part of the "
+        .. "addon over the next 10 seconds with the display's, the party's and the costliest bars, saved for "
+        .. "tools/perf_report.py after /reload (perf reset: time afresh, perf clear: forget the saved ones, perf calib: "
+        .. "what each widget call and the Lua cost in this client, for the tools)",
     "/sab party [note] - what the game lets the addon read about the party frames, saved for /reload "
         .. "(party clear: forget the saved ones)",
     "/sab tall [health] [power] - a test: the player and target frames at other bar heights (the game's are 20 and 10; "
@@ -797,7 +798,7 @@ local HELP = {
 -- /sab perf keeps each report in the saved variables, which the client writes to disk on /reload or logout (addons
 -- cannot write files). tools/perf_report.py turns them into a text file.
 local PERF_LOG_MAX = 50
-local PERF_WORDS = { ["perf reset"] = true, ["perf clear"] = true }
+local PERF_WORDS = { ["perf reset"] = true, ["perf clear"] = true, ["perf calib"] = true }
 
 local function Where()
     local ok, zone = pcall(GetRealZoneText)
@@ -816,6 +817,119 @@ local function ProfilerMs()
     if not metric then return nil end
     local ok, ms = pcall(C_AddOnProfiler.GetAddOnMetric, ADDON_NAME, metric)
     if ok and type(ms) == "number" and not (issecretvalue and issecretvalue(ms)) then return ms end
+end
+
+-- /sab perf calib: what the client charges for the addon's Lua and for each kind of widget call, measured directly, so
+-- tools/harness/rig.py can turn the mock's counts into the game's time without guessing the split (fitted to /sab perf
+-- reports alone, Lua and widget calls could not be told apart). About a tenth of a second of work, on a texture of its
+-- own: 1 px, at most 0.002 alpha, so nothing shows.
+Core.CALIB_N = 4000      -- calls of each method
+Core.CALIB_LUA_REPS = 400 -- passes of CalibLua
+
+-- Plain Lua of the liquid's kind (its springs, Liquid:Simulate's loop): tools/harness/rig.py counts its instructions
+-- exactly in the mock, the game times it.
+function Core.CalibLua(pos, vel, n, reps)
+    local k, d, c, s, limit = 300, 6, 2000, 1 / 120, 8
+    for _ = 1, reps do
+        local q = pos[1]
+        local qa = q
+        for i = 1, n do
+            local qb = i < n and pos[i + 1] or q
+            local v = vel[i] + (-k * q - d * vel[i] + c * (qa + qb - 2 * q)) * s
+            local p = pos[i] + v * s
+            if p > limit then
+                p, v = limit, 0
+            elseif p < -limit then
+                p, v = -limit, 0
+            end
+            pos[i], vel[i] = p, v
+            qa, q = q, qb
+        end
+    end
+end
+
+function Core.CalibInput()
+    local pos, vel = {}, {}
+    for i = 1, 15 do pos[i], vel[i] = math.sin(i) * 3, 0 end
+    return pos, vel, 15
+end
+
+local CALIB_LOG_MAX = 10
+
+function Core.Calibrate()
+    local clock = debugprofilestop
+    if not clock then return { "The client has no timer (debugprofilestop) to measure with." } end
+    local N = Core.CALIB_N
+    local f = Core.calibFrame
+    if not f then
+        f = CreateFrame("Frame", nil, UIParent)
+        f:SetSize(1, 1)
+        f:SetPoint("BOTTOMLEFT", UIParent, "BOTTOMLEFT", 0, 0)
+        f.tex = f:CreateTexture(nil, "BACKGROUND")
+        f.tex:SetColorTexture(1, 1, 1, 1)
+        f.tex:SetSize(1, 1)
+        f.tex:SetPoint("BOTTOMLEFT", f, "BOTTOMLEFT", 0, 0)
+        f.tex:SetAlpha(0.001)
+        f.bar = CreateFrame("StatusBar", nil, f)
+        f.bar:SetSize(1, 1)
+        f.bar:SetPoint("BOTTOMLEFT", f, "BOTTOMLEFT", 0, 0)
+        f.bar:SetMinMaxValues(0, 1)
+        Core.calibFrame = f
+    end
+    f:Show()
+    local t, bar = f.tex, f.bar
+    local A, B = 0.001, 0.002
+    local half = N / 2
+    -- Each loop makes two calls a pass with the values alternating, so the client cannot skip one as unchanged.
+    -- "loop" is the same loop round a C function that does next to nothing (rawequal): the Lua around each call.
+    local tests = {
+        { "loop", function() for _ = 1, half do rawequal(t, A); rawequal(t, B) end end },
+        { "SetAlpha", function() for _ = 1, half do t:SetAlpha(A); t:SetAlpha(B) end end },
+        { "SetVertexColor", function() for _ = 1, half do t:SetVertexColor(1, 1, 1, A); t:SetVertexColor(0.9, 1, 1, B) end end },
+        { "SetTexCoord", function() for _ = 1, half do t:SetTexCoord(0, 1, 0, 1); t:SetTexCoord(0.1, 0.9, 0, 1) end end },
+        { "SetWidth", function() for _ = 1, half do t:SetWidth(1); t:SetWidth(1.5) end end },
+        { "SetSize", function() for _ = 1, half do t:SetSize(1, 1); t:SetSize(1.5, 1.5) end end },
+        { "SetPoint", function()
+            for _ = 1, half do
+                t:SetPoint("BOTTOMLEFT", f, "BOTTOMLEFT", 0, 0); t:SetPoint("BOTTOMLEFT", f, "BOTTOMLEFT", 0.5, 0)
+            end
+        end },
+        { "IsShown", function() for _ = 1, half do t:IsShown(); t:IsShown() end end },
+        { "GetWidth", function() for _ = 1, half do t:GetWidth(); t:GetWidth() end end },
+        { "IsVisible", function() for _ = 1, half do f:IsVisible(); f:IsVisible() end end },
+        { "SetValue", function() for _ = 1, half do bar:SetValue(0.25); bar:SetValue(0.75) end end },
+    }
+    local result = { n = N, us = {} }
+    for _, test in ipairs(tests) do
+        test[2]() -- once to warm up
+        local t0 = clock()
+        test[2]()
+        result.us[test[1]] = (clock() - t0) * 1000 / N
+    end
+    local pos, vel, n = Core.CalibInput()
+    Core.CalibLua(pos, vel, n, 10)
+    pos, vel, n = Core.CalibInput()
+    local t0 = clock()
+    Core.CalibLua(pos, vel, n, Core.CALIB_LUA_REPS)
+    result.luaMs, result.luaReps = clock() - t0, Core.CALIB_LUA_REPS
+    t:SetAlpha(0)
+    f:Hide()
+    result.when = date and date("%Y-%m-%d %H:%M:%S") or nil
+    result.fps = GetFramerate and GetFramerate() or nil
+    result.version = C_AddOns and C_AddOns.GetAddOnMetadata and C_AddOns.GetAddOnMetadata(ADDON_NAME, "Version") or nil
+    root.perfCalib = root.perfCalib or {}
+    table.insert(root.perfCalib, result)
+    while #root.perfCalib > CALIB_LOG_MAX do table.remove(root.perfCalib, 1) end
+    local loop = result.us.loop
+    local out = { string.format("Each call, microseconds (the loop round it, %.3f, taken off):", loop) }
+    for _, test in ipairs(tests) do
+        if test[1] ~= "loop" then
+            out[#out + 1] = string.format("  %s: %.3f", test[1], result.us[test[1]] - loop)
+        end
+    end
+    out[#out + 1] = string.format("Lua: %.2f ms for %d passes of the liquid's springs.", result.luaMs, result.luaReps)
+    out[#out + 1] = "Saved: /reload writes it to disk for tools/harness/rig.py."
+    return out
 end
 
 -- Every part's time (each update, event handler and ticker, wrapped by ns.Timed in its file) over the PARTS_SECONDS
@@ -847,12 +961,16 @@ local function PartsReport(entry)
         for _, p in ipairs(list) do
             Core.Print(string.format("  %s: %.3f ms a frame (%d calls)", p.part, p.ms, p.calls))
         end
+        -- Each bar is timed only meanwhile (Bars.lua, OnUpdate), so its lines come now, over these seconds.
+        for _, line in ipairs(ns.Bars.PerfDetail()) do Core.Print(line) end
         local profiler = ProfilerMs()
         if profiler then
             Core.Print(string.format("The game's profiler for the whole addon: %.3f ms a frame", profiler))
         end
         if entry then
             entry.parts, entry.partsMs, entry.partsFrames, entry.profilerMs = list, total, frames, profiler
+            local snap = ns.Bars.PerfSnapshot()
+            if snap then entry.seconds = snap.seconds end -- the seconds timed, each bar's among them
             Core.Print("Kept with the saved report: /reload writes it to disk.")
         end
     end)
@@ -1002,6 +1120,8 @@ SlashCmdList.SMOOTHANIMATEDBARS = function(input)
     elseif cmd == "perf clear" then
         root.perfLog = nil
         Core.Print("Saved timings cleared.")
+    elseif cmd == "perf calib" then
+        for _, line in ipairs(Core.Calibrate()) do Core.Print(line) end
     else
         for _, line in ipairs(HELP) do Core.Print(line) end
     end

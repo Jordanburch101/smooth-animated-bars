@@ -1,6 +1,6 @@
 """The CPU rig: what /sab perf would say in game, worked out offline from the addon running in the mock.
 
-    python rig.py calibrate [--saved FILE] [--since "2026-11-26 14:40"] [--ref REF]
+    python rig.py calibrate [--saved FILE] [--since "2026-11-26 14:40"] [--ref REF] [--fit]
     python rig.py predict [--saved FILE] [--scenario idle|notarget|fight] [--fps 120] [--ref HEAD]
 
 The mock cannot time the client, so the rig gives the addon a clock of its own (debugprofilestop): every call to the
@@ -10,11 +10,14 @@ in game (its part-by-part timing, ns.Timed and Bars.Lap), with the player's own 
 only the player's and target's frames shown, at the frame rate measured in game, idle or in a fight (every unit's
 health and power changing ten times a second), and its report is read back.
 
-calibrate: the costs are fitted to the reports with every part timed in game (/sab perf, saved in the saved variables;
---since picks those made with the code now in the working copy, or at --ref). Each report is played back in the mock
-in its own conditions (in combat or not, a target or not, its frame rate), once for each kind of cost, so each part's
-count of each kind is known; the costs are then the non-negative fit of those counts to the measured times, written to
-rig_calibration.json with how well each part fits.
+calibrate: the costs come from /sab perf calib in game, which times each kind of widget call and a piece of the addon's
+Lua there (its instructions counted exactly here), and are checked against the reports with every part timed in game
+(/sab perf, saved in the saved variables; --since picks those made with the code now in the working copy, or at --ref).
+Each report is played back in the mock in its own conditions (in combat or not, a target or not, its frame rate), once
+for each kind of cost, so each part's count of each kind is known, and each part's predicted time is printed beside
+the measured one and written to rig_calibration.json. Without a /sab perf calib (or with --fit) the costs are instead
+the non-negative fit of those counts to the measured times; from two reports that fit could not tell the Lua from the
+widget calls (both grow with the liquid's work), so measure.
 
 predict: one run with the fitted costs, its parts in predicted in-game ms a frame, beside the same at --ref. A
 measurement in game now and then (/sab perf, then calibrate again) keeps the costs honest.
@@ -106,15 +109,20 @@ end
 
 # After loading: a count hook moves the clock by the Lua work run in the addon's own files.
 METER = r"""
-local getinfo, find = debug.getinfo, string.find
-local depth = __rigDepth
-debug.sethook(function()
-    if __rigDepth.n > 0 then return end
-    local i = getinfo(2, 'S')
-    if i and find(i.source, 'SmoothAnimatedBars/', 1, true) and not find(i.source, 'harness', 1, true) then
-        __synth = __synth + __w.lua * SAMPLE / 1000000
+local getinfo, find, sethook = debug.getinfo, string.find, debug.sethook
+-- Re-armed as the hook's last act: in Lua 5.1 the hook's own instructions use up the count, and armed once the meter
+-- charged the addon's Lua about three times over (bench.py).
+local hook
+hook = function()
+    if __rigDepth.n == 0 then
+        local i = getinfo(2, 'S')
+        if i and find(i.source, 'SmoothAnimatedBars/', 1, true) and not find(i.source, 'harness', 1, true) then
+            __synth = __synth + __w.lua * SAMPLE / 1000000
+        end
     end
-end, '', SAMPLE)
+    sethook(hook, '', SAMPLE)
+end
+sethook(hook, '', SAMPLE)
 """.replace("SAMPLE", str(SAMPLE))
 
 EVENTS = """
@@ -193,9 +201,59 @@ def scenario_of(snap):
     return "idle" if units >= 4 else "notarget"
 
 
+# /sab perf calib's methods, and how often the liquid calls each in a fight (bench.py --by method on a player's settings):
+# a kind's cost is its methods' weighted so.
+CALIB_SET = {"SetTexCoord": 120, "SetAlpha": 104, "SetPoint": 67, "SetVertexColor": 63, "SetSize": 41, "SetWidth": 39}
+CALIB_GET = {"IsShown": 64, "IsVisible": 20, "GetWidth": 10}
+
+
+def calib_instructions(reps):
+    """Core.CalibLua's Lua 5.1 instructions for reps passes, counted exactly (a hook on every instruction) in the mock."""
+    lua = bench.session(ADDON, set(), {}, CLASS, 0)
+    lua.execute("debug.sethook()")
+    return lua.eval("""(function()
+        local pos, vel, n = __ns.Core.CalibInput()
+        local c = 0
+        debug.sethook(function() c = c + 1 end, '', 1)
+        __ns.Core.CalibLua(pos, vel, n, %d)
+        debug.sethook()
+        return c
+    end)()""" % reps)
+
+
+def measured(saved):
+    """The costs from the newest /sab perf calib in the saved variables, or None. The Lua round each call (the loop with
+    rawequal in it) is taken off: the rig counts that as the addon's Lua."""
+    cal = loader.load_log(saved, "perfCalib")
+    if not cal:
+        return None, None
+    c = cal[-1]
+    us = c["us"]
+    loop = us.get("loop", 0)
+
+    def avg(weights):
+        have = {m: n for m, n in weights.items() if m in us}
+        return max(0.0, sum((us[m] - loop) * n for m, n in have.items()) / sum(have.values()))
+
+    costs = {"set": avg(CALIB_SET), "get": avg(CALIB_GET), "bar": max(0.0, us.get("SetValue", loop) - loop)}
+    costs["other"], costs["api"] = costs["set"], costs["get"]  # not measured: like the setters, like a getter
+    costs["lua"] = c["luaMs"] * 1000 / calib_instructions(c["luaReps"]) * 1000
+    return costs, c
+
+
 def calibrate(a):
     log = loader.load_log(a.saved)
     chosen = [s for s in log if s.get("parts") and (s.get("when") or "") >= (a.since or "")]
+    known, calib = (None, None) if a.fit else measured(a.saved)
+    if known:
+        print(f"costs measured in game by /sab perf calib ({calib.get('when')}): "
+              + ", ".join(f"{k} {v:.3f} us" + (" a 1000 instructions" if k == "lua" else " a call")
+                          for k, v in known.items()))
+        if not chosen:
+            with open(CALIBRATION, "w", encoding="utf-8") as f:
+                json.dump({"costs": known, "kinds": KINDS, "fits": [], "measured": calib.get("when")}, f, indent=1)
+            print(f"no reports with every part timed to check them against; wrote {CALIBRATION}")
+            return
     if not chosen:
         sys.exit("No saved report has every part timed since " + repr(a.since) + ": /sab perf in game, then /reload.")
     addon = gitref.export(a.ref) if a.ref else ADDON
@@ -214,10 +272,13 @@ def calibrate(a):
             rows.append([per[name][k] * weight for k in KINDS])
             b.append(ms * 1000 * weight)
             labels.append((s.get("when"), key, name, ms, per[name]))
-    x = nnls(np.array(rows), np.array(b))
-    costs = dict(zip(KINDS, (float(v) for v in x)))
-    print("costs: " + ", ".join(f"{k} {v:.2f} us" + (" a 1000 instructions" if k == "lua" else " a call")
-                                for k, v in costs.items()))
+    if known:
+        costs = known  # the reports below only check them
+    else:
+        x = nnls(np.array(rows), np.array(b))
+        costs = dict(zip(KINDS, (float(v) for v in x)))
+        print("costs fitted: " + ", ".join(f"{k} {v:.2f} us" + (" a 1000 instructions" if k == "lua" else " a call")
+                                           for k, v in costs.items()))
     fits = []
     print(f"\n{'report':20s} {'as':16s} {'part':36s} {'game ms':>8s} {'rig ms':>8s}")
     for when, key, name, ms, c in labels:
@@ -225,7 +286,8 @@ def calibrate(a):
         fits.append({"when": when, "scenario": key[0], "fps": key[1], "part": name, "game": ms, "rig": pred})
         print(f"{when or '?':20s} {key[0] + ' ' + str(key[1]):16s} {name:36s} {ms:8.3f} {pred:8.3f}")
     with open(CALIBRATION, "w", encoding="utf-8") as f:
-        json.dump({"costs": costs, "kinds": KINDS, "fits": fits, "since": a.since, "ref": a.ref}, f, indent=1)
+        json.dump({"costs": costs, "kinds": KINDS, "fits": fits, "since": a.since, "ref": a.ref,
+                   "measured": calib.get("when") if known else None}, f, indent=1)
     print(f"\nwrote {CALIBRATION}")
 
 
@@ -267,6 +329,8 @@ def main():
     ap.add_argument("--fps", type=float, default=100)
     ap.add_argument("--class", dest="cls", default=CLASS, help="the player's class (WARRIOR, MAGE, ROGUE...)")
     ap.add_argument("--pace", type=float, default=PACE, help="a fight's changes a second (health and power)")
+    ap.add_argument("--fit", action="store_true",
+                    help="calibrate: fit the costs to the reports even where /sab perf calib measured them")
     a = ap.parse_args()
     a.saved = a.saved or loader.find_saved()
     PACE = a.pace

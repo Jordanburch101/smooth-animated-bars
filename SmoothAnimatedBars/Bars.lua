@@ -1787,10 +1787,10 @@ local function UpdateBar(b, dt)
         Inflow(b, dt, w, h)
         BuildUp(b, dt, w, h)
         if b.kind == "power" then
-            local clock = debugprofilestop
-            local t0 = clock and clock()
+            -- Timed only while /sab perf times every part (lap), as the bar's own time is (OnUpdate).
+            local t0 = lap and debugprofilestop()
             Fury(b, dt, w, h)
-            if t0 then b.furyMs = (b.furyMs or 0) + (clock() - t0) end
+            if t0 then b.furyMs = (b.furyMs or 0) + (debugprofilestop() - t0) end
         end
     end
 
@@ -2063,6 +2063,7 @@ local perf = { done = {}, groups = {} }
 -- The unit frames' share is split again by group (PerfGroup), each with its own count of liquids showing: the
 -- Personal Resource Display and the party frames apart from the rest.
 local PERF_GROUPS = { "prd", "party", "raid", "addon" }
+perf.MS = { prd = "prdMs", party = "partyMs", raid = "raidMs", addon = "addonMs" } -- not joined every frame (no local: 200)
 
 local function PerfGroup(b)
     if b.spot.external then return "addon" end
@@ -2087,9 +2088,13 @@ local function PerfAdd(unitMs, plateMs, units, platesLive, groups)
     cur.unitMs, cur.plateMs = cur.unitMs + unitMs, cur.plateMs + plateMs
     cur.peak = math.max(cur.peak, unitMs + plateMs)
     cur.units, cur.plates = math.max(cur.units, units), math.max(cur.plates, platesLive)
-    for _, g in ipairs(PERF_GROUPS) do
-        cur[g .. "Ms"] = cur[g .. "Ms"] + groups[g .. "Ms"]
-        cur[g] = math.max(cur[g], groups[g])
+    if groups then
+        cur.detailed = true
+        for _, g in ipairs(PERF_GROUPS) do
+            local key = perf.MS[g]
+            cur[key] = cur[key] + groups[key]
+            cur[g] = math.max(cur[g], groups[g])
+        end
     end
 end
 
@@ -2167,22 +2172,31 @@ local function OnUpdate(_, elapsed)
     local clock = debugprofilestop
     local t0 = clock and clock()
     local units, live, raid = 0, 0, 0
-    local groups = perf.groups
-    for _, g in ipairs(PERF_GROUPS) do groups[g .. "Ms"], groups[g] = 0, 0 end
-    for _, b in pairs(bars) do
-        local g = clock and PerfGroup(b)
-        local tb = clock and clock()
-        local shows = RunBar(b, dt)
-        if shows then
-            units = units + 1
-            if b.spot.raid then raid = raid + 1 end
-        end
-        if tb then
+    -- Each bar and group is timed only while /sab perf times every part (ns.Timing.on): two clock reads and the
+    -- bookkeeping for each of the forty or so bars, every frame, were a few percent of what the addon cost.
+    local groups = clock and ns.Timing.on and perf.groups or nil
+    if groups then
+        for _, g in ipairs(PERF_GROUPS) do groups[perf.MS[g]], groups[g] = 0, 0 end
+        for _, b in pairs(bars) do
+            local g = PerfGroup(b)
+            local tb = clock()
+            local shows = RunBar(b, dt)
+            if shows then
+                units = units + 1
+                if b.spot.raid then raid = raid + 1 end
+            end
             local ms = clock() - tb
             b.perfMs = (b.perfMs or 0) + ms
             if g then
-                groups[g .. "Ms"] = groups[g .. "Ms"] + ms
+                groups[perf.MS[g]] = groups[perf.MS[g]] + ms
                 if shows then groups[g] = groups[g] + 1 end
+            end
+        end
+    else
+        for _, b in pairs(bars) do
+            if RunBar(b, dt) then
+                units = units + 1
+                if b.spot.raid then raid = raid + 1 end
             end
         end
     end
@@ -2204,7 +2218,7 @@ local function OnUpdate(_, elapsed)
     if Bars.raid.watch then Bars.raid.Look(dt) end
     if clock then
         PerfAdd(t1 - t0, clock() - t1, units, live, groups)
-        PerfBars(perf.cur)
+        if groups then PerfBars(perf.cur) end
     end
 end
 
@@ -3536,21 +3550,45 @@ function Bars.Perf()
     end
     out[#out + 1] = string.format("Over the last %d s (%d frames):", #perf.done, frames)
     out[#out + 1] = Line("unit frames", unitMs, units)
-    -- Of which: the display's and the party's, where there were any.
-    for _, group in ipairs({ { "prd", "  of which the Personal Resource Display" }, { "party", "  of which the party" },
-                          { "raid", "  of which the raid frames" }, { "addon", "  of which other addons' bars" } }) do
-        local g, label = group[1], group[2]
-        local ms, n = 0, 0
-        for _, s in ipairs(perf.done) do ms, n = ms + (s[g .. "Ms"] or 0), math.max(n, s[g] or 0) end
-        if n > 0 then out[#out + 1] = Line(label, ms, n) end
-    end
     out[#out + 1] = Line("nameplates", plateMs, platesLive)
     if platesLive > 0 then
         out[#out + 1] = string.format("  that is %.3f ms a frame per nameplate", plateMs / frames / platesLive)
     end
+    out[#out + 1] = string.format("slowest frame: %.2f ms", peak)
+    local textures = 0
+    Each(function(b) if b.live then textures = textures + #b.liquid.textures end end)
+    out[#out + 1] = string.format("textures in live liquids: %d", textures)
+    local kb = Memory()
+    if kb then out[#out + 1] = string.format("addon memory: %.0f KB", kb) end
+    out[#out + 1] = "Only the liquid's updates are timed, not the client drawing it: compare fps with the setting on and off."
+    return out
+end
+
+-- The unit frames by group (the display's, the party's...) and the costliest bars with their fury's share, over the
+-- seconds each bar was timed in (OnUpdate times them only while /sab perf times every part): printed at its end.
+function Bars.PerfDetail()
+    local out, frames = {}, 0
+    local seconds = {}
+    for _, s in ipairs(perf.done) do
+        if s.detailed then
+            seconds[#seconds + 1] = s
+            frames = frames + s.frames
+        end
+    end
+    if frames == 0 then return out end
+    local function Line(label, ms, n)
+        return string.format("%s: %d liquid%s, %.3f ms a frame", label, n, n == 1 and "" or "s", ms / frames)
+    end
+    for _, group in ipairs({ { "prd", "  of which the Personal Resource Display" }, { "party", "  of which the party" },
+                          { "raid", "  of which the raid frames" }, { "addon", "  of which other addons' bars" } }) do
+        local g, label = group[1], group[2]
+        local ms, n = 0, 0
+        for _, s in ipairs(seconds) do ms, n = ms + (s[perf.MS[g]] or 0), math.max(n, s[g] or 0) end
+        if n > 0 then out[#out + 1] = Line(label, ms, n) end
+    end
     -- The costliest unit frame bars, each with its fury's share (party members' bars by their unit).
     local byBar = {}
-    for _, s in ipairs(perf.done) do
+    for _, s in ipairs(seconds) do
         for label, e in pairs(s.bars or {}) do
             local t = byBar[label] or { label = label, ms = 0, fury = 0 }
             t.ms, t.fury = t.ms + e.ms, t.fury + e.fury
@@ -3565,13 +3603,9 @@ function Bars.Perf()
         out[#out + 1] = string.format("  %s: %.3f ms a frame%s", t.label, t.ms / frames,
             t.fury > 0 and string.format(" (its rage fury %.3f)", t.fury / frames) or "")
     end
-    out[#out + 1] = string.format("slowest frame: %.2f ms", peak)
-    local textures = 0
-    Each(function(b) if b.live then textures = textures + #b.liquid.textures end end)
-    out[#out + 1] = string.format("textures in live liquids: %d", textures)
-    local kb = Memory()
-    if kb then out[#out + 1] = string.format("addon memory: %.0f KB", kb) end
-    out[#out + 1] = "Only the liquid's updates are timed, not the client drawing it: compare fps with the setting on and off."
+    if #out > 0 then
+        table.insert(out, 1, string.format("The unit frames' bars over the %d s timed (%d frames):", #seconds, frames))
+    end
     return out
 end
 
@@ -3583,7 +3617,8 @@ function Bars.PerfSnapshot()
     for i, s in ipairs(perf.done) do
         seconds[i] = { frames = s.frames, unitMs = s.unitMs, plateMs = s.plateMs, peak = s.peak, units = s.units,
                        plates = s.plates, prdMs = s.prdMs, prd = s.prd, partyMs = s.partyMs, party = s.party,
-                       raidMs = s.raidMs, raid = s.raid, addonMs = s.addonMs, addon = s.addon, bars = s.bars }
+                       raidMs = s.raidMs, raid = s.raid, addonMs = s.addonMs, addon = s.addon, bars = s.bars,
+                       detailed = s.detailed }
     end
     local textures = 0
     Each(function(b) if b.live then textures = textures + #b.liquid.textures end end)

@@ -624,20 +624,39 @@ function Liquid:DrawLayer(layer, ku, kv, alpha)
     LayerLook(layer, main, drawn)
     On(main)
     local ub = u + back * ku
-    for i, cap in ipairs(layer.caps) do
-        local e = ends[i]
+    -- The caps are the addon's busiest loop (seven layers a liquid, a cap a slice, every update), so Coords, LayerLook,
+    -- On and Off are written out here: the same tests and the same calls, without four function calls a cap.
+    local caps, stamp = layer.caps, layer.stamp
+    for i = 1, #caps do
+        local cap, e = caps[i], ends[i]
         if e and e - back >= 0.5 then
             -- Each cap is laid between the main texture's far end and its slice's (AnchorCaps): only its coordinates change.
             local y = (i - 1) * rowH
+            local l, r
             if m then
-                Coords(cap, u + e * ku, ub, v + y * kv, v + (y + rowH) * kv)
+                l, r = u + e * ku, ub
             else
-                Coords(cap, ub, u + e * ku, v + y * kv, v + (y + rowH) * kv)
+                l, r = ub, u + e * ku
             end
-            LayerLook(layer, cap, drawn)
-            On(cap)
-        else
-            Off(cap)
+            local top, bottom = v + y * kv, v + (y + rowH) * kv
+            if cap.sabL ~= l or cap.sabR ~= r or cap.sabT ~= top or cap.sabB ~= bottom then
+                cap.sabL, cap.sabR, cap.sabT, cap.sabB = l, r, top, bottom
+                cap:SetTexCoord(l, r, top, bottom)
+            end
+            if cap.layerStamp ~= stamp then
+                cap.layerStamp, cap.sabA = stamp, drawn
+                cap:SetVertexColor(layer.r, layer.g, layer.b, drawn)
+            elseif cap.sabA ~= drawn then
+                cap.sabA = drawn
+                cap:SetAlpha(drawn)
+            end
+            if not cap.sabShown then
+                cap.sabShown = true
+                cap:Show()
+            end
+        elseif cap.sabShown ~= false then
+            cap.sabShown = false
+            cap:Hide()
         end
     end
 end
@@ -1217,21 +1236,22 @@ function Liquid:Simulate(dt)
     while self.acc >= s do
         self.acc = self.acc - s
         -- Springs and neighbour coupling act on the offset from the lean, so the front holds the lean's
-        -- shape and ripples run over it as usual.
+        -- shape and ripples run over it as usual. One pass: each slice's offset is worked out once and carried to the
+        -- next (qa above, q this one, qb below, from positions not yet moved this step), and the slice is moved as soon
+        -- as its speed is known. The same sums in the same order as two passes, a third of the Lua work.
+        local q = pos[1] - lean * shape[1]
+        local qa = q -- the top slice has none above: its own
         for i = 1, n do
-            local q = pos[i] - lean * shape[i]
-            local qa = pos[i - 1] and pos[i - 1] - lean * shape[i - 1] or q
-            local qb = pos[i + 1] and pos[i + 1] - lean * shape[i + 1] or q
-            vel[i] = vel[i] + (-k * q - d * vel[i] + c * (qa + qb - 2 * q)) * s
-        end
-        for i = 1, n do
-            local p = pos[i] + vel[i] * s
+            local qb = i < n and pos[i + 1] - lean * shape[i + 1] or q
+            local v = vel[i] + (-k * q - d * vel[i] + c * (qa + qb - 2 * q)) * s
+            local p = pos[i] + v * s
             if p > limit then
-                p, vel[i] = limit, 0
+                p, v = limit, 0
             elseif p < -limit then
-                p, vel[i] = -limit, 0
+                p, v = -limit, 0
             end
-            pos[i] = p
+            pos[i], vel[i] = p, v
+            qa, q = q, qb
         end
     end
 end
@@ -1377,9 +1397,18 @@ function Liquid:Draw(dt)
 
     local tipAlpha = (0.25 + 0.5 * min(1, energy)) * k
     local rowH, back, ends = self.rowH, edge, self.ends
+    local rows, tips, leader, pos = self.rows, self.tips, self.leader, self.pos
+    local intensity = opts.intensity or 1
     for i = 1, self.n do
-        local row, tip = self.rows[i], self.tips[i]
-        local off = self:FrontOffset(i)
+        local row, tip = rows[i], tips[i]
+        -- FrontOffset, worked out here for a liquid of its own (wobble is the same Wobble): the same sum, without
+        -- three calls a slice. A follower (the fury) asks its leader.
+        local off
+        if leader then
+            off = self:FrontOffset(i)
+        else
+            off = (pos[i] + wobble * (sin(t * 2.3 + i * 0.6) + 0.5 * sin(t * 3.7 - i * 1.1))) * intensity
+        end
         local right = min(w, edge + off)
         local rw = right - base
         -- Where the liquid visibly ends in this slice: a slice dented past the body shows the body's end.
@@ -1404,9 +1433,9 @@ function Liquid:Draw(dt)
             On(row)
             if right < w - 1 then
                 -- The tip hangs on the slice's end (LayoutTips).
-                local src = self.leader or self
                 -- A moving slice glows brighter, as much as Wave Intensity lets it move.
-                Alpha(tip, min(1, tipAlpha + abs(src.vel[src:SliceAt(i, self.n)]) * 0.01 * (opts.intensity or 1)))
+                local v = leader and leader.vel[leader:SliceAt(i, self.n)] or self.vel[i]
+                Alpha(tip, min(1, tipAlpha + abs(v) * 0.01 * intensity))
                 On(tip)
             else
                 Off(tip)

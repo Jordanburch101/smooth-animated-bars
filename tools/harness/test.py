@@ -5028,6 +5028,12 @@ check(any("Every part over 10 s" in m for m in partsChat) and any("   bars: " in
       and np.eval("SmoothAnimatedBarsDB.perfLog[1].parts ~= nil and #SmoothAnimatedBarsDB.perfLog[1].parts > 2")
       and np.eval("SmoothAnimatedBarsDB.perfLog[2].parts") is None and not np.eval("__ns.Timing.on"),
       "/sab perf then times every part for 10 s, prints each and keeps them with the report: " + " | ".join(partsChat[:6]))
+# Each bar is timed only meanwhile (two clock reads a bar every frame otherwise): the costliest come at its end, and the
+# report keeps those seconds.
+check(any("The unit frames' bars over the" in m for m in partsChat)
+      and np.eval("SmoothAnimatedBarsDB.perfLog[1].seconds[1].detailed") is True
+      and np.eval("SmoothAnimatedBarsDB.perfLog[1].seconds[1].bars ~= nil"),
+      "with the costliest bars over the seconds timed, kept on the report")
 # The client writes the saved variables as plain Lua; perf_report.py reads that back into a text report.
 saved = np.eval("""(function()
     local function ser(v, ind)
@@ -5056,6 +5062,18 @@ check("26 Mobs Pulled" in text and "Elwynn Forest *" in text and text.count("---
       "perf_report.py turns the saved reports into a text file: a line each, then each second and every part")
 np.execute("SlashCmdList.SMOOTHANIMATEDBARS('perf clear')")
 check(np.eval("SmoothAnimatedBarsDB.perfLog") is None, "/sab perf clear forgets them")
+# /sab perf calib: each kind of widget call and a piece of Lua timed in the client, saved for rig.py, on a texture that
+# never shows.
+np.execute("__chat = {}; SlashCmdList.SMOOTHANIMATEDBARS('perf calib')")
+calibChat = chat(np)
+check(any("SetTexCoord:" in m for m in calibChat) and any("Lua:" in m for m in calibChat)
+      and np.eval("#SmoothAnimatedBarsDB.perfCalib") == 1
+      and np.eval("SmoothAnimatedBarsDB.perfCalib[1].us.SetAlpha ~= nil and SmoothAnimatedBarsDB.perfCalib[1].us.loop ~= nil")
+      and np.eval("SmoothAnimatedBarsDB.perfCalib[1].luaReps") == np.eval("__ns.Core.CALIB_LUA_REPS")
+      and np.eval("type(SmoothAnimatedBarsDB.perfCalib[1].luaMs)") == "number"
+      and not np.eval("__ns.Core.calibFrame:IsShown()") and np.eval("__ns.Core.calibFrame.tex:GetAlpha()") <= 0.002,
+      "/sab perf calib times each kind of call and the Lua, saves it, and leaves nothing showing: " + " | ".join(calibChat[:3]))
+check(np.eval("SmoothAnimatedBarsDB.perfLog") is None, "and it is not a /sab perf report")
 np.execute("__chat = {}; SlashCmdList.SMOOTHANIMATEDBARS('perf reset'); SlashCmdList.SMOOTHANIMATEDBARS('perf')")
 check(any("Nothing measured yet" in m for m in chat(np)) and np.eval("SmoothAnimatedBarsDB.perfLog") is None,
       "/sab perf reset starts over, and nothing is saved until something is measured")

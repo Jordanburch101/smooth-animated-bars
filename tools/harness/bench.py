@@ -96,6 +96,8 @@ def session(addon, on, extra, cls, party, saved_file=None, pre=None):
                     if __byOn then
                         __byM[k] = (__byM[k] or 0) + 1
                         local i = getinfo(2, 'Sl')
+                        -- Called through pcall: the line that called pcall.
+                        if i and i.what == 'C' then i = getinfo(3, 'Sl') end
                         local key = i and ((match(i.short_src, '[^/\\\\]+$') or '?') .. ':' .. (i.currentline or 0)) or '?'
                         __byL[key] = (__byL[key] or 0) + 1
                     end
@@ -104,18 +106,27 @@ def session(addon, on, extra, cls, party, saved_file=None, pre=None):
             end
         end
         -- The addon's own Lua work: a sample every SAMPLE instructions, kept when it lands in one of the addon's files.
-        __luaSamples, __byLua = 0, {}
-        local find = string.find
-        debug.sethook(function()
+        -- In Lua 5.1 the hook's own instructions use up the count too, so the hook re-arms it as its last act: armed
+        -- once, about two thirds of each SAMPLE went on the hook, which counted the addon's work three times over
+        -- (and more where a sample took the hook's longer way), against a hook on every instruction.
+        __luaSamples, __byLua, __byLuaFn = 0, {}, {}
+        local find, sethook = string.find, debug.sethook
+        local hook
+        hook = function()
             local i = getinfo(2, 'Sl')
             if i and find(i.source, 'SmoothAnimatedBars/', 1, true) and not find(i.source, 'harness', 1, true) then
                 __luaSamples = __luaSamples + 1
                 if __byOn then
-                    local key = (match(i.short_src, '[^/\\\\]+$') or '?') .. ':' .. (i.currentline or 0)
+                    local file = match(i.short_src, '[^/\\\\]+$') or '?'
+                    local key = file .. ':' .. (i.currentline or 0)
                     __byLua[key] = (__byLua[key] or 0) + 1
+                    key = file .. ':' .. (i.linedefined or 0) -- the function, by the line it starts on
+                    __byLuaFn[key] = (__byLuaFn[key] or 0) + 1
                 end
             end
-        end, '', SAMPLE)
+            sethook(hook, '', SAMPLE)
+        end
+        sethook(hook, '', SAMPLE)
     """.replace("SAMPLE", str(SAMPLE)))
     return lua
 
@@ -163,7 +174,7 @@ def run(addon, a, token, by=None):
         if by:
             frames = a.seconds * a.fps
             table = lua.eval({"line": "__byL", "file": "__byL", "method": "__byM", "lua": "__byLua",
-                              "luafile": "__byLua"}[by])
+                              "luafile": "__byLua", "luafn": "__byLuaFn"}[by])
             scale = SAMPLE / 1000 if by.startswith("lua") else 1  # Lua: thousands of instructions a frame
             rows = {}
             for k, v in table.items():
@@ -188,8 +199,9 @@ def main():
     ap.add_argument("--seconds", type=float, default=4)
     ap.add_argument("--max", action="store_true", help="Animation Speed and Wave Intensity at 200%%")
     ap.add_argument("--ref", help="also measure the addon at this git ref and show the change")
-    ap.add_argument("--by", choices=("line", "file", "method", "lua", "luafile"),
-                    help="break each group's combat calls down by line, file or method, or its Lua work by line or file")
+    ap.add_argument("--by", choices=("line", "file", "method", "lua", "luafile", "luafn"),
+                    help="break each group's combat calls down by line, file or method, or its Lua work by line, file "
+                         "or function (luafn, by the line the function starts on)")
     ap.add_argument("--saved", help="a SmoothAnimatedBars.lua saved variables file: one group, with those settings")
     ap.add_argument("--cap", type=int, help="Animation Frame Rate: moving liquids updated at most this often")
     ap.add_argument("--only", help="only the groups whose label contains this (with their fury)")
@@ -198,7 +210,9 @@ def main():
     print(f"{a.cls.lower()}, {a.party} party members, {a.fps:g} fps{', effects at 200%' if a.max else ''}; "
           f"estimate at {US_PER_CALL} us a call")
     now, breakdown = run(a.addon, a, token, a.by)
-    before = run(gitref.export(a.ref), a, token)[0] if a.ref else None
+    # The same --by at the ref: breaking the work down by line changes where the Lua samples land (about a tenth fewer in
+    # the addon's files), so a ref measured without it made a change look that much better than it was.
+    before = run(gitref.export(a.ref), a, token, a.by)[0] if a.ref else None
     frame_ms = 1000 / a.fps
 
     def row(label, q, c, k):
@@ -223,7 +237,7 @@ def main():
         pct = [(n - o) / o * 100 if o else 0 for n, o in zip(totals, old)]
         print(f"\nchange: quiet calls {pct[0]:+.0f}%, combat calls {pct[1]:+.0f}%, combat Lua work {pct[2]:+.0f}%")
     what = "Lua k" if a.by and a.by.startswith("lua") else "calls"
-    by = {"lua": "line", "luafile": "file"}.get(a.by, a.by)
+    by = {"lua": "line", "luafile": "file", "luafn": "function"}.get(a.by, a.by)
     for label, rows in breakdown.items():
         print(f"\n{label.strip()}, combat {what} a frame by {by}:")
         for k, v in rows[:15]:

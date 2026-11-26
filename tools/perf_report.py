@@ -39,12 +39,13 @@ def to_py(v):
     return v
 
 
-def load_log(path):
+def load_log(path, key="perfLog"):
+    """The saved list under key: perfLog (/sab perf's reports) or perfCalib (/sab perf calib's)."""
     lua = LuaRuntime(unpack_returned_tuples=True)
     with open(path, encoding="utf-8") as f:
         lua.execute(f.read())  # plain assignments written by the client
     db = lua.globals().SmoothAnimatedBarsDB
-    return to_py(db["perfLog"]) if db is not None and db["perfLog"] is not None else []
+    return to_py(db[key]) if db is not None and db[key] is not None else []
 
 
 def ms(x):
