@@ -2,6 +2,7 @@
 
     python rig.py calibrate [--saved FILE] [--since "2026-11-26 14:40"] [--ref REF] [--fit]
     python rig.py predict [--saved FILE] [--scenario idle|notarget|fight] [--fps 120] [--ref HEAD]
+    (both: [--class WARRIOR] [--pace 10] [--casts 36], a fight's rage-spending casts a minute, a warrior's only)
 
 The mock cannot time the client, so the rig gives the addon a clock of its own (debugprofilestop): every call to the
 game's widgets and every thousand Lua instructions run in the addon's files moves it on by a cost per kind of call
@@ -48,6 +49,13 @@ SETTLE = 2.0
 PACE = 10.0
 # The player's class (rig.py --class): a warrior's rage bar has the Rage Fury, others not.
 CLASS = "WARRIOR"
+# A fight's rage-spending casts a minute (rig.py --casts; 0 for none), a warrior's only. Each spend bursts the fury, which
+# then updates as often as any moving liquid for 1.1 s and throws its sparks: without them the rig put the fury's step at
+# about half what /sab perf measured in fights (0.23 ms against 0.38 to 0.56). 36 is one every 1.67 s, which with them
+# predicted 0.61 ms for the step and 0.52 for lightning, bubbles and motes, against 0.56 and 0.56 measured in a fight
+# (2026-11-26 16:35:58). Other classes cast nothing here.
+CASTS = 36.0
+RAGE_SPELL = 78  # Heroic Strike, given a rage cost in the mock (__spellCosts)
 PARTS_SECONDS = 10.6
 
 # The modelled clock and the calls that move it, put in before the addon loads: Liquid.lua keeps debugprofilestop,
@@ -131,8 +139,9 @@ EVENTS = """
     __fire('UNIT_HEALTH', 'target'); __fire('UNIT_POWER_UPDATE', 'target', 'MANA')"""
 
 
-def run(addon, saved, scenario, fps, weights, pace=None):
-    """The addon's /sab perf parts, played in the mock: {part: ms a frame by the modelled clock}."""
+def run(addon, saved, scenario, fps, weights, pace=None, casts=None):
+    """The addon's /sab perf parts, played in the mock: {part: ms a frame by the modelled clock}. casts: a fight's
+    rage-spending casts a minute (CASTS if None), a warrior's only."""
     lua = bench.session(addon, set(), {}, CLASS, 0, saved, pre=CLOCK)
     lua.execute("debug.sethook()")  # bench's own sampling
     lua.execute(METER)
@@ -142,15 +151,26 @@ def run(addon, saved, scenario, fps, weights, pace=None):
     step = lua.globals().__step
     fight = scenario == "fight"
     gap = 1 / (pace or PACE)
+    per_minute = CASTS if casts is None else casts
+    cast_gap = 60 / per_minute if fight and CLASS == "WARRIOR" and per_minute > 0 else None
+    if cast_gap:
+        lua.execute(f"__spellCosts[{RAGE_SPELL}] = {{ {{ name = 'RAGE', type = 1, cost = 15 }} }}; __castN = 0")
 
     def play(seconds):
         t, next_event = 0.0, 0.0
+        # The first cast a gap in, so the fight's events come first; counted on through both calls (settle, then parts).
+        next_cast = play.next_cast
         while t < seconds:
             if fight and t >= next_event:
                 next_event += gap
                 lua.execute(EVENTS)
+            if cast_gap and t >= next_cast:
+                next_cast += cast_gap
+                lua.execute(f"__castN = __castN + 1; __fire('UNIT_SPELLCAST_SUCCEEDED', 'player', 'Cast-' .. __castN, {RAGE_SPELL})")
             step(1 / fps)
             t += 1 / fps
+        play.next_cast = next_cast - seconds
+    play.next_cast = cast_gap or 0.0
     play(SETTLE)
     if fight:
         lua.execute("__combat = true")
@@ -167,6 +187,7 @@ def run(addon, saved, scenario, fps, weights, pace=None):
 
 
 def _job(args):
+    # The workers are new processes: the class (and the casts, passed to run) come with each job.
     global CLASS
     CLASS = args[-1]
     return args[:-1], run(*args[:-1])
@@ -174,10 +195,10 @@ def _job(args):
 
 def counts(addon, saved, conditions):
     """For each (scenario, fps): {part: [count a frame of each kind]}: one run per kind with only its cost at 1."""
-    jobs = [(addon, saved, sc, fps, {k: 1.0}, PACE, CLASS) for sc, fps in conditions for k in KINDS]
+    jobs = [(addon, saved, sc, fps, {k: 1.0}, PACE, CASTS, CLASS) for sc, fps in conditions for k in KINDS]
     out = {}
     with ProcessPoolExecutor() as pool:
-        for (a, s, sc, fps, w, _), parts in pool.map(_job, jobs):
+        for (a, s, sc, fps, w, _, _), parts in pool.map(_job, jobs):
             k = next(iter(w))
             per = out.setdefault((sc, fps), {})
             for part, ms in parts.items():
@@ -299,14 +320,18 @@ def calibrate(a):
         print(f"{when or '?':20s} {key[0] + ' ' + str(key[1]):16s} {name:36s} {ms:8.3f} {pred:8.3f}")
     with open(CALIBRATION, "w", encoding="utf-8") as f:
         json.dump({"costs": costs, "kinds": KINDS, "fits": fits, "since": a.since, "ref": a.ref,
-                   "measured": calib.get("when") if known else None}, f, indent=1)
+                   "measured": calib.get("when") if known else None, "casts": CASTS}, f, indent=1)
     print(f"\nwrote {CALIBRATION}")
 
 
 def predict(a):
     if not os.path.exists(CALIBRATION):
         sys.exit("No calibration yet: rig.py calibrate.")
-    costs = json.load(open(CALIBRATION, encoding="utf-8"))["costs"]
+    cal = json.load(open(CALIBRATION, encoding="utf-8"))
+    costs = cal["costs"]
+    # A calibration fitted with other casts (or before the rig had any, no "casts") is fitted to another fight.
+    if a.scenario == "fight" and cal.get("casts", 0) != CASTS:
+        print(f"note: rig_calibration.json was fitted with {cal.get('casts', 0):g} casts a minute, predicting with {CASTS:g}")
     now = run(ADDON, a.saved, a.scenario, a.fps, costs)
     before = run(gitref.export(a.ref), a.saved, a.scenario, a.fps, costs) if a.ref else None
 
@@ -331,7 +356,7 @@ def predict(a):
 
 
 def main():
-    global PACE, CLASS
+    global PACE, CLASS, CASTS
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("action", choices=("calibrate", "predict"))
     ap.add_argument("--saved", default=None, help="saved variables (default: the newest under Forever's WTF folder)")
@@ -341,12 +366,15 @@ def main():
     ap.add_argument("--fps", type=float, default=100)
     ap.add_argument("--class", dest="cls", default=CLASS, help="the player's class (WARRIOR, MAGE, ROGUE...)")
     ap.add_argument("--pace", type=float, default=PACE, help="a fight's changes a second (health and power)")
+    ap.add_argument("--casts", type=float, default=CASTS,
+                    help="a fight's rage-spending casts a minute, a warrior's (0 for none); calibrate and predict alike")
     ap.add_argument("--fit", action="store_true",
                     help="calibrate: fit the costs to the reports even where /sab perf calib measured them")
     a = ap.parse_args()
     a.saved = a.saved or loader.find_saved()
     PACE = a.pace
     CLASS = a.cls.upper()
+    CASTS = max(0.0, a.casts)
     calibrate(a) if a.action == "calibrate" else predict(a)
 
 
