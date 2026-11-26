@@ -571,37 +571,45 @@ function Liquid:LayerTexture(layer, name)
     end
 end
 
--- A layer's colour is kept on the layer and given to its textures as they are drawn (DrawLayer, LayerLook), together
--- with their alpha in one call. It counts as changed once it has moved by COLOR_STEP, as Color does.
+-- A layer's colour is kept on the layer and given to its textures as they are drawn (DrawLayer), together with their
+-- alpha in one call: each texture takes the layer's colour if it changed since (its layerStamp is not the layer's
+-- stamp) with the alpha in one SetVertexColor (a texture has one alpha, which its fourth value sets), or the alpha alone.
+-- It counts as changed once it has moved by COLOR_STEP, as Color does.
 function Liquid:LayerColor(layer, c)
     local r, g, b = c[1], c[2], c[3]
-    if abs(r - layer.r) > COLOR_STEP or abs(g - layer.g) > COLOR_STEP or abs(b - layer.b) > COLOR_STEP then
+    local lr, lg, lb = layer.r, layer.g, layer.b
+    if r - lr > COLOR_STEP or lr - r > COLOR_STEP or g - lg > COLOR_STEP or lg - g > COLOR_STEP
+        or b - lb > COLOR_STEP or lb - b > COLOR_STEP then
         layer.r, layer.g, layer.b = r, g, b
         layer.stamp = layer.stamp + 1
     end
 end
 
--- One of a layer's textures takes the layer's colour, if it changed since, and its alpha a (both in one SetVertexColor:
--- a texture has one alpha, which its fourth value sets), or the alpha alone.
-local function LayerLook(layer, t, a)
-    if t.layerStamp ~= layer.stamp then
-        t.layerStamp, t.sabA = layer.stamp, a
-        t:SetVertexColor(layer.r, layer.g, layer.b, a)
-    elseif t.sabA ~= a then
-        t.sabA = a
-        t:SetAlpha(a)
-    end
-end
-
+-- A layer hidden whole stays hidden until DrawLayer shows it again (nothing else shows its textures; HideAll only hides
+-- more), so hiding it again is skipped (allOff): a layer whose alpha is 0 (the shading on most themes) was hidden texture
+-- by texture every update.
 local function HideLayer(layer)
-    Off(layer.main)
-    for _, cap in ipairs(layer.caps) do Off(cap) end
+    if layer.allOff then return end
+    local main = layer.main
+    if main.sabShown ~= false then
+        main.sabShown = false
+        main:Hide()
+    end
+    local caps = layer.caps
+    for i = 1, #caps do
+        local cap = caps[i]
+        if cap.sabShown ~= false then
+            cap.sabShown = false
+            cap:Hide()
+        end
+    end
+    layer.allOff = true
 end
 
 -- ku, kv: texture units per px across and down. Caps use the same mapping as the main texture,
 -- so each continues it without a seam.
 function Liquid:DrawLayer(layer, ku, kv, alpha)
-    local back, ends, rowH = self.back, self.ends, self.rowH
+    local back = self.back
     if back < 1 or alpha <= 0.002 then
         HideLayer(layer)
         return
@@ -612,51 +620,128 @@ function Liquid:DrawLayer(layer, ku, kv, alpha)
         drawn = alpha
         layer.drawn = alpha
     end
-    local u, v = layer.u, layer.v
-    local main = layer.main
-    Width(main, back)
-    local m = self.mirror
-    if m then
-        Coords(main, u + back * ku, u, v, v + self.height * kv)
-    else
-        Coords(main, u, u + back * ku, v, v + self.height * kv)
+    local u, v, main, stamp = layer.u, layer.v, layer.main, layer.stamp
+    -- The caps' look (colour, alpha, shown) in one test a cap: layer.key goes up whenever any of them may have changed
+    -- for a cap since the last draw, which the main texture tells, as it is drawn and hidden whenever the caps are and
+    -- given the same colour and alpha: a new colour (stamp), a new alpha, hidden meanwhile (HideLayer, HideAll), or a new
+    -- file (Fresh). A cap whose sabKey is the layer's key has them already; the loop below clears it when it hides one.
+    local key = layer.key
+    if main.layerStamp ~= stamp or main.sabA ~= drawn or not main.sabShown then
+        key = (key or 0) + 1
+        layer.key = key
     end
-    LayerLook(layer, main, drawn)
-    On(main)
+    -- Width, Coords, LayerLook and On written out: the same tests and calls in the same order.
+    if main.sabW ~= back then
+        main.sabW = back
+        main:SetWidth(back)
+    end
+    local m = self.mirror
     local ub = u + back * ku
-    -- The caps are the addon's busiest loop (seven layers a liquid, a cap a slice, every update), so Coords, LayerLook,
-    -- On and Off are written out here: the same tests and the same calls, without four function calls a cap.
-    local caps, stamp = layer.caps, layer.stamp
-    for i = 1, #caps do
-        local cap, e = caps[i], ends[i]
-        if e and e - back >= 0.5 then
-            -- Each cap is laid between the main texture's far end and its slice's (AnchorCaps): only its coordinates change.
+    local vh = v + self.height * kv
+    local l, r = u, ub
+    if m then l, r = ub, u end
+    if main.sabL ~= l or main.sabR ~= r or main.sabT ~= v or main.sabB ~= vh then
+        main.sabL = l
+        main.sabR = r
+        main.sabT = v
+        main.sabB = vh
+        main:SetTexCoord(l, r, v, vh)
+    end
+    if main.layerStamp ~= stamp then
+        main.layerStamp = stamp
+        main.sabA = drawn
+        main:SetVertexColor(layer.r, layer.g, layer.b, drawn)
+    elseif main.sabA ~= drawn then
+        main.sabA = drawn
+        main:SetAlpha(drawn)
+    end
+    if not main.sabShown then
+        main.sabShown = true
+        main:Show()
+    end
+    layer.allOff = false
+    -- Each slice's offsets down the texture, (i - 1) * rowH and the slice's bottom, times kv: the same products each
+    -- update until the slices' height or the layer's scale changes.
+    local rowH, caps = self.rowH, layer.caps
+    local ty, tb = layer.ty, layer.tb
+    if layer.tyKv ~= kv or layer.tyRowH ~= rowH then
+        ty, tb = ty or {}, tb or {}
+        for i = 1, #caps do
             local y = (i - 1) * rowH
-            local l, r
-            if m then
-                l, r = u + e * ku, ub
-            else
-                l, r = ub, u + e * ku
+            ty[i], tb[i] = y * kv, (y + rowH) * kv
+        end
+        layer.ty, layer.tb, layer.tyKv, layer.tyRowH = ty, tb, kv, rowH
+    end
+    -- The caps are the addon's busiest loop (seven layers a liquid, a cap a slice, every update), so Coords, LayerLook,
+    -- On and Off are written out here: the same tests and the same calls, without four function calls a cap. Each cap is
+    -- laid between the main texture's far end and its slice's (AnchorCaps): only its coordinates change. A loop for each
+    -- direction, so no cap tests which it is.
+    local ends, cr, cg, cb = self.ends, layer.r, layer.g, layer.b
+    if m then
+        for i = 1, #caps do
+            local cap, e = caps[i], ends[i]
+            if e and e - back >= 0.5 then
+                local cl, top, bottom = u + e * ku, v + ty[i], v + tb[i]
+                if cap.sabL ~= cl or cap.sabR ~= ub or cap.sabT ~= top or cap.sabB ~= bottom then
+                    cap.sabL = cl
+                    cap.sabR = ub
+                    cap.sabT = top
+                    cap.sabB = bottom
+                    cap:SetTexCoord(cl, ub, top, bottom)
+                end
+                if cap.sabKey ~= key then
+                    if cap.layerStamp ~= stamp then
+                        cap.layerStamp = stamp
+                        cap.sabA = drawn
+                        cap:SetVertexColor(cr, cg, cb, drawn)
+                    elseif cap.sabA ~= drawn then
+                        cap.sabA = drawn
+                        cap:SetAlpha(drawn)
+                    end
+                    if not cap.sabShown then
+                        cap.sabShown = true
+                        cap:Show()
+                    end
+                    cap.sabKey = key
+                end
+            elseif cap.sabShown ~= false then
+                cap.sabShown = false
+                cap.sabKey = nil
+                cap:Hide()
             end
-            local top, bottom = v + y * kv, v + (y + rowH) * kv
-            if cap.sabL ~= l or cap.sabR ~= r or cap.sabT ~= top or cap.sabB ~= bottom then
-                cap.sabL, cap.sabR, cap.sabT, cap.sabB = l, r, top, bottom
-                cap:SetTexCoord(l, r, top, bottom)
+        end
+    else
+        for i = 1, #caps do
+            local cap, e = caps[i], ends[i]
+            if e and e - back >= 0.5 then
+                local cr2, top, bottom = u + e * ku, v + ty[i], v + tb[i]
+                if cap.sabL ~= ub or cap.sabR ~= cr2 or cap.sabT ~= top or cap.sabB ~= bottom then
+                    cap.sabL = ub
+                    cap.sabR = cr2
+                    cap.sabT = top
+                    cap.sabB = bottom
+                    cap:SetTexCoord(ub, cr2, top, bottom)
+                end
+                if cap.sabKey ~= key then
+                    if cap.layerStamp ~= stamp then
+                        cap.layerStamp = stamp
+                        cap.sabA = drawn
+                        cap:SetVertexColor(cr, cg, cb, drawn)
+                    elseif cap.sabA ~= drawn then
+                        cap.sabA = drawn
+                        cap:SetAlpha(drawn)
+                    end
+                    if not cap.sabShown then
+                        cap.sabShown = true
+                        cap:Show()
+                    end
+                    cap.sabKey = key
+                end
+            elseif cap.sabShown ~= false then
+                cap.sabShown = false
+                cap.sabKey = nil
+                cap:Hide()
             end
-            if cap.layerStamp ~= stamp then
-                cap.layerStamp, cap.sabA = stamp, drawn
-                cap:SetVertexColor(layer.r, layer.g, layer.b, drawn)
-            elseif cap.sabA ~= drawn then
-                cap.sabA = drawn
-                cap:SetAlpha(drawn)
-            end
-            if not cap.sabShown then
-                cap.sabShown = true
-                cap:Show()
-            end
-        elseif cap.sabShown ~= false then
-            cap.sabShown = false
-            cap:Hide()
         end
     end
 end
@@ -881,17 +966,19 @@ end
 -- n: how many slices i counts in, if not this liquid's (a seam drawn along it by a liquid of another count).
 -- The waves are simulated as ever and drawn scaled by the Wave Intensity effect (opts.intensity, 1 at 100%), so every
 -- way the front moves (ripples, sloshing, the lean while pouring, the idle wobble) grows or calms together.
+-- SliceAt and, for a liquid of its own, Wobble are written out (the heal marker's seam asks for every slice each frame).
 function Liquid:FrontOffset(i, n)
-    i = self:SliceAt(i, n)
-    local t = self.t
-    if self.leader then
+    local sn = self.n
+    if n and n ~= sn then i = max(1, min(sn, floor((i - 0.5) * sn / n) + 1)) end
+    local t, opts, leader = self.t, self.opts, self.leader
+    if leader then
         -- The leader's offset is scaled already; the tremble is this liquid's own, scaled as Draw's cut expects (at 0%
         -- an unscaled tremble shook the fury over a flat bar and dented it past its body's end, a review found).
-        local tr = self.opts.waves and self.tremble * (self.opts.intensity or 1) or 0
-        return self.leader:FrontOffset(i, self.n) + tr * (0.6 * sin(t * 37 + i * 1.7) + 0.4 * sin(t * 53 - i * 2.9))
+        local tr = opts.waves and self.tremble * (opts.intensity or 1) or 0
+        return leader:FrontOffset(i, sn) + tr * (0.6 * sin(t * 37 + i * 1.7) + 0.4 * sin(t * 53 - i * 2.9))
     end
-    local wobble = self.opts.waves and self:Wobble() or 0
-    return (self.pos[i] + wobble * (sin(t * 2.3 + i * 0.6) + 0.5 * sin(t * 3.7 - i * 1.1))) * (self.opts.intensity or 1)
+    local wobble = opts.waves and self.phys.ambient * (0.6 + self.energy * (1 - self.steady)) or 0
+    return (self.pos[i] + wobble * (sin(t * 2.3 + i * 0.6) + 0.5 * sin(t * 3.7 - i * 1.1))) * (opts.intensity or 1)
 end
 
 -- A ripple along the front only: no motes, no bubbles, no lightning charge. intensity 0..1.
@@ -1260,28 +1347,42 @@ end
 -- the liquid does on its own runs on its own clock, dt scaled by the Animation Speed effect (opts.speed, 1 at 100%).
 function Liquid:Update(dt, edge)
     local lap = Timing.on and profileClock and profileClock()
+    local opts = self.opts
+    local waves = opts.waves
     local real = dt
-    dt = dt * (self.opts.speed or 1)
-    self.t = self.t + dt
+    dt = dt * (opts.speed or 1)
+    local t = self.t + dt
+    self.t = t
 
     -- The liquid's inertia: speeding up drags the front back, slowing down sloshes it forward.
     local speed = (edge - self.edge) / real
     local dv = speed - self.speed
-    self.edge, self.speed = edge, speed
-    if dv ~= 0 and self.opts.waves and not self.leader then
+    self.edge = edge
+    self.speed = speed
+    if dv ~= 0 and waves and not self.leader then
         local kick = -dv * self.phys.slosh
-        local n = self.n
+        local n, vel = self.n, self.vel
         for i = 1, n do
-            self.vel[i] = self.vel[i] + kick * sin(pi * (i - 0.5) / n)
+            vel[i] = vel[i] + kick * sin(pi * (i - 0.5) / n)
         end
     end
     -- Pouring fast, the front leans: the top runs ahead and the bottom drags. The lean moves where the
-    -- springs pull the front, so when the pour slows it rocks back and settles by itself.
-    local leanTo = self.opts.waves and self.phys.crest * min(1, max(0, speed) / 250) or 0
-    self.lean = self.lean + (leanTo - self.lean) * (1 - exp(-14 * real))
+    -- springs pull the front, so when the pour slows it rocks back and settles by itself. min(1, max(0, speed) / 250)
+    -- written out.
+    local leanTo = 0
+    if waves then
+        local p = speed
+        if not (p > 0) then p = 0 end
+        p = p / 250
+        if not (p < 1) then p = 1 end
+        leanTo = self.phys.crest * p
+    end
+    local lean = self.lean
+    self.lean = lean + (leanTo - lean) * (1 - exp(-14 * real))
 
     -- Themes that stir themselves (Shadow's slow swells) do it here, before the physics step.
-    if self.theme.Animate then self.theme:Animate(self, self.t, dt) end
+    local theme = self.theme
+    if theme.Animate then theme:Animate(self, t, dt) end
 
     self:Simulate(dt)
     self.energy = self.energy * exp(-CFG.energyDecay * dt)
@@ -1325,26 +1426,47 @@ function Liquid:Update(dt, edge)
     if lap then Lap("all liquids > lightning, bubbles, motes", lap) end
 end
 
+-- Draw is the liquid's busiest code after its caps (DrawLayer), so the helpers it used a slice (Place, Width, Alpha, On,
+-- Off, min, max, abs, FrontOffset) are written out in it: the same tests and calls, and the same sums in the same order,
+-- so every texture gets exactly what it got from them.
 function Liquid:Draw(dt)
     local parent, w, h, amp = self.parent, self.width, self.height, self.phys.amplitude
     local edge, energy, t = self.edge, self.energy, self.t
-    local opts, theme = self.opts, self.theme
-    local wobble = opts.waves and self:Wobble() or 0
+    local opts, theme, leader = self.opts, self.theme, self.leader
+    local waves, intensity = opts.waves, opts.intensity or 1
+    local S = COLOR_STEP
+    local wobble = 0
+    if waves then
+        if leader then
+            wobble = self:Wobble()
+        else
+            wobble = self.phys.ambient * (0.6 + energy * (1 - self.steady))
+        end
+    end
     -- The body stops behind the deepest dent Simulate and the wobble allow (as FrontOffset scales them), so no slice of
     -- the front ever falls behind it and flattens into the body's straight end.
-    local base = max(0, edge - (amp * 1.2 + wobble * 1.5) * (opts.intensity or 1) - 0.5)
+    local base = edge - (amp * 1.2 + wobble * 1.5) * intensity - 0.5
+    if not (base > 0) then base = 0 end
 
-    local fa, fb = theme.fillA, theme.fillB
-    if self.inflowTheme then fb = Mix(fb, self.inflowTheme.fillB, self.inflowMix) end
+    local fa1, fa2, fa3, fb1, fb2, fb3
     if theme.Colors then
         -- Animated themes pick their colours each frame from time and progress.
-        local accent
-        fa, fb, accent = theme:Colors(t, w > 0 and edge / w or 0)
+        local fa, fb, accent = theme:Colors(t, w > 0 and edge / w or 0)
+        fa1, fa2, fa3, fb1, fb2, fb3 = fa[1], fa[2], fa[3], fb[1], fb[2], fb[3]
         self.accent = accent
         if accent then
             Color(self.glow, accent[1], accent[2], accent[3])
             self:LayerColor(self.swirlA, accent)
             self:LayerColor(self.core, accent)
+        end
+    else
+        local fa, fb = theme.fillA, theme.fillB
+        fa1, fa2, fa3, fb1, fb2, fb3 = fa[1], fa[2], fa[3], fb[1], fb[2], fb[3]
+        local inflow = self.inflowTheme
+        if inflow then
+            -- Mix(fb, inflow.fillB, mix), without a table each update.
+            local ib, mix = inflow.fillB, self.inflowMix
+            fb1, fb2, fb3 = fb1 + (ib[1] - fb1) * mix, fb2 + (ib[2] - fb2) * mix, fb3 + (ib[3] - fb3) * mix
         end
     end
 
@@ -1362,16 +1484,35 @@ function Liquid:Draw(dt)
 
     -- Gradient stretched over the whole fill, like the WeakAura; the body stops where the front begins.
     -- The colours change a little every update (the cut behind the front moves with the wobble, a flicker), so they are
-    -- given to the body and slices again once one has moved by COLOR_STEP, as Color does.
+    -- given to the body and slices again once one has moved by COLOR_STEP, as Color does. min(1, x) is x below 1, else 1.
     local tb = edge > 0 and base / edge or 0
     local g = self.gradNow
-    local ar, ag, ab = min(1, fa[1] * k), min(1, fa[2] * k), min(1, fa[3] * k)
-    local br, bg, bb = min(1, Lerp(fa[1], fb[1], tb) * k), min(1, Lerp(fa[2], fb[2], tb) * k), min(1, Lerp(fa[3], fb[3], tb) * k)
-    local cr, cg, cb = min(1, fb[1] * k), min(1, fb[2] * k), min(1, fb[3] * k)
-    if abs(ar - g[1]) > COLOR_STEP or abs(ag - g[2]) > COLOR_STEP or abs(ab - g[3]) > COLOR_STEP
-        or abs(br - g[4]) > COLOR_STEP or abs(bg - g[5]) > COLOR_STEP or abs(bb - g[6]) > COLOR_STEP
-        or abs(cr - g[7]) > COLOR_STEP or abs(cg - g[8]) > COLOR_STEP or abs(cb - g[9]) > COLOR_STEP then
-        g[1], g[2], g[3], g[4], g[5], g[6], g[7], g[8], g[9] = ar, ag, ab, br, bg, bb, cr, cg, cb
+    local ar, ag, ab = fa1 * k, fa2 * k, fa3 * k
+    if not (ar < 1) then ar = 1 end
+    if not (ag < 1) then ag = 1 end
+    if not (ab < 1) then ab = 1 end
+    local br, bg, bb = (fa1 + (fb1 - fa1) * tb) * k, (fa2 + (fb2 - fa2) * tb) * k, (fa3 + (fb3 - fa3) * tb) * k
+    if not (br < 1) then br = 1 end
+    if not (bg < 1) then bg = 1 end
+    if not (bb < 1) then bb = 1 end
+    local cr, cg, cb = fb1 * k, fb2 * k, fb3 * k
+    if not (cr < 1) then cr = 1 end
+    if not (cg < 1) then cg = 1 end
+    if not (cb < 1) then cb = 1 end
+    -- The middle colour first: it moves with the cut behind the front, the others only with a flicker or a theme's.
+    local g4, g5, g6 = g[4], g[5], g[6]
+    if br - g4 > S or g4 - br > S or bg - g5 > S or g5 - bg > S or bb - g6 > S or g6 - bb > S
+        or ar - g[1] > S or g[1] - ar > S or ag - g[2] > S or g[2] - ag > S or ab - g[3] > S or g[3] - ab > S
+        or cr - g[7] > S or g[7] - cr > S or cg - g[8] > S or g[8] - cg > S or cb - g[9] > S or g[9] - cb > S then
+        g[1] = ar
+        g[2] = ag
+        g[3] = ab
+        g[4] = br
+        g[5] = bg
+        g[6] = bb
+        g[7] = cr
+        g[8] = cg
+        g[9] = cb
         self.gradA:SetRGBA(ar, ag, ab, 1)
         self.gradB:SetRGBA(br, bg, bb, 1)
         self.gradC:SetRGBA(cr, cg, cb, 1)
@@ -1379,78 +1520,151 @@ function Liquid:Draw(dt)
     end
     local stamp = self.gradStamp
 
-    local body = self.body
+    local body, mirror = self.body, self.mirror
     if base >= 0.5 then
         if body.gradStamp ~= stamp then
             body.gradStamp = stamp
-            if self.mirror then
+            if mirror then
                 body:SetGradient("HORIZONTAL", self.gradB, self.gradA)
             else
                 body:SetGradient("HORIZONTAL", self.gradA, self.gradB)
             end
         end
-        Width(body, base)
-        On(body)
-    else
-        Off(body)
+        if body.sabW ~= base then
+            body.sabW = base
+            body:SetWidth(base)
+        end
+        if not body.sabShown then
+            body.sabShown = true
+            body:Show()
+        end
+    elseif body.sabShown ~= false then
+        body.sabShown = false
+        body:Hide()
     end
 
-    local tipAlpha = (0.25 + 0.5 * min(1, energy)) * k
-    local rowH, back, ends = self.rowH, edge, self.ends
-    local rows, tips, leader, pos = self.rows, self.tips, self.leader, self.pos
-    local intensity = opts.intensity or 1
-    for i = 1, self.n do
+    local e1 = energy -- min(1, energy)
+    if not (e1 < 1) then e1 = 1 end
+    local tipAlpha = (0.25 + 0.5 * e1) * k
+    local rowH, back, ends, n = self.rowH, edge, self.ends, self.n
+    local rows, tips, pos, vel = self.rows, self.tips, self.pos, self.vel
+    local gradB, gradC = self.gradB, self.gradC
+    local aTL, x = self.aTL, base * self.sx
+    -- Each slice's offset down the bar, -(i - 1) * rowH, kept until the slices' height changes.
+    local rowY = self.rowY
+    if self.rowYH ~= rowH then
+        rowY = rowY or {}
+        for i = 1, n do rowY[i] = -(i - 1) * rowH end
+        self.rowY, self.rowYH = rowY, rowH
+    end
+    -- What the slices' tests share: where the liquid ends in a slice dented past the body is the body's end, if it shows.
+    local edgeOn, edgeOff = edge >= 0.5, edge < 0.5
+    local baseEnd = base >= 0.5 and base
+    -- A follower (the fury) draws its leader's front, FrontOffset's sum for the leader worked out here with what it
+    -- shares across slices (the leader's wobble, the tremble's size), when its leader has no leader of its own.
+    local direct = leader and not leader.leader
+    local lpos, lvel, lt, ln, lwob, lint, tr
+    if direct then
+        local lopts = leader.opts
+        lpos, lvel, lt, ln = leader.pos, leader.vel, leader.t, leader.n
+        lwob = lopts.waves and leader:Wobble() or 0
+        lint = lopts.intensity or 1
+        tr = waves and self.tremble * intensity or 0
+    end
+    for i = 1, n do
         local row, tip = rows[i], tips[i]
-        -- FrontOffset, worked out here for a liquid of its own (wobble is the same Wobble): the same sum, without
-        -- three calls a slice. A follower (the fury) asks its leader.
-        local off
-        if leader then
-            off = self:FrontOffset(i)
-        else
+        local off, j
+        if not leader then
             off = (pos[i] + wobble * (sin(t * 2.3 + i * 0.6) + 0.5 * sin(t * 3.7 - i * 1.1))) * intensity
+        elseif direct then
+            -- The leader's slice at this one's height (SliceAt).
+            j = i
+            if ln ~= n then j = max(1, min(ln, floor((i - 0.5) * ln / n) + 1)) end
+            off = (lpos[j] + lwob * (sin(lt * 2.3 + j * 0.6) + 0.5 * sin(lt * 3.7 - j * 1.1))) * lint
+                + tr * (0.6 * sin(t * 37 + i * 1.7) + 0.4 * sin(t * 53 - i * 2.9))
+        else
+            off = self:FrontOffset(i)
         end
-        local right = min(w, edge + off)
+        local right = edge + off -- min(w, edge + off)
+        if not (right < w) then right = w end
         local rw = right - base
         -- Where the liquid visibly ends in this slice: a slice dented past the body shows the body's end.
-        local vis = edge >= 0.5 and (rw >= 0.5 and right or base >= 0.5 and base) or nil
+        local vis = edgeOn and (rw >= 0.5 and right or baseEnd) or nil
         ends[i] = vis
         if vis and vis < back then back = vis end
-        if edge < 0.5 or rw < 0.5 then
-            Off(row)
-            Off(tip)
+        if edgeOff or rw < 0.5 then
+            if row.sabShown ~= false then
+                row.sabShown = false
+                row:Hide()
+            end
+            if tip.sabShown ~= false then
+                tip.sabShown = false
+                tip:Hide()
+            end
         else
-            local y = -(i - 1) * rowH
+            local y = rowY[i]
             if row.gradStamp ~= stamp then
                 row.gradStamp = stamp
-                if self.mirror then
-                    row:SetGradient("HORIZONTAL", self.gradC, self.gradB)
+                if mirror then
+                    row:SetGradient("HORIZONTAL", gradC, gradB)
                 else
-                    row:SetGradient("HORIZONTAL", self.gradB, self.gradC)
+                    row:SetGradient("HORIZONTAL", gradB, gradC)
                 end
             end
-            Place(row, self.aTL, parent, self.aTL, base * self.sx, y)
-            Width(row, rw)
-            On(row)
+            if row.sabX ~= x or row.sabY ~= y then
+                row.sabX = x
+                row.sabY = y
+                row:SetPoint(aTL, parent, aTL, x, y)
+            end
+            if row.sabW ~= rw then
+                row.sabW = rw
+                row:SetWidth(rw)
+            end
+            if not row.sabShown then
+                row.sabShown = true
+                row:Show()
+            end
             if right < w - 1 then
                 -- The tip hangs on the slice's end (LayoutTips).
                 -- A moving slice glows brighter, as much as Wave Intensity lets it move.
-                local v = leader and leader.vel[leader:SliceAt(i, self.n)] or self.vel[i]
-                Alpha(tip, min(1, tipAlpha + abs(v) * 0.01 * intensity))
-                On(tip)
-            else
-                Off(tip)
+                local v
+                if not leader then
+                    v = vel[i]
+                elseif direct then
+                    v = lvel[j]
+                else
+                    v = leader.vel[leader:SliceAt(i, n)]
+                end
+                if v < 0 then v = -v end
+                local a = tipAlpha + v * 0.01 * intensity
+                if not (a < 1) then a = 1 end
+                local was = tip.sabA
+                if not was or a - was > S or was - a > S then
+                    tip.sabA = a
+                    tip:SetAlpha(a)
+                end
+                if not tip.sabShown then
+                    tip.sabShown = true
+                    tip:Show()
+                end
+            elseif tip.sabShown ~= false then
+                tip.sabShown = false
+                tip:Hide()
             end
         end
     end
 
-    self.back = max(0, back)
+    if not (back > 0) then back = 0 end -- max(0, back)
+    self.back = back
 
     -- Inside the liquid, back to front: dark cloud pockets, light wisps and the glowing core, then the
     -- magic veins. All drift with the theme's flow, faster and brighter with energy and fill speed.
-    local sw, cl, co = self.swirl, self.clouds, self.coreStyle
     local swirlA, swirlB, cloudDark, cloudLight, core = self.swirlA, self.swirlB, self.cloudDark, self.cloudLight, self.core
-    if self.back >= 1 and opts.swirl then
-        local flow = 0.015 + 0.12 * energy + max(0, self.speed) / 2000
+    if back >= 1 and opts.swirl then
+        local sw, cl, co = self.swirl, self.clouds, self.coreStyle
+        local speed = self.speed -- max(0, speed)
+        if not (speed > 0) then speed = 0 end
+        local flow = 0.015 + 0.12 * energy + speed / 2000
         local fu, fv = sw.flow[1], sw.flow[2]
         -- A rising texture moves up the screen as its v grows; swirlB rises a little slower, for depth.
         local rise = sw.rise / SWIRL_H
@@ -1466,26 +1680,45 @@ function Liquid:Draw(dt)
         -- How fast the veins move on screen, px/s with y up, so bubbles can ride along with them.
         self.flowX, self.flowY = flow * fu * SWIRL_W, sw.rise - flow * fv * SWIRL_H
 
-        -- The light clouds and the second veins trade between swirlB and the third colour, out of step.
-        local mix, vb, vcol, mc = 0.5 + 0.5 * sin(t * 2 * pi / 9), self.theme.swirlB, self.veinC, self.mixColor
-        mc[1], mc[2], mc[3] = Lerp(vb[1], vcol[1], mix), Lerp(vb[2], vcol[2], mix), Lerp(vb[3], vcol[3], mix)
-        self:LayerColor(cloudLight, mc)
+        -- The light clouds and the second veins trade between swirlB and the third colour, out of step (LayerColor
+        -- written out, the colour Lerp's).
+        local mix, vb, vcol = 0.5 + 0.5 * sin(t * 2 * pi / 9), theme.swirlB, self.veinC
+        local vb1, vb2, vb3, vc1, vc2, vc3 = vb[1], vb[2], vb[3], vcol[1], vcol[2], vcol[3]
+        local r, gg, b = vb1 + (vc1 - vb1) * mix, vb2 + (vc2 - vb2) * mix, vb3 + (vc3 - vb3) * mix
+        local lr, lg, lb = cloudLight.r, cloudLight.g, cloudLight.b
+        if r - lr > S or lr - r > S or gg - lg > S or lg - gg > S or b - lb > S or lb - b > S then
+            cloudLight.r, cloudLight.g, cloudLight.b = r, gg, b
+            cloudLight.stamp = cloudLight.stamp + 1
+        end
         mix = 1 - mix
-        mc[1], mc[2], mc[3] = Lerp(vb[1], vcol[1], mix), Lerp(vb[2], vcol[2], mix), Lerp(vb[3], vcol[3], mix)
-        self:LayerColor(swirlB, mc)
+        r, gg, b = vb1 + (vc1 - vb1) * mix, vb2 + (vc2 - vb2) * mix, vb3 + (vc3 - vb3) * mix
+        lr, lg, lb = swirlB.r, swirlB.g, swirlB.b
+        if r - lr > S or lr - r > S or gg - lg > S or lg - gg > S or b - lb > S or lb - b > S then
+            swirlB.r, swirlB.g, swirlB.b = r, gg, b
+            swirlB.stamp = swirlB.stamp + 1
+        end
 
         local cs = cl.scale
         self:DrawLayer(cloudDark, cs / SWIRL_W, cs / SWIRL_H, cl.dark)
         -- Lightning lights the clouds from inside.
-        local storm, room = self.storm * self.headroom, self.headroom
-        self:DrawLayer(cloudLight, cs * 1.4 / SWIRL_W, cs * 1.4 / SWIRL_H, min(1, cl.light * (1 + energy * room + storm * 1.2)))
-        local glow = 0.2 + 0.07 * sin(t * co.pulseRate * 2 * pi) + 0.3 * min(1, energy) * room + 0.15 * storm
-        self:DrawLayer(core, 0.5 / SWIRL_W, 1 / h, min(1, glow * co.alpha * k))
+        local room = self.headroom
+        local storm = self.storm * room
+        local a = cl.light * (1 + energy * room + storm * 1.2)
+        if not (a < 1) then a = 1 end
+        self:DrawLayer(cloudLight, cs * 1.4 / SWIRL_W, cs * 1.4 / SWIRL_H, a)
+        local glow = 0.2 + 0.07 * sin(t * co.pulseRate * 2 * pi) + 0.3 * e1 * room + 0.15 * storm
+        a = glow * co.alpha * k
+        if not (a < 1) then a = 1 end
+        self:DrawLayer(core, 0.5 / SWIRL_W, 1 / h, a)
 
         local pulse = sw.pulse * (0.5 + 0.5 * sin(t * sw.pulseRate * 2 * pi))
-        self:DrawLayer(swirlA, 1 / SWIRL_W, 1 / SWIRL_H, min(1, (0.12 + 0.3 * energy * room + pulse) * sw.alpha * k))
-        self:DrawLayer(swirlB, 0.7 / SWIRL_W, 0.7 / SWIRL_H,
-            min(1, (0.08 + 0.22 * energy * room + 0.05 * sin(t * 1.3) + pulse * 0.6) * sw.alpha * k))
+        local swa = sw.alpha
+        a = (0.12 + 0.3 * energy * room + pulse) * swa * k
+        if not (a < 1) then a = 1 end
+        self:DrawLayer(swirlA, 1 / SWIRL_W, 1 / SWIRL_H, a)
+        a = (0.08 + 0.22 * energy * room + 0.05 * sin(t * 1.3) + pulse * 0.6) * swa * k
+        if not (a < 1) then a = 1 end
+        self:DrawLayer(swirlB, 0.7 / SWIRL_W, 0.7 / SWIRL_H, a)
     else
         self.flowX, self.flowY = 0, 0
         HideLayer(cloudDark)
@@ -1498,14 +1731,33 @@ function Liquid:Draw(dt)
     -- Height shading is part of the colour, so it stays when the swirl is off. The hot base burns brighter
     -- with energy; DrawLayer hides a layer whose alpha is 0.
     local sh = self.shade
-    self:DrawLayer(self.shadeHot, 0, -1 / h, min(1, sh.hot * k * k * (1 + 0.5 * min(1, energy))))
-    self:DrawLayer(self.shadeDark, 0, 1 / h, sh.dark * (1 - 0.3 * min(1, energy)))
+    local a = sh.hot * k * k * (1 + 0.5 * e1)
+    if not (a < 1) then a = 1 end
+    self:DrawLayer(self.shadeHot, 0, -1 / h, a)
+    self:DrawLayer(self.shadeDark, 0, 1 / h, sh.dark * (1 - 0.3 * e1))
 
+    local glowTex = self.glow
     if edge > 1 and edge < w - 1 then
-        Place(self.glow, "CENTER", parent, self.aL, edge * self.sx, 0)
-        Alpha(self.glow, min(1, (0.12 + 0.55 * energy) * k))
-        On(self.glow)
-    else
-        Off(self.glow)
+        -- Place, Alpha and On written out.
+        local gx = edge * self.sx
+        if glowTex.sabX ~= gx or glowTex.sabY ~= 0 then
+            glowTex.sabX = gx
+            glowTex.sabY = 0
+            glowTex:SetPoint("CENTER", parent, self.aL, gx, 0)
+        end
+        a = (0.12 + 0.55 * energy) * k
+        if not (a < 1) then a = 1 end
+        local was = glowTex.sabA
+        if not was or a - was > S or was - a > S then
+            glowTex.sabA = a
+            glowTex:SetAlpha(a)
+        end
+        if not glowTex.sabShown then
+            glowTex.sabShown = true
+            glowTex:Show()
+        end
+    elseif glowTex.sabShown ~= false then
+        glowTex.sabShown = false
+        glowTex:Hide()
     end
 end
