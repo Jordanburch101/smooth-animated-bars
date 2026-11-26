@@ -10,8 +10,9 @@ in game (its part-by-part timing, ns.Timed and Bars.Lap), with the player's own 
 only the player's and target's frames shown, at the frame rate measured in game, idle or in a fight (every unit's
 health and power changing ten times a second), and its report is read back.
 
-calibrate: the costs come from /sab perf calib in game, which times each kind of widget call and a piece of the addon's
-Lua there (its instructions counted exactly here), and are checked against the reports with every part timed in game
+calibrate: the widget calls' costs come from /sab perf calib in game, which times each kind of widget call there; the
+Lua's and the other game functions' are fitted to the reports with every part timed in game (the calibration's own
+piece of Lua is tight arithmetic, several times cheaper an instruction than the addon's code)
 (/sab perf, saved in the saved variables; --since picks those made with the code now in the working copy, or at --ref).
 Each report is played back in the mock in its own conditions (in combat or not, a target or not, its frame rate), once
 for each kind of cost, so each part's count of each kind is known, and each part's predicted time is printed beside
@@ -273,7 +274,18 @@ def calibrate(a):
             b.append(ms * 1000 * weight)
             labels.append((s.get("when"), key, name, ms, per[name]))
     if known:
-        costs = known  # the reports below only check them
+        # The widget calls' costs as measured; the Lua's and the other game functions' fitted to the reports. Measured
+        # alone they under-predicted two fights by about 3.7 times alike in every part: Core.CalibLua is tight arithmetic,
+        # and the addon's own code (lookups by name, calls between functions) costs several times more an instruction.
+        fixed = ("set", "get", "bar")
+        free = [k for k in KINDS if k not in fixed]
+        A = np.array(rows)
+        rest = np.array(b) - A[:, [KINDS.index(k) for k in fixed]] @ np.array([known[k] for k in fixed])
+        x = nnls(A[:, [KINDS.index(k) for k in free]], rest)
+        costs = dict(known)
+        costs.update(zip(free, (float(v) for v in x)))
+        print("costs: widget calls as measured, fitted: " + ", ".join(
+            f"{k} {costs[k]:.2f} us" + (" a 1000 instructions" if k == "lua" else " a call") for k in free))
     else:
         x = nnls(np.array(rows), np.array(b))
         costs = dict(zip(KINDS, (float(v) for v in x)))

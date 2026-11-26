@@ -1,7 +1,8 @@
 # Developing Smooth Animated Bars
 
-The rules for working on the addon, and what we learned about WoW Forever along the way, are in
-[CLAUDE.md](../CLAUDE.md). This page is the map and the commands.
+The rules for working on the addon are in [CLAUDE.md](../CLAUDE.md), and what we learned about WoW Forever along the
+way in [findings/](findings/README.md), a file a topic. This page is the map and the commands; the gallery's scenarios
+are in [GALLERY.md](GALLERY.md) and the release steps in [RELEASE.md](RELEASE.md).
 
 ## How it works
 
@@ -95,8 +96,9 @@ file.
 `tools/harness/rig.py` says what `/sab perf` would say in game, without the game. It runs the addon in the mock with a
 player's saved variables, gives it a clock of its own that moves by a cost for each call to the game (setters,
 getters, status bars, other functions) and for its Lua work, and runs the addon's own `/sab perf` (its part-by-part
-timing). The costs are measured in game by `/sab perf calib` (each kind of widget call, and a piece of the addon's Lua
-whose instructions the rig counts exactly), and checked against the reports with every part timed:
+timing). The widget calls' costs are measured in game by `/sab perf calib`; the Lua's and the other game functions'
+are fitted to the reports with every part timed (the calibration's own Lua, tight arithmetic, costs several times less
+an instruction than the addon's code), and every part's prediction is printed beside its measured time:
 
 ```powershell
 cd tools/harness
@@ -118,7 +120,9 @@ times over, most where samples took its longer path. `bench.py --by luafn` sums 
 A change made for speed must not change the look. `tools/harness/samelook.py` plays the same scenarios (classes,
 themes, effects at their strongest and off, a reversed bar, quiet and fighting) on the addon at a git ref and on the
 working copy, and compares every texture that shows, every frame: place, size, texture coordinates, colours, alpha,
-blend and layer. It exits 1 on any difference past float rounding, or past half an 8-bit step in colour and alpha:
+blend and layer. It exits 1 on any difference past float rounding, or past half an 8-bit step in colour and alpha. It
+and the bench are repeatable: a fixed random seed, and `pairs` in a fixed order (`samelook.STABLE_PAIRS`), as table
+addresses, and so the order the liquids took their random numbers in, differed from run to run:
 
 ```powershell
 cd tools/harness; ../venv/Scripts/python samelook.py ../../SmoothAnimatedBars --ref HEAD
