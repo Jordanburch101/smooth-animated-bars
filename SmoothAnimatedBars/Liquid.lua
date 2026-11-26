@@ -407,12 +407,13 @@ function Liquid.New(parent, width, height, theme, opts, rows)
     self.glow = Tex("ARTWORK", 7, MEDIA .. "Glow", "ADD")
     self.glow:SetSize(36, height * 1.7)
 
-    self.bubbles = {}
+    -- liveBubbles, liveMotes: the pool entries in flight, in the order they were let go (UpdateParticles).
+    self.bubbles, self.liveBubbles = {}, {}
     for i = 1, CFG.bubbles do
         self.bubbles[i] = { tex = Tex("OVERLAY", 3, MEDIA .. "Bubble"), active = false }
     end
 
-    self.motes, self.moteNext = {}, 1
+    self.motes, self.moteNext, self.liveMotes = {}, 1, {}
     for i = 1, CFG.motes do
         self.motes[i] = { tex = Tex("OVERLAY", 4, MEDIA .. "Mote", "ADD"), active = false, file = "Mote", blend = "ADD" }
     end
@@ -941,21 +942,34 @@ end
 --------------------------------------------------------------------------------
 
 -- from/to are the colours the mote fades between over its life; style is a BURST-like table.
+-- The pool's next mote is taken whether it is in flight or not (the oldest goes first), and listed in liveMotes once
+-- while it is (UpdateParticles walks only those).
 function Liquid:EmitMote(x, y, vx, vy, life, size, from, to, style, ambient)
     if ambient then
         if not self.opts.ambient then return end
     elseif not self.opts.sparkles then
         return
     end
-    local m = self.motes[self.moteNext]
-    self.moteNext = self.moteNext % #self.motes + 1
+    local motes, at = self.motes, self.moteNext
+    local m = motes[at]
+    self.moteNext = at % #motes + 1
     m.x, m.y, m.vx, m.vy, m.age, m.life, m.size = x, y, vx, vy, 0, life, size
-    m.r1, m.g1, m.b1, m.r2, m.g2, m.b2 = from[1], from[2], from[3], to[1], to[2], to[3]
+    local r1, g1, b1, r2, g2, b2 = from[1], from[2], from[3], to[1], to[2], to[3]
+    m.r1, m.g1, m.b1, m.r2, m.g2, m.b2 = r1, g1, b1, r2, g2, b2
+    -- The colour's change over the mote's life, for UpdateParticles' Lerp (r1 + (r2 - r1) * p, the same sum).
+    m.dr, m.dg, m.db = r2 - r1, g2 - g1, b2 - b1
     m.style, m.ambient = style, ambient
-    m.spin = RandRange(style.spin, 0)
-    m.rot = Rand(0, 2 * pi)
-    m.phase = Rand(0, 2 * pi)
-    m.wf = Rand(3, 7) -- wander pace, rad/s
+    -- RandRange and Rand written out: the same sums (Rand(0, 2 * pi) is 0 + (2 * pi - 0) * random(), which is
+    -- 2 * pi * random() exactly), the same random numbers in the same order.
+    local spin = style.spin
+    if spin then
+        m.spin = spin[1] + (spin[2] - spin[1]) * random()
+    else
+        m.spin = 0
+    end
+    m.rot = 2 * pi * random()
+    m.phase = 2 * pi * random()
+    m.wf = 3 + 4 * random() -- wander pace, rad/s (Rand(3, 7))
     if style.orient then m.rot = atan2(-vx, vy) end
     local tex = m.tex
     -- A new mote: its first update sets its colour and alpha whatever the last one's were (the colour's table kept and
@@ -970,8 +984,13 @@ function Liquid:EmitMote(x, y, vx, vy, life, size, from, to, style, ambient)
         m.blend = style.blend
         tex:SetBlendMode(style.blend)
     end
-    if tex.SetRotation then tex:SetRotation((style.spin or style.orient) and m.rot * self.sx or 0) end
+    if tex.SetRotation then tex:SetRotation((spin or style.orient) and m.rot * self.sx or 0) end
     m.active = true
+    if not m.listed then
+        m.listed = true
+        local live = self.liveMotes
+        live[#live + 1] = m
+    end
     On(tex)
 end
 
@@ -1013,7 +1032,10 @@ function Liquid:EmitBubble(x, drifter)
     if not self.opts.bubbles then return end
     local bs = self.bubbleStyle
     local s1, s2 = bs.size[1], bs.size[2]
-    for _, b in ipairs(self.bubbles) do
+    -- The first bubble of the pool not in flight, listed in liveBubbles once while it is.
+    local pool = self.bubbles
+    for i = 1, #pool do
+        local b = pool[i]
         if not b.active then
             if drifter then
                 b.x, b.y = x, Rand(3, self.height * 0.6)
@@ -1028,20 +1050,15 @@ function Liquid:EmitBubble(x, drifter)
             end
             b.age, b.pop = 0, nil
             b.active = true
+            if not b.listed then
+                b.listed = true
+                local live = self.liveBubbles
+                live[#live + 1] = b
+            end
             On(b.tex)
             return
         end
     end
-end
-
--- Picks one of Bolt.tga's arcs, flipped at random, so a living arc can change shape.
-local function RollBolt(b)
-    local k, n = random(0, CFG.boltRows - 1), CFG.boltRows
-    local u0, u1 = 0, 1
-    local v0, v1 = k / n, (k + 1) / n
-    if random() < 0.5 then u0, u1 = 1, 0 end
-    if random() < 0.5 then v0, v1 = v1, v0 end
-    b.tex:SetTexCoord(u0, u1, v0, v1)
 end
 
 -- A flash somewhere inside the liquid, clear of the front. Arcs keep Bolt.tga's proportions, so they
@@ -1054,7 +1071,9 @@ function Liquid:EmitBolt()
     local l1, l2 = cr.length[1], cr.length[2]
     local w = min(Rand(l1, l1 + (l2 - l1) * max(0.3, p)) * h, back - 12)
     if w < h * 2 then return end
-    for _, b in ipairs(self.bolts) do
+    local bolts = self.bolts
+    for i = 1, #bolts do
+        local b = bolts[i]
         if not b.active then
             b.x, b.w = Rand(4, back - 8 - w), w
             local s1, s2 = cr.strokes[1], cr.strokes[2]
@@ -1068,7 +1087,10 @@ function Liquid:EmitBolt()
             local g = self.veinC
             local wa, wg = 0.6, 0.35
             if self.theme.pureLight then wa, wg = 0, 0 end
-            b.tex:SetVertexColor(Lerp(c[1], 1, wa), Lerp(c[2], 1, wa), Lerp(c[3], 1, wa))
+            -- A sheet flash's arc is never shown (UpdateBolts), so it is not tinted.
+            if not b.sheet then
+                b.tex:SetVertexColor(Lerp(c[1], 1, wa), Lerp(c[2], 1, wa), Lerp(c[3], 1, wa))
+            end
             b.glow:SetVertexColor(Lerp(g[1], 1, wg), Lerp(g[2], 1, wg), Lerp(g[3], 1, wg))
             b.active = true
             if not b.sheet then On(b.tex) end
@@ -1080,142 +1102,276 @@ end
 
 -- Each stroke flashes bright and dies away fast, with a new arc shape and the bloom somewhere new along
 -- it. Arcs ride the swirl. self.storm is how much lightning is lit, which brightens the clouds and core.
+-- What the liquid gives each update is looked up once, at the first bolt in flight (most updates have none), and the
+-- stroke's fade, the same for every bolt, worked out once. A sheet flash's arc texture is never shown (EmitBolt), so it
+-- is not sized, placed or faded; a bolt let go hides it, and one let go again as an arc gets all of that, and its first
+-- stroke's arc, in the update that lets it go. Sizes are set again only when they change (b.tw, b.th, b.gw, b.gh).
 function Liquid:UpdateBolts(dt)
-    local cr, back, h, parent = self.crackle, self.back, self.height, self.parent
+    local bolts = self.bolts
     local storm = 0
-    for _, b in ipairs(self.bolts) do
+    local fade, cr, back, h, parent, flowX, lightning, aTL, aL, sx, arcH, arcY
+    for i = 1, #bolts do
+        local b = bolts[i]
         if b.active then
-            b.next = b.next - dt
-            if b.next <= 0 and b.strokes > 0 then
-                b.strokes = b.strokes - 1
+            if not fade then
+                fade = exp(-dt / 0.07)
+                cr, back, h, parent, flowX = self.crackle, self.back, self.height, self.parent, self.flowX
+                lightning, aTL, aL, sx = self.opts.lightning, self.aTL, self.aL, self.sx
+                arcH, arcY = h * 0.9, -h * 0.05
+            end
+            local sheet, tex, glow = b.sheet, b.tex, b.glow
+            local strokes = b.strokes
+            local nextAt = b.next - dt
+            if nextAt <= 0 and strokes > 0 then
+                strokes = strokes - 1
+                b.strokes = strokes
                 b.flash = Rand(0.7, 1)
                 b.at = Rand(0.25, 0.75)
-                b.next = Rand(0.07, 0.22)
-                RollBolt(b)
+                nextAt = Rand(0.07, 0.22)
+                -- RollBolt: one of Bolt.tga's arcs, flipped at random (the same random numbers whether it is drawn).
+                local k, n = random(0, CFG.boltRows - 1), CFG.boltRows
+                local u0, u1 = 0, 1
+                local v0, v1 = k / n, (k + 1) / n
+                if random() < 0.5 then u0, u1 = 1, 0 end
+                if random() < 0.5 then v0, v1 = v1, v0 end
+                if not sheet then tex:SetTexCoord(u0, u1, v0, v1) end
             end
-            b.flash = b.flash * exp(-dt / 0.07)
-            b.x = b.x + self.flowX * dt
+            b.next = nextAt
+            local flash = b.flash * fade
+            b.flash = flash
+            local x = b.x + flowX * dt
             -- Keep clear of the front: slide back first, and only shorten if there is no room.
-            local over = b.x + b.w - (back - 2)
-            if over > 0 then b.x = max(2, b.x - over) end
-            local w = min(b.w, back - 2 - b.x)
-            if (b.strokes == 0 and b.flash < 0.03) or w < h * 2 or not self.opts.lightning then
+            local over = x + b.w - (back - 2)
+            if over > 0 then x = max(2, x - over) end
+            b.x = x
+            local w = min(b.w, back - 2 - x)
+            if (strokes == 0 and flash < 0.03) or w < h * 2 or not lightning then
                 b.active = false
-                Off(b.tex)
-                Off(b.glow)
+                if tex.sabShown ~= false then
+                    tex.sabShown = false
+                    tex:Hide()
+                end
+                if glow.sabShown ~= false then
+                    glow.sabShown = false
+                    glow:Hide()
+                end
             else
-                local lit = b.flash * b.power
-                b.tex:SetSize(w, h * 0.9)
-                b.tex:SetPoint(self.aTL, parent, self.aTL, b.x * self.sx, -h * 0.05)
-                b.tex:SetAlpha(min(1, cr.alpha * lit))
-                local gw = w * (b.sheet and 0.8 or 0.6)
-                local gx = max(b.x + gw / 2, min(b.x + w - gw / 2, b.x + w * b.at))
-                b.glow:SetSize(gw, h)
-                b.glow:SetPoint("CENTER", parent, self.aL, gx * self.sx, 0)
-                b.glow:SetAlpha(min(1, cr.glow * lit * (b.sheet and 1.3 or 1)))
+                local lit = flash * b.power
+                if not sheet then
+                    if b.tw ~= w or b.th ~= arcH then
+                        b.tw, b.th = w, arcH
+                        tex:SetSize(w, arcH)
+                    end
+                    tex:SetPoint(aTL, parent, aTL, x * sx, arcY)
+                    tex:SetAlpha(min(1, cr.alpha * lit))
+                end
+                local gw = w * (sheet and 0.8 or 0.6)
+                local gx = max(x + gw / 2, min(x + w - gw / 2, x + w * b.at))
+                if b.gw ~= gw or b.gh ~= h then
+                    b.gw, b.gh = gw, h
+                    glow:SetSize(gw, h)
+                end
+                glow:SetPoint("CENTER", parent, aL, gx * sx, 0)
+                glow:SetAlpha(min(1, cr.glow * lit * (sheet and 1.3 or 1)))
                 storm = storm + lit
             end
         end
     end
-    self.storm = min(1, storm)
+    if not (storm < 1) then storm = 1 end -- min(1, storm)
+    self.storm = storm
 end
 
+-- Only the bubbles and motes in flight are walked (liveBubbles, liveMotes; a liquid's pools hold 100, and walking them
+-- all every update was a third of this function's Lua), in the order they were let go: each moves and draws only its
+-- own texture, so the order does not change what is drawn. One let go elsewhere (HideAll, ApplyOptions, SetTheme only
+-- clear active) leaves the list here. Alpha, Look, Off and Lerp are written out: the same tests, sums and calls.
 function Liquid:UpdateParticles(dt)
+    local liveB, liveM = self.liveBubbles, self.liveMotes
+    local nb, nm = #liveB, #liveM
+    if nb == 0 and nm == 0 then return end
     local parent, h, edge, t = self.parent, self.height, self.edge, self.t
     local bl, sx = self.aBL, self.sx
-    local bubbleAlpha = self.bubbleStyle.alpha
 
-    for _, b in ipairs(self.bubbles) do
-        if b.active then
-            if b.pop then
-                b.pop = b.pop + dt
-                local p = b.pop / 0.15
-                if p >= 1 then
-                    b.active = false
-                    Off(b.tex)
+    if nb > 0 then
+        local bubbleAlpha = self.bubbleStyle.alpha
+        local fx, fy, carry = self.flowX, self.flowY, self.speed * 0.3
+        local kept = 0
+        for i = 1, nb do
+            local b = liveB[i]
+            if b.active then
+                local tex = b.tex
+                local pop = b.pop
+                local a -- the bubble's alpha, if it is drawn
+                if pop then
+                    pop = pop + dt
+                    b.pop = pop
+                    local p = pop / 0.15
+                    if p >= 1 then
+                        b.active = false
+                        if tex.sabShown ~= false then
+                            tex.sabShown = false
+                            tex:Hide()
+                        end
+                    else
+                        local s = b.size * (1 + p)
+                        tex:SetSize(s, s)
+                        a = bubbleAlpha * (1 - p)
+                    end
                 else
-                    b.tex:SetSize(b.size * (1 + p), b.size * (1 + p))
-                    Alpha(b.tex, bubbleAlpha * (1 - p))
+                    local age = b.age + dt
+                    b.age = age
+                    local x = b.x + (b.vx + fx + carry) * dt
+                    local y = b.y + (b.vy + fy) * dt
+                    b.x, b.y = x, y
+                    -- Fades in, and grows a little on the way up as the pressure drops.
+                    local size = b.size * (1 + 0.25 * y / h)
+                    if y >= h - size * 0.5 or x > edge - 2 then
+                        b.pop, b.size = 0, size -- the pop grows from here
+                    end
+                    tex:SetSize(size, size)
+                    local f = age / 0.25 -- min(1, age / 0.25)
+                    if not (f < 1) then f = 1 end
+                    a = bubbleAlpha * f
                 end
-            else
-                b.age = b.age + dt
-                b.x = b.x + (b.vx + self.flowX + self.speed * 0.3) * dt
-                b.y = b.y + (b.vy + self.flowY) * dt
-                -- Fades in, and grows a little on the way up as the pressure drops.
-                local size = b.size * (1 + 0.25 * b.y / h)
-                if b.y >= h - size * 0.5 or b.x > edge - 2 then
-                    b.pop, b.size = 0, size -- the pop grows from here
+                if a then
+                    local was = tex.sabA
+                    if not was or a - was > COLOR_STEP or was - a > COLOR_STEP then
+                        tex.sabA = a
+                        tex:SetAlpha(a)
+                    end
                 end
-                b.tex:SetSize(size, size)
-                Alpha(b.tex, bubbleAlpha * min(1, b.age / 0.25))
+                -- Placed even as it goes, as ever.
+                local ph, sway = b.phase + t * b.freq, b.sway
+                tex:SetPoint("CENTER", parent, bl, (b.x + sin(ph) * sway) * sx, b.y + cos(ph) * sway * 0.6)
             end
-            local a = b.phase + t * b.freq
-            b.tex:SetPoint("CENTER", parent, bl, (b.x + sin(a) * b.sway) * sx, b.y + cos(a) * b.sway * 0.6)
+            if b.active then
+                kept = kept + 1
+                liveB[kept] = b
+            else
+                b.listed = false
+            end
         end
+        for i = kept + 1, nb do liveB[i] = nil end
     end
 
-    for _, m in ipairs(self.motes) do
-        if m.active then
-            local st = m.style
-            m.age = m.age + dt
-            local p = m.age / m.life
-            local done = p >= 1
-            if not done then
-                local drag = exp(-(st.drag or 1.8) * dt)
-                if st.mode == "attract" then
-                    -- Pulled toward the middle of the liquid front, faster as they close in.
-                    local dx, dy = edge - m.x, h / 2 - m.y
-                    local d = sqrt(dx * dx + dy * dy)
-                    if d < 4 then
-                        done = true
+    if nm > 0 then
+        local rotates = liveM[1].tex.SetRotation
+        local halfH = h / 2
+        -- What a mote's style gives it, worked out again only when a mote's style is not the last one's (a liquid's
+        -- motes mostly share one): the same values, from the same sums.
+        local last, drag, attract, lift, wander, grow, twinkle, orient, styleAlpha
+        local kept = 0
+        for i = 1, nm do
+            local m = liveM[i]
+            if m.active then
+                local st = m.style
+                if st ~= last then
+                    last = st
+                    drag = exp(-(st.drag or 1.8) * dt)
+                    attract = st.mode == "attract"
+                    lift = (st.buoyancy or 20) * dt
+                    wander, grow, orient, styleAlpha = st.wander, st.grow, st.orient, st.alpha or 1
+                    twinkle = st.twinkle
+                    if twinkle then twinkle = t * twinkle * 2 * pi end
+                end
+                local tex = m.tex
+                local age = m.age + dt
+                m.age = age
+                local p = age / m.life
+                local done = p >= 1
+                local vx, vy = m.vx, m.vy
+                if not done then
+                    if attract then
+                        -- Pulled toward the middle of the liquid front, faster as they close in.
+                        local dx, dy = edge - m.x, halfH - m.y
+                        local d = sqrt(dx * dx + dy * dy)
+                        if d < 4 then
+                            done = true
+                        else
+                            local pull = 500 + 4000 / (d + 10)
+                            vx = (vx + dx / d * pull * dt) * drag
+                            vy = (vy + dy / d * pull * dt) * drag
+                            m.vx, m.vy = vx, vy
+                        end
                     else
-                        local pull = 500 + 4000 / (d + 10)
-                        m.vx = (m.vx + dx / d * pull * dt) * drag
-                        m.vy = (m.vy + dy / d * pull * dt) * drag
+                        vx = vx * drag
+                        vy = vy * drag + lift
+                        if wander then
+                            vx = vx + wander * sin(m.phase + age * m.wf) * dt
+                        end
+                        m.vx, m.vy = vx, vy
+                    end
+                end
+                if done then
+                    m.active = false
+                    if tex.sabShown ~= false then
+                        tex.sabShown = false
+                        tex:Hide()
                     end
                 else
-                    m.vx = m.vx * drag
-                    m.vy = m.vy * drag + (st.buoyancy or 20) * dt
-                    if st.wander then
-                        m.vx = m.vx + st.wander * sin(m.phase + m.age * m.wf) * dt
+                    local x, y = m.x + vx * dt, m.y + vy * dt
+                    m.x, m.y = x, y
+                    local size, alpha
+                    if m.ambient then
+                        -- Lingering particles: fade in, hold, fade out (min(1, p / 0.2, (1 - p) / 0.3)).
+                        size = m.size * (1 - 0.2 * p)
+                        alpha = 1
+                        local fade = p / 0.2
+                        if fade < alpha then alpha = fade end
+                        fade = (1 - p) / 0.3
+                        if fade < alpha then alpha = fade end
+                    else
+                        -- Bursts flare and die away.
+                        size = m.size * (1 - 0.5 * p)
+                        alpha = (p < 0.1 and p / 0.1 or 1) * (1 - p) ^ 1.5
                     end
+                    if grow then
+                        size = m.size * min(1, 0.3 + 0.7 * p / 0.2) * (1 - 0.3 * p)
+                    end
+                    if twinkle then
+                        alpha = alpha * (0.55 + 0.45 * sin(m.phase + twinkle))
+                    end
+                    if orient and rotates then
+                        -- Rotation is counter-clockwise from straight up.
+                        local rot = atan2(-vx, vy)
+                        m.rot = rot
+                        tex:SetRotation(rot * sx)
+                    elseif m.spin ~= 0 and rotates then
+                        local rot = m.rot + m.spin * dt
+                        m.rot = rot
+                        tex:SetRotation(rot * sx)
+                    end
+                    tex:SetSize(size, size)
+                    -- Look: one SetVertexColor with the alpha when the colour moved by COLOR_STEP, else the alpha alone.
+                    local r, g, b, a = m.r1 + m.dr * p, m.g1 + m.dg * p, m.b1 + m.db * p, alpha * styleAlpha
+                    local c = tex.sabC
+                    if not c or r - c[1] > COLOR_STEP or c[1] - r > COLOR_STEP or g - c[2] > COLOR_STEP
+                        or c[2] - g > COLOR_STEP or b - c[3] > COLOR_STEP or c[3] - b > COLOR_STEP then
+                        if not c then
+                            c = {}
+                            tex.sabC = c
+                        end
+                        c[1], c[2], c[3] = r, g, b
+                        tex.sabA = a
+                        tex:SetVertexColor(r, g, b, a)
+                    else
+                        local was = tex.sabA
+                        if not was or a - was > COLOR_STEP or was - a > COLOR_STEP then
+                            tex.sabA = a
+                            tex:SetAlpha(a)
+                        end
+                    end
+                    tex:SetPoint("CENTER", parent, bl, x * sx, y)
                 end
             end
-            if done then
-                m.active = false
-                Off(m.tex)
+            if m.active then
+                kept = kept + 1
+                liveM[kept] = m
             else
-                m.x = m.x + m.vx * dt
-                m.y = m.y + m.vy * dt
-                local size, alpha
-                if m.ambient then
-                    -- Lingering particles: fade in, hold, fade out.
-                    size = m.size * (1 - 0.2 * p)
-                    alpha = min(1, p / 0.2, (1 - p) / 0.3)
-                else
-                    -- Bursts flare and die away.
-                    size = m.size * (1 - 0.5 * p)
-                    alpha = (p < 0.1 and p / 0.1 or 1) * (1 - p) ^ 1.5
-                end
-                if st.grow then
-                    size = m.size * min(1, 0.3 + 0.7 * p / 0.2) * (1 - 0.3 * p)
-                end
-                if st.twinkle then
-                    alpha = alpha * (0.55 + 0.45 * sin(m.phase + t * st.twinkle * 2 * pi))
-                end
-                if st.orient and m.tex.SetRotation then
-                    -- Rotation is counter-clockwise from straight up.
-                    m.rot = atan2(-m.vx, m.vy)
-                    m.tex:SetRotation(m.rot * sx)
-                elseif m.spin ~= 0 and m.tex.SetRotation then
-                    m.rot = m.rot + m.spin * dt
-                    m.tex:SetRotation(m.rot * sx)
-                end
-                m.tex:SetSize(size, size)
-                Look(m.tex, Lerp(m.r1, m.r2, p), Lerp(m.g1, m.g2, p), Lerp(m.b1, m.b2, p), alpha * (st.alpha or 1))
-                m.tex:SetPoint("CENTER", parent, bl, m.x * sx, m.y)
+                m.listed = false
             end
         end
+        for i = kept + 1, nm do liveM[i] = nil end
     end
 end
 
@@ -1286,34 +1442,45 @@ function Liquid:Update(dt, edge)
     self:Simulate(dt)
     self.energy = self.energy * exp(-CFG.energyDecay * dt)
 
-    local bs = self.bubbleStyle
-    self.fizzAcc = self.fizzAcc + dt * (bs.rate + self.energy * bs.energyRate)
-    while self.fizzAcc >= 1 do
-        self.fizzAcc = self.fizzAcc - 1
+    -- What the liquid throws off: each accumulator counted in a local and stored once (the emitters do not read them).
+    local bs, energy = self.bubbleStyle, self.energy
+    local rate = bs.rate
+    local acc = self.fizzAcc + dt * (rate + energy * bs.energyRate)
+    while acc >= 1 do
+        acc = acc - 1
         if edge > 16 then self:EmitBubble(Rand(4, edge - 8)) end
     end
-    self.driftAcc = self.driftAcc + dt * bs.rate * bs.drift
-    while self.driftAcc >= 1 do
-        self.driftAcc = self.driftAcc - 1
+    self.fizzAcc = acc
+    acc = self.driftAcc + dt * rate * bs.drift
+    while acc >= 1 do
+        acc = acc - 1
         if edge > 24 then self:EmitBubble(Rand(4, edge - 14), true) end
     end
+    self.driftAcc = acc
 
     local cr = self.crackle
-    self.charge = self.charge * exp(-0.5 * dt)
-    self.crackleAcc = self.crackleAcc + dt * (cr.rate + cr.energyRate * max(0, self.charge - 0.3) ^ 1.3)
-    while self.crackleAcc >= 1 do
-        self.crackleAcc = self.crackleAcc - 1
+    local charge = self.charge * exp(-0.5 * dt)
+    self.charge = charge
+    -- max(0, charge - 0.3) ^ 1.3, without the power when it is 0 ^ 1.3 (0): the same sum.
+    local over = charge - 0.3
+    acc = self.crackleAcc + dt * (cr.rate + cr.energyRate * (over > 0 and over ^ 1.3 or 0))
+    while acc >= 1 do
+        acc = acc - 1
         self:EmitBolt()
     end
+    self.crackleAcc = acc
 
-    if self.ambient and self.opts.ambient then
-        for i, em in ipairs(self.ambient) do
-            local acc = (self.ambientAcc[i] or 0) + dt * (em.rate + (em.energyRate or 0) * self.energy)
+    local ambient = self.ambient
+    if ambient and self.opts.ambient then
+        local accs = self.ambientAcc
+        for i = 1, #ambient do
+            local em = ambient[i]
+            acc = (accs[i] or 0) + dt * (em.rate + (em.energyRate or 0) * energy)
             while acc >= 1 do
                 acc = acc - 1
                 self:EmitAmbient(em, edge)
             end
-            self.ambientAcc[i] = acc
+            accs[i] = acc
         end
     end
 
