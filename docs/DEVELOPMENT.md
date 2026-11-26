@@ -108,7 +108,8 @@ cd tools/harness
 ```
 
 `--since` picks the reports made with the code now in the working copy (`--ref` for the code they ran); `--pace` is a
-fight's changes a second; `--class` the player's (a warrior's rage has the fury). The costs are written to
+fight's changes a second; `--class` the player's (a warrior's rage has the fury); `--casts` a warrior's rage spends a
+minute in a fight (36 by default, 0 for none: each bursts the Rage Fury, most of its cost in game). The costs are written to
 `rig_calibration.json` with each part's measured and predicted time. Without a `/sab perf calib` (or with `--fit`) the
 costs are fitted to the reports instead, which cannot tell the Lua from the widget calls apart well. `--ref` in predict
 needs a version with the part-by-part timing (`ns.Timed`) to compare against.

@@ -80,7 +80,7 @@ is for players. This file holds the rules and the traps; the rest is in `docs/`:
   breaks the game's menu or gamepad actions; those menus are left alone (`docs/findings/unit-frames.md`).
 - **Toc changes** (a new file) need a full game restart; `/reload` does not pick them up.
 - **No realm:** since build 71037 `GetRealmName()` returns `""`; an empty realm is no answer (`docs/findings/client.md`).
-- **Cost:** the addon's own Lua is most of what it costs (about 39 us a thousand instructions of its code in game), its
+- **Cost:** the addon's own Lua is most of what it costs (about 28 us a thousand instructions of its code in game), its
   function calls and lookups above all; a widget call is only 0.15 to 0.35 us (measured with `/sab perf calib`). Cut
   Lua, not only calls (`docs/findings/performance.md`).
 
