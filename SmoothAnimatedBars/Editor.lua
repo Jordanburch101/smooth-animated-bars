@@ -68,6 +68,12 @@ local FRAMES = {
     target = { label = "Target", desc = "Liquid in your target's bars. Class Color shows a targeted player's class.",
                same = "Same as Yours", whose = "your", mobs = "TargetUsesClass",
                bars = TwoBars("target", "target", "targetHealthColor", "targetPowerColor"),
+               rows = {
+                   { key = "targetTapped", label = "Grey When Tagged by Others",
+                     desc = "Your target's health turns grey once another player tags the mob, whatever colour you "
+                         .. "pick. Your focus and targets of target too.",
+                     shown = function() return Get("targetHealth") end },
+               },
                sliders = HeightSliders("target") },
     focus = { label = "Focus", desc = "Liquid in your focus's bars.", same = "Same as Target", whose = "your target's",
               mobs = "TargetUsesClass", bars = TwoBars("focus", "focus", "focusHealthColor", "focusPowerColor"),
@@ -101,6 +107,10 @@ local FRAMES = {
                      label = "Friendly Nameplates", same = "Same as Enemy Nameplates", whose = "the enemy nameplates'" },
                },
                rows = {
+                   { key = "plateTapped", label = "Grey When Tagged by Others",
+                     desc = "An enemy nameplate turns the game's grey once another player tags its mob, whatever "
+                         .. "colour you pick.",
+                     shown = function() return Get("plateHealth") end },
                    { key = "plateDots", label = "Your DoTs on Nameplates",
                      desc = "The DoT marker on every mob carrying your damage over time.",
                      shown = function() return Get("plateHealth") end },

@@ -111,6 +111,20 @@ liquids the same way (`make_media.py`, `PLATE_FADE`, measured on the captured fi
 Not yet seen in game: the plate's size being readable, the liquid under the plate's deselected overlay, and the cost in
 a crowd.
 
+A player reported that a mob someone else had tagged no longer showed grey: the game greys an enemy plate then
+(`CompactUnitFrame_UpdateHealthColor`, 0.9 grey, by `CompactUnitFrame_IsTapDenied`: `greyOutWhenTapDenied`, set for
+enemy plates only, `not UnitPlayerControlled(unit) and UnitIsTapDenied(unit)`). On Game Colour the liquid already
+followed it (the plate's colour is read every `PLATE_COLOR_EVERY`), but a theme or Class Color hid it. `plateTapped`
+(on by default) makes a tagged mob's enemy plate take Game Colour whatever is picked (`Bars.TapDenied`, from
+`ChoiceFor`), so the game's grey shows through the plates' deep theme. A secret answer counts as not tagged. Forever's
+target frame greys only its reputation strip and portrait for a tagged mob (`TargetFrame.lua`, `CheckFaction`, on
+`UNIT_FACTION`), not its health bar. Greying the target's health was asked for too: `targetTapped` (on by default)
+does it on the target's, focus's and targets of target's health, in the addon's own grey (`Bars.TAPPED`, 0.5, the
+portrait's grey) through the unit frames' theme, looked at again on `UNIT_FACTION` as the game does (now registered
+with the unit frames' events, not only the plates'). No unit events come for a target of target, so its grey follows
+on the next `UNIT_TARGET`. Not yet seen in game: whether `UnitIsTapDenied` or `UnitPlayerControlled` come back secret on
+Forever, and whether `UNIT_FACTION` fires at the tag.
+
 ## Personal Resource Display
 
 *Where:* `Bars.lua`, the `prd` spots, `prdHealth`/`prdPower`

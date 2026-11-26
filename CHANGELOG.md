@@ -11,6 +11,10 @@ Sections are `### New` and `### Fixed`; skip one that would be empty.
   moving liquid redraws its waves, swirl and sparks. 60 by default, which
   costs much less CPU at high frame rates; Unlimited redraws every frame as
   before. The bars still follow your health every frame.
+- **Grey When Tagged by Others**: once another player tags a mob, its
+  health turns grey whatever colour you pick, on enemy nameplates (the
+  game's grey) and on your target, focus and targets of target. On by
+  default; each has its own switch, under Nameplates and under Target.
 
 ### Fixed
 - The bars use much less CPU, with no visible change to how they look: well

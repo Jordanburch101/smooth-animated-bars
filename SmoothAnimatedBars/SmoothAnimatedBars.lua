@@ -42,6 +42,10 @@ local DEFAULTS = {
     plateDots    = false,
     -- The kill icon beside a nameplate whose mob the player's DoTs will finish, with plateDots
     plateKillIcon = true,
+    -- An enemy nameplate whose mob another player tagged shows the game's grey whatever colour is picked (Bars.TapDenied)
+    plateTapped  = true,
+    -- The same on the target's, focus's and targets of target's health, in grey of the addon's (the game's stays green)
+    targetTapped = true,
     -- Colours: "game" for the bar's own colour, or a theme key (Themes.lua)
     healthColor  = "game",
     powerColor   = "game",
@@ -222,6 +226,8 @@ local SETTING_APPLY = {
     plateHealth = function() ApplyBars(false); ns.Marker.Apply() end,
     plateDots   = function() ns.Marker.Apply() end,
     plateKillIcon = function() ns.Marker.Apply() end,
+    plateTapped = function() ns.Bars.ApplyColors() end,
+    targetTapped = function() ns.Bars.ApplyColors() end,
     plateFriendly = function() ApplyBars(false) end,
     raidHealth  = function() ApplyBars(false) end,
     raidPower   = function() ApplyBars(false) end,

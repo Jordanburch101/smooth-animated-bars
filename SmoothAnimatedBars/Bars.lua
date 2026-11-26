@@ -484,6 +484,8 @@ Bars.tall = {}
 -- The bar's own colour: health green (a flat bar's its own, unless unflat), or the game's colour for the unit's power
 -- type (a preview bar, and the Personal Resource Display's mana under a druid's form, name their power type).
 GameColor = function(b, unflat)
+    -- A tagged mob on the target, focus or a target of target (a plate's grey is its own colour, below).
+    if b.kind == "health" and not b.spot.flat and Bars.TapDenied(b) then return Bars.TAPPED, "TAPPED" end
     -- A raid frame's power takes its power type's colour, as the game's does (CompactUnitFrame_UpdatePowerColor).
     if (b.spot.raid or b.spot.raidLook) and b.kind == "health" and not unflat then return Bars.raid.Color(b), "HEALTH" end
     -- Another addon's bar with Your Colours on Their Bars (externalColors): Game Colour is the game's, as on its own
@@ -632,9 +634,37 @@ local function FuryTheme(theme)
     }, { __index = theme })
 end
 
+-- Whether a bar's mob is tagged by another player, so its health shows grey whatever colour is picked (asked for by a
+-- player: a theme hid the game's grey on plates). The game's own test (CompactUnitFrame_IsTapDenied): not
+-- player-controlled and tap denied. A secret answer is taken as not tapped. An enemy plate (plateTapped) takes the
+-- plate's own colour, the game's grey; the game greys enemy plates only (greyOutWhenTapDenied). The target's, focus's
+-- and targets of target's health (targetTapped, asked for) take TAPPED: the game's target frame greys only its name
+-- strip and portrait (TargetFrameMixin:CheckFaction, on UNIT_FACTION), so their grey is the addon's.
+Bars.TAPPED = { 0.5, 0.5, 0.5 } -- the grey the game gives the target's portrait and a dead mob
+Bars.TAP_SETTING = { target = "targetTapped", focus = "targetTapped", tot = "targetTapped" }
+function Bars.TapDenied(b)
+    local spot = b.spot
+    if spot.preview or b.kind ~= "health" then return false end
+    if spot.plate then
+        if b.side ~= "enemy" or not ns.Core.Get("plateTapped") then return false end
+    else
+        -- Our taller frames' bars stand for the game's (Bars.tall); other addons' bars keep their own colours.
+        -- The target's own spot names no frame (ChoiceFor's fallback).
+        local key = Bars.TAP_SETTING[spot.frame or (b.unit == "target" and "target")]
+        if not key or not ns.Core.Get(key) or (spot.external and not Bars.tall[b.bar]) then return false end
+    end
+    local ok, controlled = pcall(UnitPlayerControlled, b.unit)
+    if not ok or Secret(controlled) or controlled then return false end
+    local okTap, denied = pcall(UnitIsTapDenied, b.unit)
+    return okTap and not Secret(denied) and denied == true
+end
+
 -- A bar's colour choice: its frame's, which can be to follow the player's (target, pet) or the target's (focus,
 -- targets of target). A preview's bars are the player's or the target's.
 local function ChoiceFor(b)
+    -- A tagged mob's health is grey whatever is picked (GameColor): a plate's is read every PLATE_COLOR_EVERY, the unit
+    -- frames' on UNIT_FACTION, as the game's target frame does.
+    if Bars.TapDenied(b) then return "game" end
     -- Another addon's bar keeps the colour that addon gives it, unless it asked for one of ours (AddBar's theme) or the
     -- player wants ours on every such bar (externalColors): then the colour picked for the frame it stands for, where
     -- Game Colour is the game's (GameColor).
@@ -2379,7 +2409,9 @@ local function OnEvent(_, event, unit, ...)
                 ApplyColor(b)
                 Feed(b, false)
             elseif b.unit == unit then
-                if event == "UNIT_DISPLAYPOWER" then -- druid forms
+                if event == "UNIT_FACTION" then -- tagged by another player (Bars.TapDenied), or turned hostile
+                    if b.kind == "health" then ApplyColor(b) end
+                elseif event == "UNIT_DISPLAYPOWER" then -- druid forms
                     -- A flat bar's colour is the bar's, which the game sets in its own handler of this event, perhaps
                     -- after ours: it is read on the next update.
                     if b.kind == "power" then
@@ -2400,9 +2432,11 @@ local function OnEvent(_, event, unit, ...)
 end
 
 local EVENTS = { "PLAYER_TARGET_CHANGED", "UNIT_DISPLAYPOWER", "UNIT_HEALTH", "UNIT_MAXHEALTH", "UNIT_POWER_UPDATE",
-                 "UNIT_MAXPOWER", "UNIT_TARGET", "UNIT_PET", "PLAYER_FOCUS_CHANGED", "GROUP_ROSTER_UPDATE" }
-local PLATE_EVENTS = { "NAME_PLATE_UNIT_ADDED", "NAME_PLATE_UNIT_REMOVED", "UNIT_FACTION" }
-local BOTH = { UNIT_HEALTH = true, UNIT_MAXHEALTH = true } -- the frames' events that the plates use too
+                 "UNIT_MAXPOWER", "UNIT_TARGET", "UNIT_PET", "PLAYER_FOCUS_CHANGED", "GROUP_ROSTER_UPDATE",
+                 "UNIT_FACTION" }
+local PLATE_EVENTS = { "NAME_PLATE_UNIT_ADDED", "NAME_PLATE_UNIT_REMOVED" }
+-- The frames' events that the plates use too (UNIT_FACTION: a mob turning hostile, or tagged by another player).
+local BOTH = { UNIT_HEALTH = true, UNIT_MAXHEALTH = true, UNIT_FACTION = true }
 
 --------------------------------------------------------------------------------
 -- API

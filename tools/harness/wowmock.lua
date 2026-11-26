@@ -649,6 +649,13 @@ function UnitIsConnected(unit)
     return u ~= nil and not u.offline
 end
 function UnitReaction(unit) local u = other(unit); return u and u.reaction or nil end
+-- Whether another player tagged the unit (tapDenied on its entry), and whether a player controls it (players, pets).
+function UnitIsTapDenied(unit) local u = other(unit); return u ~= nil and u.tapDenied or false end
+function UnitPlayerControlled(unit)
+    if unit == "player" or unit == "pet" then return true end
+    local u = other(unit)
+    return u ~= nil and (u.isOtherPlayer or u.isPlayer or u.controlled) or false
+end
 function UnitFactionGroup() return __player.faction end
 RAID_CLASS_COLORS = {
     PALADIN = { r = 0.96, g = 0.55, b = 0.73 }, MAGE = { r = 0.25, g = 0.78, b = 0.92 },

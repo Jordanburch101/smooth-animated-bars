@@ -400,7 +400,7 @@ OPTION_KEYS = ["playerHealth", "healthColor", "playerPower", "powerColor", "targ
                "totHealthColor", "totPower", "totPowerColor", "partyHealth", "partyHealthColor", "partyPower",
                "partyPowerColor", "raidHealth", "raidHealthColor", "raidPower", "raidPowerColor", "prdHealth",
                "prdHealthColor", "prdPower", "prdPowerColor", "plateHealth", "plateHealthColor", "plateFriendly",
-               "plateFriendlyColor", "plateDots", "plateKillIcon", "waves", "swirl", "bubbles", "sparkles", "ambient",
+               "plateFriendlyColor", "plateTapped", "targetTapped", "plateDots", "plateKillIcon", "waves", "swirl", "bubbles", "sparkles", "ambient",
                "lightning", "animationSpeed", "waveIntensity", "animationFps", "dots", "dotKillIcon", "heals", "shield", "weakenedSoul", "manaBuild", "rageFury", "externalBars", "externalColors",
                "playerHealthHeight", "playerPowerHeight", "targetHealthHeight", "targetPowerHeight",
                "focusHealthHeight", "focusPowerHeight", "petHealthHeight", "petPowerHeight", "totHealthHeight",
@@ -638,9 +638,11 @@ check(lua.eval("__ns.Core.db.effects.playerHealth") is None
 lua.execute(f"__click({FX.format(1)}.global); __click({ED}.defaults)")
 check(lua.eval("__ns.Core.db.effects.playerHealth") is None, "and so does the frame's Defaults")
 lua.execute(f"__click({ED}.hots.plates)")
-check(not lua.eval("__page().rows.plateDots.shown"), "Nameplates: Your DoTs on Nameplates hidden while they are off")
+check(not lua.eval("__page().rows.plateDots.shown") and not lua.eval("__page().rows.plateTapped.shown"),
+      "Nameplates: Your DoTs on Nameplates and Grey When Tagged by Others hidden while they are off")
 lua.execute("__click(__card(1).check)")
 check(lua.eval("__ns.Core.db.plateHealth") and lua.eval("__page().rows.plateDots.shown")
+      and lua.eval("__page().rows.plateTapped.shown")
       and not lua.eval("__page().rows.plateKillIcon.shown"), "and shown once on, its kill icon once the DoTs are")
 lua.execute("__click(__card(1).check); __card(1).colour.tiles.frost.scripts.OnEnter(); __click(" + ED + ".close)")
 check(not lua.eval("SmoothAnimatedBarsEditor.shown") and lua.eval("__ns.Core.db.plateHealthColor") == "same",
@@ -846,6 +848,34 @@ sf.execute("__units.targettarget = { reaction = 5 }; __fire('UNIT_TARGET', 'targ
 run(sf, 0.3)
 r, g, b = sf.eval("__tint(TargetFrameToT.HealthBar)")
 check(g > 0.7 and r < 0.5, f"the target changing its target recolours it: a friendly mob ({r:.2f}, {g:.2f}, {b:.2f})")
+
+
+def focus_grey():
+    r, g, b = sf.eval("__tint(FocusFrame.healthbar)")
+    return abs(r - g) < 0.1 and abs(g - b) < 0.1, (round(r, 2), round(g, 2), round(b, 2))
+
+
+# Grey When Tagged by Others on the unit frames (targetTapped, asked for): the game's target frame greys only its name
+# strip and portrait, on UNIT_FACTION, so the liquid greys then too.
+sf.execute("__units.focus.tapDenied = true; __fire('UNIT_FACTION', 'focus')")
+run(sf, 0.2)
+grey, seen = focus_grey()
+check(grey and sf.eval("__ns.Core.Get('targetTapped')") is True,
+      f"on by default: a mob another player tagged turns the focus's health grey over Class Color {seen}")
+sf.execute("__settings.targetTapped:SetValue(false)")
+run(sf, 0.2)
+grey, seen = focus_grey()
+check(not grey, f"Grey When Tagged by Others off on the Target page: the colour picked stays {seen}")
+sf.execute("__settings.targetTapped:SetValue(true); __units.focus.tapDenied = nil; __fire('UNIT_FACTION', 'focus')")
+run(sf, 0.2)
+grey, seen = focus_grey()
+check(not grey, f"and the mob's own colour comes back once the tag is gone {seen}")
+sf.execute("__target = { reaction = 2, tapDenied = true }; __fire('UNIT_FACTION', 'target')")
+run(sf, 0.2)
+r, g, b = sf.eval("__tint(TargetFrame.healthbar)")
+check(abs(r - g) < 0.1 and abs(g - b) < 0.1,
+      f"the target's own health greys the same way (its spot names no frame) ({r:.2f}, {g:.2f}, {b:.2f})")
+sf.execute("__target = nil; __fire('UNIT_FACTION', 'target')")
 sf.execute("__settings.targetHealthColor:SetValue('fire')")
 run(sf, 0.2)
 r, g, b = sf.eval("__tint(FocusFrame.healthbar)")
@@ -857,7 +887,8 @@ r, g, b = sf.eval("__tint(FocusFrame.healthbar)")
 tr, tg, tb = sf.eval("__tint(TargetFrameToT.HealthBar)")
 pr, pg, pb = sf.eval("__tint(PetFrameHealthBar)")
 hr, hg, hb = sf.eval("__tint(PlayerFrame.healthbar)")
-check(b > 0.8 and tr > 0.8 and tb < 0.3 and pr > 0.8 and pb < 0.3 and hb > 0.5,
+# Fire flickers (its red was seen from 0.82 to 1 here, run to run), so it is told apart by its hue.
+check(b > 0.8 and tr > 0.6 and tr > tg + 0.3 and tb < 0.3 and pr > 0.6 and pr > pg + 0.3 and pb < 0.3 and hb > 0.5,
       "each frame's own colour: the focus Frost, the target of target still the target's Fire, the pet Fire, you yours")
 before = sf.eval("__motes(PetFrameHealthBar)")
 sf.execute("__fire('UNIT_HEALTH', 'pet')")
@@ -4820,6 +4851,41 @@ np.execute(plate_bar("nameplate1") + ":SetStatusBarColor(0.5, 0.5, 0.5)")
 run(np, 0.7)
 r, g, b = np.eval("__tint(" + plate_bar("nameplate1") + ")")
 check(abs(r - g) < 0.1 and abs(g - b) < 0.1, f"a tapped mob's grey plate turns the liquid grey ({r:.2f}, {g:.2f}, {b:.2f})")
+
+
+def plate_grey():
+    r, g, b = np.eval("__tint(" + plate_bar("nameplate1") + ")")
+    return abs(r - g) < 0.1 and abs(g - b) < 0.1, (round(r, 2), round(g, 2), round(b, 2))
+
+
+# Asked for by a player: with a theme picked the liquid hid the game's grey on a mob someone else tagged.
+np.execute("__settings.plateHealthColor:SetValue('arcane')")
+run(np, 0.7)
+grey, seen = plate_grey()
+check(not grey, f"with a theme picked, an untagged mob's plate keeps the theme though the bar is grey {seen}")
+np.execute("__units.nameplate1.tapDenied = true")
+run(np, 0.7)
+grey, seen = plate_grey()
+check(grey and np.eval("__ns.Core.Get('plateTapped')") is True,
+      f"on by default: once another player tags the mob, its plate takes the game's grey over the theme {seen}")
+np.execute("__settings.plateTapped:SetValue(false)")
+run(np, 0.1)
+grey, seen = plate_grey()
+check(not grey, f"Grey When Tagged by Others off: the theme stays on a tagged mob {seen}")
+np.execute("__settings.plateTapped:SetValue(true); __units.nameplate1.controlled = true")
+run(np, 0.7)
+grey, seen = plate_grey()
+check(not grey, f"a player-controlled unit is never greyed, as the game's plates go {seen}")
+np.execute("""__units.nameplate1.controlled = nil
+    __tapDenied = UnitIsTapDenied; UnitIsTapDenied = function() return __secret(true) end""")
+run(np, 0.7)
+grey, seen = plate_grey()
+check(not grey, f"a secret answer is taken as not tagged, never truth-tested {seen}")
+np.execute("""UnitIsTapDenied = __tapDenied
+    __units.nameplate1.tapDenied = nil; __settings.plateHealthColor:SetValue('same')""")
+run(np, 0.7)
+grey, seen = plate_grey()
+check(grey, f"and back on Game Colour the plate follows its own grey again {seen}")
 run(np, 3)
 np.execute("__fire('UNIT_HEALTH', 'nameplate1')")
 run(np, 0.1)
