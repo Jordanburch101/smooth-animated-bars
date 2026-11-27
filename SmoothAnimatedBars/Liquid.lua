@@ -84,10 +84,12 @@ local function Color(t, r, g, b)
         return
     end
     c[1], c[2], c[3] = r, g, b
-    t:SetVertexColor(r, g, b)
-    -- A texture has one alpha, which SetVertexColor's fourth value sets too; given none, it may be put back to 1, so the
-    -- next Alpha sets it again rather than trusting what it set last.
-    t.sabA = nil
+    -- A texture has one alpha, which SetVertexColor's fourth value sets too; given none, it may be put back to 1. The
+    -- alpha set last goes with the colour: a colour can change on a frame the liquid is not drawn (Animation Frame
+    -- Rate), and the tips and glow would show at full alpha until the next draw. With none set yet, the next Alpha sets
+    -- it.
+    local a = t.sabA
+    if a then t:SetVertexColor(r, g, b, a) else t:SetVertexColor(r, g, b) end
 end
 
 -- Colour and alpha both: one SetVertexColor with the alpha as its fourth value when the colour moved, else SetAlpha
@@ -292,7 +294,7 @@ ns.Liquid = Liquid
 -- height takes the same count: the bar's own, its Rage Fury and the markers' liquids on it, whose fronts are matched
 -- slice by slice (Follow, FrontOffset).
 -- Animation Frame Rate (animationFps, asked for): at most this many updates a second for a liquid that is moving, or
--- every frame at UNLIMITED_FPS, the default. A moving liquid is otherwise drawn every frame, so its cost per second grows
+-- every frame at UNLIMITED_FPS (60 is the default). A moving liquid is otherwise drawn every frame, so its cost per second grows
 -- with the frame rate (at 124 fps a fight with the player and target took about a fifth of each frame, seen in game).
 -- Where the liquid is on the bar never waits: the client lays it out from the game's bar every frame. Only what moves
 -- inside it (waves, swirl, particles) steps at the cap.

@@ -74,9 +74,10 @@ It reads the newest `SmoothAnimatedBars.lua` under Forever's WTF folder (`--file
 updates are timed, not the client drawing the textures, so compare fps with a setting on and off too.
 
 Without the game, `tools/harness/bench.py` counts the liquid's calls to the game's widgets per frame, by group of
-bars, quiet and in a combat-like stream of changes. Those calls are what costs in the client: matched against
-`/sab perf` in game, each took about 1.9 microseconds, which gives its ms estimate and its share of the frame at
-`--fps`. It also counts the addon's own Lua work (Lua 5.1 instructions in its files), so work saved in calls is not
+bars, quiet and in a combat-like stream of changes. Matched against `/sab perf` in game, the whole cost came to about
+1.9 microseconds a call, which gives its ms estimate and its share of the frame at `--fps`. That is all the work per
+call, the Lua around it too: a widget call alone costs 0.15 to 0.35 microseconds (`/sab perf calib`), and the rig below
+splits the two. It also counts the addon's own Lua work (Lua 5.1 instructions in its files), so work saved in calls is not
 spent again in Lua. Runs are repeatable, and `--ref` measures the addon at a git ref on the same frames to show what a
 change saves; `--by line|method|lua` shows where the calls or the Lua work go:
 

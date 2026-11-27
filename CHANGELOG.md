@@ -9,7 +9,7 @@ Sections are `### New` and `### Fixed`; skip one that would be empty.
 ### New
 - **Animation Frame Rate** on the Effects tab: how many times a second a
   moving liquid redraws its waves, swirl and sparks. 60 by default, which
-  costs much less CPU at high frame rates; Unlimited redraws every frame as
+  costs less CPU at high frame rates; Unlimited redraws every frame as
   before. The bars still follow your health every frame.
 - **Grey When Tagged by Others**: once another player tags a mob, its
   health turns grey whatever colour you pick, on enemy nameplates (the
@@ -28,6 +28,8 @@ Sections are `### New` and `### Fixed`; skip one that would be empty.
   resisted, or a Rake or Garrote that surely missed, no longer stops it
   learning from that fight, and the upfront hit of Rake or Immolate is
   counted only when it landed.
+- A Rip, Rupture, Garrote or Rake recast just as the old one ran out no
+  longer drops off the DoT Marker when a white swing misses at the same time.
 - Damage learned for high-rank DoTs while their tooltips over 999 were
   misread is forgotten and learned again.
 - The bars use much less CPU, with no visible change to how they look: well

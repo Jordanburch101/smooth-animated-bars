@@ -2380,7 +2380,16 @@ local function OnEvent(_, event, unit, ...)
         local pb = plateOf[unit]
         if pb and pb.live and STIR_EVENTS[event] == "health" then Stir(pb) end
         OnPlateEvent(event, unit)
-        -- The same unit can be the target or focus as well, which the frames' own events cover.
+        -- The same unit can be the target or focus as well, which the frames' own events cover. A target of target
+        -- has no events of its own: a mob tagged by another player (Bars.TapDenied) says so here, on its plate, so
+        -- those bars' colours are worked out again.
+        if event == "UNIT_FACTION" then
+            for _, b in pairs(bars) do
+                if b.live and b.kind == "health" and (b.unit == "targettarget" or b.unit == "focustarget") then
+                    ApplyColor(b)
+                end
+            end
+        end
         return
     end
     if event == "GROUP_ROSTER_UPDATE" then

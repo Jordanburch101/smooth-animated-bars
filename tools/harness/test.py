@@ -875,6 +875,13 @@ run(sf, 0.2)
 r, g, b = sf.eval("__tint(TargetFrame.healthbar)")
 check(abs(r - g) < 0.1 and abs(g - b) < 0.1,
       f"the target's own health greys the same way (its spot names no frame) ({r:.2f}, {g:.2f}, {b:.2f})")
+# A target of target has no events of its own: the tag shows on the mob's nameplate's UNIT_FACTION.
+sf.execute("__units.targettarget = { reaction = 2, tapDenied = true }; __fire('UNIT_FACTION', 'nameplate1')")
+run(sf, 0.2)
+r, g, b = sf.eval("__tint(TargetFrameToT.HealthBar)")
+check(abs(r - g) < 0.1 and abs(g - b) < 0.1,
+      f"a target of target another player tags greys when its nameplate says so ({r:.2f}, {g:.2f}, {b:.2f})")
+sf.execute("__units.targettarget = { reaction = 5 }; __fire('UNIT_TARGET', 'target')")
 sf.execute("__target = nil; __fire('UNIT_FACTION', 'target')")
 sf.execute("__settings.targetHealthColor:SetValue('fire')")
 run(sf, 0.2)
@@ -4007,6 +4014,11 @@ dd.execute("""__spells[13795] = { 'Immolation Trap', 'Place a fire trap that wil
         .. '105 Fire damage over 15 sec.  Trap will exist for 1 min.' }
     __mob(11); __combat = true; __cast(13795, 'Cast-20')""")
 run(dd, 4)  # a mob walks in, and the first tick comes an interval later
+# Before it, a mob's Fire spell lands on the hunter (UNIT_COMBAT comes for the player too): not the trap.
+dd.execute("__fire('UNIT_COMBAT', 'player', 'WOUND', '', __secret(), 4)")
+run(dd, 0.1)
+check("sprung on player" not in dd.eval("__log()"),
+      "a Fire hit on the player while Immolation Trap is armed does not spring it there")
 dd.execute("__fire('UNIT_COMBAT', 'target', 'WOUND', '', __secret(), 4)")
 run(dd, 0.1)
 check(dd.eval("__total()") == 84 and "TRAP Immolation Trap sprung on target (amount hidden)" in dd.eval("__log()"),

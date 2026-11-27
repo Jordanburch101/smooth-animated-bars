@@ -1227,6 +1227,14 @@ local function recordTick(dot, amount, isCrit, index, now)
     return anchorTick(dot, index, now), factor
 end
 
+-- Whether a unit is one to spring a trap on. UNIT_COMBAT comes for the player, the pet and the party too, and a Fire
+-- hit taken there sprang the trap on them, leaving nothing armed for the mob that walks into it. A secret answer is
+-- no mob.
+local function onMob(unit)
+    local ok, attackable = pcall(UnitCanAttack, "player", unit)
+    return ok and not isSecret(attackable) and attackable and true or false
+end
+
 -- An armed trap's first tick: an unmatched hit of its school and size on any mob, at least one tick interval
 -- after the trap was placed. Starts the DoT there, as tick 1. Without a learned size the description's share is
 -- only a rough guide, so the range is wide (0.5-2.5x).
@@ -1235,6 +1243,7 @@ local function springTrap(key, unit, amount, school, isCrit, now)
     if not trap or school ~= trap.school then return false end
     if now > trap.expiresAt + trap.interval + TICK_MATCH_WINDOW then armedTrap = nil; return false end
     if now < trap.placedAt + trap.interval - TICK_MATCH_WINDOW then return false end
+    if not onMob(unit) then return false end
     local dot = newDot(trap.spellID, trap.spellID, trap.name, trap.total, trap.school, trap.duration,
         trap.interval, now - trap.interval)
     if ticks[trap.spellID] then
@@ -1266,6 +1275,7 @@ local function springTrapHidden(key, unit, school, now)
         return false
     end
     if now < trap.placedAt + trap.interval - TICK_MATCH_WINDOW then return false end
+    if not onMob(unit) then return false end
     local dot = newDot(trap.spellID, trap.spellID, trap.name, trap.total, trap.school, trap.duration,
         trap.interval, now - trap.interval)
     armedTrap = nil

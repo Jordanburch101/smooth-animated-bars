@@ -555,8 +555,9 @@ local function CopyTextureNow(st, src, dst)
     local gf = st.gf
     -- Hidden (most of them, most of the time: the elite's dragon, a raid target, the leader's crown): ours hidden, and
     -- nothing else read. Laid out in full the poll it shows, as before.
+    -- A secret shown state is never compared: it goes on to the copy below, faded by SetAlphaFromBoolean.
     local okShown, shownNow = pcall(src.IsShown, src)
-    if okShown and shownNow == false then
+    if okShown and not Secret(shownNow) and shownNow == false then
         if dst.copyShown ~= false then
             dst.copyShown = false
             dst:Hide()
@@ -1336,9 +1337,9 @@ function TallFrames.WatchSegments(on)
     end
     if not segmentWatch or (segmentWatch.watching or false) == on then return end
     segmentWatch.watching = on
-    -- Each under pcall: an event the client does not know is an error to register.
+    -- Each under pcall: an event the client does not know is an error to register, and may be one to unregister.
     for _, event in ipairs(SEGMENT_EVENTS) do
-        if on then pcall(segmentWatch.RegisterEvent, segmentWatch, event) else segmentWatch:UnregisterEvent(event) end
+        pcall(on and segmentWatch.RegisterEvent or segmentWatch.UnregisterEvent, segmentWatch, event)
     end
     if on then segmentsUntil = GetTime() + SEGMENT_FOLLOW end
 end

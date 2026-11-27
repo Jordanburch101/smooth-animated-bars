@@ -27,6 +27,12 @@ Reported by a player (1.14.1): 5 to 10% CPU, 15% and more at peaks, with only th
 up; the bench agreed (player and target in combat about 1350 calls, 2.6 ms, a frame at 60 fps, the same per frame at any
 frame rate as a moving liquid is drawn every frame).
 
+1.14.1 against 1.14.2, end to end (`bench.py --party 0 --only player --ref v1.14.1 --fps 100`, a warrior's player and
+target with the Rage Fury, offline): quiet calls 402 to 150 (-63%), combat calls 1520 to 307 (-80%), combat Lua work
+34.4k to 13.5k instructions a frame (-61%). Lua is most of the cost in game (see the calibration below), so combat costs
+well under half as much. In game the fights' slow frames went too: no frame over 5 ms in six windows, against 26 and 6
+before (the third round).
+
 Asked for: cheaper, with the look unchanged. Half of those calls were the layers' caps (seven layers, a cap per slice,
 each placed, sized, given coordinates and alpha every update). Now (`Liquid.lua`): each cap is anchored between its
 layer's main texture's far end and its slice's (`AnchorCaps`; a shown cap always ends where its slice does) and each tip

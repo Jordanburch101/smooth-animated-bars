@@ -5,8 +5,9 @@ Usage: python bench.py <addon dir> [--fps 60] [--party 3] [--class WARRIOR] [--s
 
 The mock's own times say nothing about the client's, but the number of calls the liquid makes to the game's widgets
 (SetPoint, SetAlpha, Show...) does: that is where the client spends its time. Matched against /sab perf in game (a
-warrior in a party of four in combat, at 24 fps), each call cost about 1.7 to 2 microseconds there, so the estimate
-column uses 1.9; it scales with the machine. The "% frame" column is that estimate as a share of each frame at --fps:
+warrior in a party of four in combat, at 24 fps), the whole cost came to about 1.7 to 2 microseconds a call there, so
+the estimate column uses 1.9; it scales with the machine. That is all the work per call, the Lua around it too: a widget
+call alone costs 0.15 to 0.35 microseconds (/sab perf calib), and rig.py splits the two. The "% frame" column is that estimate as a share of each frame at --fps:
 a liquid that is moving is drawn every frame, so its cost per frame does not drop as the frame rate rises, and its share
 of the frame grows with it. "Lua k" is the addon's own Lua work, thousands of Lua 5.1 instructions a frame (the client
 runs Lua 5.1, not LuaJIT), counted in the addon's files only: work saved in widget calls must not come back here.
