@@ -1831,6 +1831,26 @@ check(tf.eval(OTHERS + "[__hbtfPct].points.LEFT.rel == " + ST + ".target.f.healt
 tf.execute("__hbtfPct:SetAlpha(1)")
 run(tf, 0.3)
 check(tf.eval(OTHERS + "[__hbtfPct].alpha") == 1, "shown again with theirs")
+# Status Text "Both": the game's percentage on the left of the bar and its value on the right, its centre text hidden.
+tf.execute("""local bar = PlayerFrame.healthbar
+    bar.TextString:Hide(); bar.LeftText:SetText('100%'); bar.LeftText:Show()
+    bar.RightText:SetText('2,199'); bar.RightText:Show()""")
+run(tf, 0.3)
+OURH = ST + ".player.f.health"
+check(tf.eval(f"{OURH}.left.text") == "100%" and tf.eval(f"{OURH}.left.points.LEFT ~= nil")
+      and tf.eval(f"{OURH}.right.text") == "2,199" and tf.eval(f"{OURH}.right.points.RIGHT ~= nil")
+      and not tf.eval(f"{OURH}.text.shown"),
+      "Status Text Both on a taller bar: the percentage on the left, the value on the right, no centre text")
+# Seen in game: both side texts over each other in the middle, as if their places could not be read. Unreadable, each
+# goes to its own side.
+tf.execute("""__placeSrc = UIParent:CreateFontString(nil, 'OVERLAY')
+    function __placeSrc:GetPoint() return __secret('LEFT'), nil, __secret('LEFT'), __secret(2), __secret(0) end
+    __placeL = UIParent:CreateFontString(nil, 'OVERLAY'); __placeR = UIParent:CreateFontString(nil, 'OVERLAY')
+    __ns.TallFrames.PlaceText(__placeSrc, __placeL, UIParent, 'left')
+    __ns.TallFrames.PlaceText(__placeSrc, __placeR, UIParent, 'right')""")
+check(tf.eval("__placeL.points.LEFT ~= nil and __placeL.points.LEFT.x == 2")
+      and tf.eval("__placeR.points.RIGHT ~= nil and __placeR.points.RIGHT.x == -2"),
+      "a side text whose place is secret goes to its own side of our bar, not the middle")
 # Reported by players: grey bars after setting a Bar Height. Game Colour (the default) took our bar's own untinted white.
 FILL = "string.format('%.2f %.2f %.2f', unpack(__ns.Bars.stateOf[{}].liquid.theme.fillB))"
 check(tf.eval(FILL.format(ST + ".player.f.health")) == tf.eval(FILL.format("PlayerFrame.healthbar"))

@@ -55,6 +55,12 @@ faded bars (the target of target's, where the game has none, entirely). The bar 
 our copy of the game text it hangs on, in its own font and size (`TallFrames.OtherTexts`); seen in game with that addon:
 working.
 
+Seen in game (1.14.2) with Status Text "Both" on the taller player frame: the percentage and the value drawn over each
+other in the middle of the bar, and the power's value centred. The copies are placed by the game texts' `GetPoint`,
+which the mock answers; in game it must have come back unreadable (secret or failed; not yet seen which), as the
+fallback was the centre. Each copy now falls back to its own side, at the XML's inset (`PlaceText`, `SIDE_PLACE`);
+seen in game: fixed.
+
 Reported by players: grey bars after setting a Bar Height; not seen here, as this account has Your Colours on Their Bars
 on (`externalColors`), which already took the game's colours there. Our bars are handed over as another addon's are,
 whose Game Colour is the bar's own colour (`PlateColor`), and ours is the StatusBar's untinted white over the game's

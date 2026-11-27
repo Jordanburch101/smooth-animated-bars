@@ -4,6 +4,12 @@ Player-facing notes for each release. Write for players: what they can now
 do or see, and what was broken and now works. Leave out internal changes.
 Sections are `### New` and `### Fixed`; skip one that would be empty.
 
+## 1.14.3
+
+### Fixed
+- With Bar Height and Status Text on Both, the percentage and value were
+  drawn over each other in the middle of the bar.
+
 ## 1.14.2
 
 ### New

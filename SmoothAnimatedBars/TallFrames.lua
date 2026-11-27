@@ -921,14 +921,22 @@ local function MirrorSegments(st)
 end
 
 -- A text on our bar where the game's is on its bar: the same point and offset from the bar (or its container).
-local function PlaceText(src, dst, bar)
+-- side: where the text is when its place cannot be read (its point and inset, the game's XML: LeftText at LEFT 2,
+-- RightText at RIGHT -2). Seen in game with Status Text "Both": both side texts drawn over each other in the middle of
+-- a taller bar, where a centre fallback had put them.
+local SIDE_PLACE = { centre = { "CENTER", 0 }, left = { "LEFT", 2 }, right = { "RIGHT", -2 } }
+local function PlaceText(src, dst, bar, side)
+    local place = SIDE_PLACE[side] or SIDE_PLACE.centre
     local ok, point, _, relPoint, x, y = pcall(src.GetPoint, src, 1)
-    if not ok or type(point) ~= "string" or Secret(point) or Secret(x) or Secret(y) then
-        point, relPoint, x, y = "CENTER", "CENTER", 0, 0
+    if not ok or type(point) ~= "string" or Secret(point) or Secret(relPoint) then
+        point, relPoint, x, y = place[1], place[1], place[2], 0
+    elseif type(x) ~= "number" or type(y) ~= "number" or Secret(x) or Secret(y) then
+        x, y = place[1] == point and place[2] or 0, 0
     end
     dst:ClearAllPoints()
     dst:SetPoint(point, bar, relPoint or point, x or 0, y or 0)
 end
+TallFrames.PlaceText = PlaceText
 
 local function Fade(list, alpha)
     for _, region in ipairs(list) do
@@ -979,9 +987,9 @@ local function Build(st)
     for _, kind in ipairs({ "health", "power" }) do
         local game, ours = st.bars[kind], f[kind]
         local centre, left, right = BarTexts(game)
-        for _, p in ipairs({ { centre, ours.text }, { left, ours.left }, { right, ours.right } }) do
+        for _, p in ipairs({ { centre, ours.text, "centre" }, { left, ours.left, "left" }, { right, ours.right, "right" } }) do
             if type(p[1]) == "table" and p[1].GetText then
-                PlaceText(p[1], p[2], ours)
+                PlaceText(p[1], p[2], ours, p[3])
                 st.texts[#st.texts + 1] = { p[1], p[2], true }
                 st.textCopy[p[1]] = p[2]
             else
