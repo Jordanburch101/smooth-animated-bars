@@ -7,34 +7,22 @@ Sections are `### New` and `### Fixed`; skip one that would be empty.
 ## 1.14.2
 
 ### New
-- **Animation Frame Rate** on the Effects tab: how many times a second a
-  moving liquid redraws its waves, swirl and sparks. 60 by default, which
-  costs less CPU at high frame rates; Unlimited redraws every frame as
-  before. The bars still follow your health every frame.
-- **Grey When Tagged by Others**: once another player tags a mob, its
-  health turns grey whatever colour you pick, on enemy nameplates (the
-  game's grey) and on your target, focus and targets of target. On by
-  default; each has its own switch, under Nameplates and under Target.
+- **Animation Frame Rate** (Effects tab): how often a moving liquid redraws.
+  60 by default, saving CPU at high frame rates; Unlimited as before.
 
 ### Fixed
-- Garrote often did not show on the DoT Marker: a white swing missing as
-  it landed was taken for Garrote missing. Now a Garrote (or a cat's Rake)
-  that earned its combo point stays on the marker.
-- Immolation Trap now shows on the DoT Marker when it springs in combat.
-- A druid's Lacerate keeps its stacks on the DoT Marker instead of
-  starting over at each cast, and a hunter's pet's Scorpid Poison shows
-  there too.
-- The DoT Marker learns your DoTs' real damage more often: a spell that was
-  resisted, or a Rake or Garrote that surely missed, no longer stops it
-  learning from that fight, and the upfront hit of Rake or Immolate is
-  counted only when it landed.
-- A Rip, Rupture, Garrote or Rake recast just as the old one ran out no
-  longer drops off the DoT Marker when a white swing misses at the same time.
-- Damage learned for high-rank DoTs while their tooltips over 999 were
-  misread is forgotten and learned again.
-- The bars use much less CPU, with no visible change to how they look: well
-  under half as much in combat and while resting, more so with Bar Height on,
-  and fights no longer have the odd slow frame.
+- The bars use much less CPU and look the same: under half as much in
+  combat, with no more odd slow frames.
+- A mob tagged by another player now shows grey health, as the game's bars
+  do. Switch: Grey When Tagged by Others (Nameplates, Target).
+- Garrote and Rake no longer drop off the DoT Marker when a white swing
+  misses.
+- Rip, Rupture, Garrote and Rake recast as the old one runs out stay on the
+  DoT Marker.
+- Immolation Trap shows on the DoT Marker in combat.
+- Lacerate keeps its stacks, and a hunter's pet's Scorpid Poison shows.
+- The DoT Marker learns DoT damage more often, and relearns high-rank DoTs
+  misread over 999.
 
 ## 1.14.1
 

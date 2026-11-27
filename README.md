@@ -243,11 +243,9 @@ bar's.
 - **Class Color** shows each unit's class. On a mob, Class Color on Mobs picks what shows instead: Reaction (red,
   yellow or green), Game Colour, Mob's Class or Your Class.
 - **Nameplates:** enemy and friendly nameplates, each with its own colour, and Your DoTs on Nameplates with their
-  Kill Icon. Grey When Tagged by Others turns a mob's health grey once another player tags it (on the Target page too,
-  for your target, focus and targets of target).
+  Kill Icon. Grey When Tagged by Others (also under Target).
 - **Effects tab:** Liquid Waves, Magic Swirl, Bubbles, Sparkles, Theme Particles and Lightning, for every bar. A bar
-  can have its own on its Effects tab. Animation Frame Rate sets how often a moving liquid redraws its waves, swirl and
-  sparks (60 a second by default; Unlimited for every frame).
+  can have its own on its Effects tab. Animation Frame Rate: how often a moving liquid redraws (60 by default).
 - **Combat tab:** DoT Marker and its Kill Icon, Heal Marker (play Healing to see it), Mana Regen Build-Up and Rage
   Fury.
 - **Other Addons tab:** Other Addons' Bars (on to start with), and Your Colours on Their Bars (off to start with),
