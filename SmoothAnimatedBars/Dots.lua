@@ -71,6 +71,7 @@ local KNOWN_TICK_INTERVALS = {
     ["Holy Fire"] = 2,
     ["Rip"] = 2,
     ["Rupture"] = 2,
+    ["Scorpid Poison"] = 2,
 }
 
 -- DoTs whose ticks aren't even: each tick is the average tick times its factor (factors average 1, so the
@@ -102,6 +103,14 @@ local IGNORED_SPELLS = {
 -- first plausible unmatched tick of its school while it's armed. See springTrap.
 local TRAP_DOTS = { ["Immolation Trap"] = true }
 
+-- DoTs that stack on one mob, with their cap: each cast adds an application (DoesItDie 0.10.0, seen there in game on
+-- Forever: a Lacerate recast kept the first cast's 3s beat through four recasts and refreshed the duration, while
+-- restarting the schedule lost every tick and dropped it as "never ticked"). Each tick is taken as one application's
+-- times the stacks (as in TBC; unverified on Forever), so sizes are learned per application (stackOnto, tickShape).
+-- Forever's hunters have a Lacerate too (one bleed, no stacks), hence the class. The pet's Scorpid Poison stacks too
+-- (onPetCast).
+local STACKING_DOTS = { ["Lacerate"] = { cap = 5, class = "DRUID" }, ["Scorpid Poison"] = { cap = 5 } }
+
 -- Rogue poisons coat a weapon and proc on its strikes, so no cast event says when one lands or on whom. Forever
 -- keeps hit amounts secret but not their school (DoesItDie's saved log there: "HIT (amount hidden) school 8"), so
 -- while the player's weapon carries a poison that deals damage over time, a Nature hit on a mob is taken as its
@@ -129,8 +138,11 @@ local SPELL_IDS = {
     ["Mind Flay"] = 15407, ["Arcane Missiles"] = 5143, ["Starshards"] = 10797,
     ["Immolation Trap"] = 13795, ["Explosive Trap"] = 13813, ["Wyvern Sting"] = 19386,
     ["Serpent Sting"] = 1978, ["Pyroblast"] = 11366, ["Corruption"] = 172,
+    ["Lacerate"] = 1328617,     -- Forever's own ID (not in Classic Era)
+    ["Scorpid Poison"] = 24583, -- the pet's; its rank varies with the pet
 }
-local NAME_TABLES = { KNOWN_TICK_INTERVALS, TICK_SHAPES, SCHOOL_BY_NAME, IGNORED_SPELLS, PROJECTILE_DOTS, TRAP_DOTS }
+local NAME_TABLES = { KNOWN_TICK_INTERVALS, TICK_SHAPES, SCHOOL_BY_NAME, IGNORED_SPELLS, PROJECTILE_DOTS, TRAP_DOTS,
+                      STACKING_DOTS }
 -- The tables also answer to every registered language's names (Locale.lua).
 ns.locale.addNames(NAME_TABLES)
 
@@ -351,12 +363,14 @@ local function tickNumberAt(dot, when)
     return math.max(1, math.floor((when - dot.appliedAt) / dot.interval + 0.5))
 end
 
--- The factor for tick `number` (1 for evenly ticking DoTs). Shapes are stretched to the DoT's tick count.
+-- The factor for tick `number` (1 for evenly ticking DoTs). Shapes are stretched to the DoT's tick count. A stacking
+-- DoT's ticks are times its stacks too, so its sizes are learned and tallied per application (STACKING_DOTS).
 local function tickShape(dot, number)
+    local stacks = dot.stacks or 1
     local shape = dot.shape
-    if not shape then return 1 end
+    if not shape then return stacks end
     local i = math.ceil(math.min(math.max(number, 1), dot.totalTicks) / dot.totalTicks * #shape)
-    return shape[math.max(1, math.min(i, #shape))]
+    return shape[math.max(1, math.min(i, #shape))] * stacks
 end
 
 -- A doubtful DoT (an avoid right after the cast that may not have been its own) doesn't count toward the
@@ -387,19 +401,21 @@ local function tallyFor(dot)
     if not dot.tickKey then return nil end
     local t = combatTally[dot.tickKey]
     if not t then
-        t = { spellID = dot.spellID, name = dot.name, factors = 0, ticks = 0, direct = 0,
+        t = { spellID = dot.spellID, name = dot.name, factors = 0, ticks = 0,
               descTick = dot.total / dot.totalTicks, dots = {} }
         combatTally[dot.tickKey] = t
     end
     return t
 end
 
--- direct nil: the description's upfront hit can't be told apart (another client language).
+-- direct nil: the description's upfront hit can't be told apart (another client language). Kept per cast
+-- (dot.directPart) so an avoided cast's upfront hit, which never landed, isn't taken off the meter's total
+-- (learnFromMeter; DoesItDie 0.10.0).
 local function tallyCast(dot, direct)
     local t = tallyFor(dot)
     if not t then return end
     t.dots[#t.dots + 1] = dot
-    if direct == nil then t.unclear = true else t.direct = t.direct + direct end
+    if direct == nil then t.unclear = true else dot.directPart = direct end
 end
 
 local function tallyHiddenTick(dot, factor)
@@ -599,20 +615,24 @@ local function onCastSent(spellID, castGUID, targetName)
     for guid, sent in pairs(sentTargets) do
         if now - sent.at > SENT_TARGET_SECONDS then sentTargets[guid] = nil end
     end
+    local ok, _, desc = pcall(spellNameAndDescription, spellID)
     if castGUID and not isSecret(castGUID) then
         sentTargets[castGUID] = { key = sentTargetKey(targetName), at = now }
+        -- A builder's points before it lands: an avoid right after it is judged by whether its point came
+        -- (resolveFinisherCheck), as a finisher's is by whether its points went.
+        if ok and comboPointsAwarded(desc) then sentTargets[castGUID].points = readComboPoints() end
     end
-    local ok, _, desc = pcall(spellNameAndDescription, spellID)
     if not ok or not isFinisherDescription(desc) then return end
     comboAtSend = readComboPoints()
 end
 
--- The mob a cast went to: the target when it was sent, else (no send seen) the target now.
+-- The mob a cast went to: the target when it was sent, else (no send seen) the target now. Also the combo points
+-- read when a builder was sent, if they could be.
 local function castTargetKey(castGUID)
     local sent = castGUID and not isSecret(castGUID) and sentTargets[castGUID]
     if not sent then return unitKey("target") end
     sentTargets[castGUID] = nil
-    return sent.key
+    return sent.key, sent.points
 end
 
 -- An avoid on `key` that arrived just before the cast event, or nil. With includeImmune, also an IMMUNE
@@ -650,8 +670,15 @@ local function removeAvoidedDot(cast, action, school)
             return true
         end
     end
+    -- Dealt nothing: its upfront hit isn't taken off the meter's total (learnFromMeter). Its missing ticks stop the
+    -- meter learning only while the avoid may not have been its own (meterSkipReason): a spell avoided in its own
+    -- school was; a bleed's may have been a white swing's (Garrote), and if it landed after all, ticking unseen, the
+    -- meter would have damage the tally hasn't. Those are confirmed by their combo points (resolveFinisherCheck).
+    dot.avoided = true
+    if dot.school ~= SCHOOL_MASKS.Physical and spellSchool then dot.avoidConfirmed = true end
     if cast.previous then
         dots[cast.name] = cast.previous
+        cast.previous.stackedInto = nil
         trace(string.format("AVOID %s right after %s recast; keeping the earlier one", action, cast.name))
     else
         dots[cast.name] = nil
@@ -660,7 +687,12 @@ local function removeAvoidedDot(cast, action, school)
     -- A cat's or rogue's white swing missing in that instant looks the same as the finisher missing (DoesItDie 0.9.4:
     -- a Rip that landed was dropped). A finisher that misses keeps its combo points, one that lands spends them, so a
     -- finisher whose points were read at send is judged again once they've settled.
-    if cast.comboRead then
+    -- At the cap a builder's points can't rise, so it can't be told (DoesItDie 0.10.0 says so too): it stays dropped.
+    if cast.awarded and not cast.builderFrom and cast.pointsAtSend and cast.pointsAtSend >= COMBO_CAP then
+        trace(string.format("COMBO after %s's %s: already %d points, can't tell, stays dropped", cast.name, action,
+            cast.pointsAtSend))
+    end
+    if cast.comboRead or cast.builderFrom then
         finisherCheck = { cast = cast, dot = dot, replaced = dots[cast.name], action = action,
                           at = GetTime() + FINISHER_CHECK_DELAY }
     end
@@ -680,17 +712,31 @@ local function resolveFinisherCheck(now)
         return
     end
     local points = readComboPoints()
-    if not points or points >= cast.comboRead then
+    -- A finisher that landed spent its points; a builder that landed (cast.builderFrom) gained its point.
+    local had = cast.builderFrom or cast.comboRead
+    local landed
+    if cast.builderFrom then landed = points and points > had else landed = points and points < had end
+    if not landed then
+        -- Readable points say it missed for sure; unreadable ones leave it in doubt.
+        if points then check.dot.avoidConfirmed = true end
         trace(string.format("COMBO after %s's %s: %s (had %d), it missed", cast.name, check.action,
-            tostring(points or "unreadable"), cast.comboRead))
+            tostring(points or "unreadable"), had))
         return
     end
     local dots = dotsByTarget[cast.key]
-    if (dots and dots[cast.name]) ~= check.replaced or now >= check.dot.expiresAt then return end
+    local current = dots and dots[cast.name]
+    -- The DoT the recast replaced may have run out during the check, which still leaves its place free (DoesItDie
+    -- 0.10.0: Rip and Rupture kept when their old DoT ran out just as a white swing missed).
+    local expired = check.replaced and current == nil and now > check.replaced.expiresAt + TICK_MATCH_WINDOW
+    if (current ~= check.replaced and not expired) or now >= check.dot.expiresAt then return end
     dotsByTarget[cast.key] = dots or {}
     dotsByTarget[cast.key][cast.name] = check.dot
-    trace(string.format("COMBO after %s's %s: %d (had %d), spent: it landed, restored", cast.name, check.action,
-        points, cast.comboRead))
+    check.dot.avoided, check.dot.avoidConfirmed = nil, nil
+    if cast.previous and check.dot.stacks then cast.previous.stackedInto = check.dot end
+    -- The avoid took the builder's points off the count (onAvoided); it landed, so they're counted again.
+    if cast.builderFrom and cast.awarded then countedPoints = math.min(COMBO_CAP, countedPoints + cast.awarded) end
+    trace(string.format("COMBO after %s's %s: %d (had %d), %s: it landed, restored", cast.name, check.action,
+        points, had, cast.builderFrom and "awarded" or "spent"))
 end
 
 local function onAvoided(key, action, school)
@@ -781,6 +827,59 @@ local function newDot(spellID, tickKey, name, total, school, duration, statedInt
     }
 end
 
+-- A stacking DoT cast on a mob that already has it (STACKING_DOTS; DoesItDie 0.10.0): one more application, up to
+-- `cap`, on the running tick rhythm. The refreshed duration counts from the latest tick slot, so a partial tick at the
+-- very end isn't counted and the estimate errs low. The previous DoT's ticks carry over; it stays as the cast's
+-- `previous`, so an avoided stack puts it back (removeAvoidedDot).
+local function stackOnto(dot, previous, cap)
+    local anchor = previous.firstTickAt or previous.appliedAt
+    local slot = anchor + math.max(0, math.floor((dot.appliedAt - anchor) / previous.interval)) * previous.interval
+    -- A tick for the next slot that already landed a little early stays in the past, so the refreshed schedule
+    -- doesn't roll back and count it twice (DoesItDie 0.10.0).
+    while dot.interval > 0 and previous.nextTickAt and slot + dot.interval < previous.nextTickAt - TICK_MATCH_WINDOW do
+        slot = slot + dot.interval
+    end
+    -- And one due at the slot itself that hasn't come yet (it lands a moment after the recast): the schedule starts a
+    -- slot earlier, so that tick is the new one's first rather than nobody's. Its refresh then counts from there,
+    -- one tick short (errs low).
+    if previous.nextTickAt and math.abs(previous.nextTickAt - slot) < TICK_MATCH_WINDOW and slot - dot.interval >= anchor then
+        slot = slot - dot.interval
+    end
+    dot.stacks = math.min(cap, (previous.stacks or 1) + 1)
+    dot.appliedAt, dot.nextTickAt, dot.expiresAt = slot, slot + dot.interval, slot + dot.duration
+    if previous.firstTickAt then dot.firstTickAt, dot.lastTickIndex = slot, 0 end
+    dot.ticksSeen, dot.tickSum, dot.normalTicks = previous.ticksSeen, previous.tickSum, previous.normalTicks
+    dot.lastTickAt, dot.lastTickAmount = previous.lastTickAt, previous.lastTickAmount
+    dot.lastTickShape, dot.lastTickCrit = previous.lastTickShape, previous.lastTickCrit
+    dot.missed, dot.doubtful, dot.learnedAtApply = previous.missed, previous.doubtful, previous.learnedAtApply
+    previous.stackedInto = dot -- its own ticks now count for this one (meterSkipReason)
+end
+
+-- Before 1.14.0 "1,002 Shadow damage" was read as 2 (the thousands separator), and DoesItDie found sizes learned for
+-- such spells stayed wrong after its own fix (Bane of Agony rank 6). Which spells read 1000 or more depends on gear
+-- (Forever's tooltips include spell power), so the first cast of each spell whose tooltip now does (the DoT, or the
+-- upfront hit the meter learning takes off) forgets what was learned for it, every combo point count too, once, before
+-- this cast reads it (DoesItDie 0.10.1). Spells under 1000 were read right and keep theirs.
+function Dots.ForgetPreFix(spellID, total, desc)
+    local done = Dots.overThousand
+    if not done or done[spellID] or not total then return end
+    if total < 1000 then
+        local direct = parseDirectPart(desc)
+        if not (type(direct) == "number" and direct >= 1000) then return end
+    end
+    done[spellID] = true
+    local prefix, forgot = spellID .. "x", {}
+    for key in pairs(ticks) do
+        if key == spellID or (type(key) == "string" and key:sub(1, #prefix) == prefix) then forgot[#forgot + 1] = key end
+    end
+    for _, key in ipairs(forgot) do
+        ticks[key], tickWeights[key] = nil, nil
+        dropSnapshots(key)
+    end
+    trace(string.format("OVER 999 tooltip for spell %d (%d dmg): %s", spellID, total, #forgot > 0
+        and ("forgot sizes learned under the old reading of its numbers: " .. #forgot) or "nothing learned to forget"))
+end
+
 -- The poison tracking can't be tried in game here, so it never raises an error: each way in runs through
 -- poisonGuard, and an error turns it off until the next reload, with a line in /sab dots. The other DoTs carry on.
 local poisonsBroken = false
@@ -865,11 +964,12 @@ end
 
 -- Returns the target key the DoT was applied to, or nil if the cast wasn't a tracked DoT.
 local function onPlayerCast(spellID, castGUID)
-    local key = castTargetKey(castGUID)
+    local key, pointsAtSend = castTargetKey(castGUID)
     local ok, name, desc = pcall(spellNameAndDescription, spellID)
     if not ok or not name or isSecret(name) then return end
+    local awarded
     if type(desc) == "string" and not isSecret(desc) then
-        local awarded = comboPointsAwarded(desc)
+        awarded = comboPointsAwarded(desc)
         if awarded then onBuilderCast(key, awarded) end
         -- Only one Fire trap can be active: any new one (Explosive Trap too) replaces the armed one.
         if armedTrap and desc:find("Fire trap") then armedTrap = nil end
@@ -890,6 +990,7 @@ local function onPlayerCast(spellID, castGUID)
         end
         return
     end
+    Dots.ForgetPreFix(spellID, total, desc)
     -- A finisher's tick size depends on the points spent, so learned sizes are kept per point count.
     local tickKey = spellID
     if isFinisher then tickKey = comboPoints and (spellID .. "x" .. comboPoints) or nil end
@@ -915,13 +1016,26 @@ local function onPlayerCast(spellID, castGUID)
     dotsByTarget[key] = dotsByTarget[key] or {}
     local previous = dotsByTarget[key][name]
     local dot = newDot(spellID, tickKey, name, total, school, duration, statedInterval, now)
+    local stacking = STACKING_DOTS[name]
+    if stacking and stacking.class then
+        local okClass, _, class = pcall(UnitClass, "player")
+        if not okClass or isSecret(class) or class ~= stacking.class then stacking = nil end
+    end
+    -- Only onto one still running: one that ran out stays on the books until housekeep drops it.
+    if previous and stacking and now <= previous.expiresAt then stackOnto(dot, previous, stacking.cap) end
     dotsByTarget[key][name] = dot
+    -- A builder that is a DoT (Garrote, Rake) below the cap: its point says whether it landed. Garrote opens from
+    -- stealth and starts the white swings with it, so a swing's miss lands with the cast and dropped it (reported).
     lastDotCast = { key = key, name = name, dot = dot, previous = previous, at = now,
-                    comboRead = isFinisher and comboSource == "read" and comboPoints or nil }
+                    comboRead = isFinisher and comboSource == "read" and comboPoints or nil,
+                    builderFrom = not isFinisher and awarded and pointsAtSend and pointsAtSend < COMBO_CAP
+                        and pointsAtSend or nil, awarded = awarded, pointsAtSend = pointsAtSend }
     tallyCast(dot, isFinisher and 0 or parseDirectPart(desc)) -- a finisher's point table is no upfront hit
     local learned = tickKey and ticks[tickKey]
-    trace(string.format("CAST %s (id %d)%s: %d dmg over %ss, school %d, tick every %ss, per-tick %s", name, spellID,
+    trace(string.format("CAST %s (id %d)%s%s: %d dmg over %ss, school %d, tick every %ss, per-tick %s", name, spellID,
         isFinisher and string.format(" %s combo points (%s)", tostring(comboPoints or "?"), comboSource) or "",
+        dot.stacks and string.format(" stack %d (ticks kept on the beat, next at %+.1fs)", dot.stacks,
+            dot.nextTickAt - now) or "",
         total, duration, dot.school, dot.interval, learned and ("learned " .. learned) or "from description"))
     local avoided = avoidJustBefore(key, true)
     if avoided and removeAvoidedDot(lastDotCast, avoided.action, avoided.school) then
@@ -1139,6 +1253,35 @@ local function springTrap(key, unit, amount, school, isCrit, now)
     return true
 end
 
+-- The same first tick with its amount hidden, which is the usual case: a trap springs in combat, where UNIT_COMBAT's
+-- amounts are secret, so springTrap never started one there (DoesItDie 0.10.0: "never tracked in combat"). With no
+-- number to check, school and timing alone decide, as for a cast DoT's later ticks; another player's Fire hit in the
+-- window can spring it on that mob instead. It goes in the tally, so the damage meter can teach the trap's real tick.
+local function springTrapHidden(key, unit, school, now)
+    local trap = armedTrap
+    if not trap or school ~= trap.school then return false end
+    if now > trap.expiresAt + trap.interval + TICK_MATCH_WINDOW then
+        trace(string.format("TRAP %s expired after %.0fs with no first tick", trap.name, now - trap.placedAt))
+        armedTrap = nil
+        return false
+    end
+    if now < trap.placedAt + trap.interval - TICK_MATCH_WINDOW then return false end
+    local dot = newDot(trap.spellID, trap.spellID, trap.name, trap.total, trap.school, trap.duration,
+        trap.interval, now - trap.interval)
+    armedTrap = nil
+    dotsByTarget[key] = dotsByTarget[key] or {}
+    dotsByTarget[key][trap.name] = dot
+    tallyCast(dot, 0)
+    -- No amount to record: this tick is counted by hand and anchors the rhythm, as a cast DoT's first hidden tick does.
+    dot.ticksSeen = 1
+    dot.lastTickAmount, dot.lastTickShape, dot.lastTickCrit = 0, 1, false
+    local tickIndex = anchorTick(dot, 1, now)
+    tallyHiddenTick(dot, 1)
+    trace(string.format("TRAP %s sprung on %s (amount hidden): %.1fs after placing, tick %d/%d", trap.name, unit,
+        now - trap.placedAt, tickIndex, dot.totalTicks))
+    return true
+end
+
 -- A hit on a mob as a poison's tick (see POISON_LIFETIME): only its school is read, so it works with the amounts
 -- secret. A Nature hit on the rhythm of the poison's DoT on the mob is its next tick; with none there, or past its
 -- end (it was put on again meanwhile), it is the first tick of a new one (or, with a poison that strikes at once
@@ -1249,12 +1392,12 @@ end
 -- Returns the mob's key when a DoT waiting for its first tick now shows, else nil.
 local function onHiddenAmountHit(key, unit, school)
     local dots = dotsByTarget[key]
-    if not dots then return end
+    if not dots and not armedTrap then return end
     local now = GetTime()
     local hit = hitRecord(key .. ":hidden:" .. school, unit, now)
     if not hit then return end
     local best, bestName, bestDistance, bestIndex
-    for name, dot in pairs(dots) do
+    for name, dot in pairs(dots or {}) do
         if not hit.fed[name] and not dot.proc and dot.school == school then
             local distance, index = distanceToExpectedTick(dot, now)
             local window = dot.firstTickAt and TICK_MATCH_WINDOW_ANCHORED or TICK_MATCH_WINDOW
@@ -1269,7 +1412,11 @@ local function onHiddenAmountHit(key, unit, school)
             end
         end
     end
-    if not best then return end
+    if not best then
+        -- An armed trap springs in combat, where amounts are hidden: this is the only way its first tick comes.
+        if springTrapHidden(key, unit, school, now) then return key end
+        return
+    end
     local wasWaiting = isWaiting(best)
     best.ticksSeen = best.ticksSeen + 1
     best.lastTickAmount, best.lastTickShape, best.lastTickCrit = 0, tickShape(best, tickNumberAt(best, now)), false
@@ -1435,7 +1582,7 @@ end
 local function remainingDamage(dot)
     if dot.nextTickAt > dot.expiresAt + dot.interval / 2 then return 0 end
     local ticksLeft = math.floor((dot.expiresAt - dot.nextTickAt) / dot.interval + 0.5) + 1
-    if not dot.shape then return ticksLeft * expectedTick(dot) end
+    if not dot.shape then return ticksLeft * expectedTick(dot) * (dot.stacks or 1) end
     local average, total = expectedTick(dot), 0
     for number = math.max(1, dot.totalTicks - ticksLeft + 1), dot.totalTicks do
         total = total + average * tickShape(dot, number)
@@ -1483,12 +1630,22 @@ local function meterSkipReason(key, t, counted, totals, keysPerSpell)
     end
     if counted.readable[key] then return "a readable tick already taught it" end
     if t.unclear then return "its upfront hit can't be told apart in this client's language" end
-    -- Ticks of a DoT cast before this combat, or by a trap: the casts that fed the meter aren't in this tally.
+    -- Ticks of a DoT cast before this combat: the casts that fed the meter aren't in this tally. (A trap sprung with its
+    -- amount hidden is in it, springTrapHidden.)
     if #t.dots == 0 then return "not cast this combat" end
     if counted.untracked[t.spellID] then return "a cast had no known target, so the meter has damage not counted here" end
     if counted.untracked.all then return "the addon was loaded mid-fight, so the meter has casts not counted here" end
+    -- Not counted (DoesItDie 0.10.0): a cast surely avoided (it dealt nothing; it blocked learning for the whole fight;
+    -- avoidConfirmed, see removeAvoidedDot) and a stack's earlier application (its ticks went on in the stack that
+    -- replaced it).
     for _, dot in ipairs(t.dots) do
-        if dot.ticksSeen == 0 then return "a cast's DoT never showed a tick (out of sight, or the mob died first)" end
+        -- A stack dropped for an avoid carries the earlier stacks' ticks seen, so the check below misses it.
+        if dot.avoided and not dot.avoidConfirmed then
+            return "a cast was dropped for an avoid that may have been a white swing's"
+        end
+        if dot.ticksSeen == 0 and not dot.avoidConfirmed and not dot.stackedInto then
+            return "a cast's DoT never showed a tick (out of sight, or the mob died first)"
+        end
         if dot.lostSight then return "a cast's DoT ticked out of sight, so the meter has ticks not counted here" end
     end
     if not totals[t.spellID] then return "no readable damage meter total" end
@@ -1513,7 +1670,11 @@ local function learnFromMeter(spells, counted)
         if skip then
             if skip ~= "" then trace(string.format("LEARN %s skipped: %s", name, skip)) end
         else
-            local whole = t.direct + t.descTick * t.factors
+            local direct = 0
+            for _, dot in ipairs(t.dots) do
+                if not dot.avoided and dot.directPart then direct = direct + dot.directPart end
+            end
+            local whole = direct + t.descTick * t.factors
             local ratio = whole > 0 and total / whole or 0
             if ratio ~= ratio or ratio < LEARN_RATIO_MIN or ratio > LEARN_RATIO_MAX then
                 trace(string.format("LEARN %s skipped: meter %d over %d tick(s) is %.2fx the description", name,
@@ -1528,7 +1689,7 @@ local function learnFromMeter(spells, counted)
                 dropSnapshots(key)
                 learned = learned + 1
                 trace(string.format("LEARN %s: meter %d over %d tick(s)%s = %.1f per tick (description %.1f), saved %.1f",
-                    name, total, t.ticks, t.direct > 0 and " minus upfront hit" or "", tick, t.descTick, ticks[key]))
+                    name, total, t.ticks, direct > 0 and " minus upfront hit" or "", tick, t.descTick, ticks[key]))
             end
         end
     end
@@ -1731,6 +1892,48 @@ frame:SetScript("OnEvent", ns.Timed("DoT tracking: events", function(...)
     end
 end))
 
+-- The pet's DoTs (Scorpid Poison; DoesItDie 0.10.1): the pet casts them, so the player's cast path never sees them.
+-- They come on a frame of their own (RegisterUnitEvent replaces the unit an event already listens to), each cast one
+-- more stack (STACKING_DOTS). On the pet's target, else the player's; a mob with no readable key is skipped rather than
+-- poisoned in the wrong place (and the fight teaches its size nothing, as for a player's cast). Pet casts don't go
+-- through the avoid path: a dodged poison still adds a stack and refreshes the others, and as the stack carries their
+-- ticks seen, missed ticks never drop it, so the estimate errs high for that duration (as in DoesItDie).
+function Dots.PetCast(spellID)
+    if isSecret(spellID) then return end
+    local ok, name, desc = pcall(spellNameAndDescription, spellID)
+    local stacking = ok and type(name) == "string" and not isSecret(name) and STACKING_DOTS[name]
+    if not stacking or type(desc) ~= "string" or isSecret(desc) then return end
+    local total, school, duration, statedInterval = parseDot(desc, 1)
+    if not total then return end
+    local okExists, exists = pcall(UnitExists, "pettarget")
+    local key = unitKey((okExists and not isSecret(exists) and exists) and "pettarget" or "target")
+    if not key then
+        combatUntracked[spellID] = true -- the damage meter still counts what this cast deals
+        return
+    end
+    local now = GetTime()
+    dotsByTarget[key] = dotsByTarget[key] or {}
+    local previous = dotsByTarget[key][name]
+    local dot = newDot(spellID, spellID, name, total, school, duration, statedInterval, now)
+    if previous and now <= previous.expiresAt then stackOnto(dot, previous, stacking.cap) end
+    dotsByTarget[key][name] = dot
+    tallyCast(dot, parseDirectPart(desc))
+    if not previous or (previous.stacks or 1) < (dot.stacks or 1) then
+        trace(string.format("PETDOT %s (id %d): stacks %d/%d", name, spellID, dot.stacks or 1, stacking.cap))
+    end
+    notify("changed")
+    if key == unitKey("target") and not previous then notify("applied") end
+end
+Dots.petFrame = CreateFrame("Frame")
+Dots.petFrame:SetScript("OnEvent", ns.Timed("DoT tracking: pet casts", function(_, _, _, _, spellID)
+    local ok, err = pcall(Dots.PetCast, spellID)
+    if not ok and not reported[err] then
+        reported[err] = true
+        trace("ERROR " .. tostring(err))
+        ns.Core.Print("Error in the DoT tracking (it carries on): " .. tostring(err))
+    end
+end))
+
 local namesAdded = false
 -- The client's own names for the spells in the name-keyed tables (Forever renames a few).
 local function addClientNames()
@@ -1766,6 +1969,9 @@ function Dots.Load(db)
     if type(db.dotPoisons.directUntil) ~= "number" then db.dotPoisons.directUntil = 0 end
     if type(db.dotPoisons.directAt) ~= "number" then db.dotPoisons.directAt = nil end
     poisonState = db.dotPoisons
+    -- The spells already checked for sizes learned under the old reading of "1,002" (Dots.ForgetPreFix).
+    if type(db.dotOverThousand) ~= "table" then db.dotOverThousand = {} end
+    Dots.overThousand = db.dotOverThousand
 end
 
 -- Tracking on or off. Off forgets every DoT and listens to nothing.
@@ -1777,10 +1983,12 @@ function Dots.Enable(on)
         addClientNames()
         for _, event in ipairs(EVENTS) do frame:RegisterEvent(event) end
         for _, event in ipairs(PLAYER_EVENTS) do frame:RegisterUnitEvent(event, "player") end
+        Dots.petFrame:RegisterUnitEvent("UNIT_SPELLCAST_SUCCEEDED", "pet")
         if InCombatLockdown() or UnitAffectingCombat("player") then combatUntracked.all = true end
         trace("tracking on")
     else
         frame:UnregisterAllEvents()
+        Dots.petFrame:UnregisterAllEvents()
         wipe(dotsByTarget)
         wipe(schoolHitAt)
         takeCombatTally()

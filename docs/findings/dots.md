@@ -39,6 +39,51 @@ Seen in game on the target frame: the front over the DoTs every time.
 
 Not yet seen: other addons' target bars.
 
+Reported by a player (without DoesItDie): Garrote never showed on the marker while other DoTs did. Its text reads
+(144 Physical over 18 sec); the cast was dropped. Garrote opens from stealth and starts the white swings with it, so a
+swing's MISS lands within `PHYSICAL_OUTCOME_WINDOW` of the cast and was taken for Garrote's own (in the mock: "AVOID
+MISS right after Garrote; dropped"), and a rogue's white swings miss often. A builder that lands awards its point, so a
+builder that is a DoT (Garrote, a cat's Rake) dropped for an avoid is judged again half a second later, as a finisher
+is by its spent points: points read at `UNIT_SPELLCAST_SENT` (`sentTargets[guid].points`), gained means it landed and
+it is put back (`resolveFinisherCheck`, `builderFrom`). At the cap, or with the points unreadable, it stays dropped. Not
+yet seen in game: that the report's cause is this one, and that the points read at send are readable then.
+
+DoesItDie 0.10.0 (installed: 0.10.1) made the same fix for Rake after seeing it in game (2026-11-22: Rakes that ticked
+dropped for a white swing's parry or dodge); its check covers any builder, Garrote too. Ported from it with this: a
+restored builder's points are counted again (the avoid took them off `countedPoints`), the cap is said in `/sab dots`,
+and a recast whose old DoT ran out during the check is still put back (its Rip and Rupture fix). Ours keeps the points
+per cast (`sentTargets`) where DoesItDie keeps one `builderAtSend`.
+
+The rest of DoesItDie 0.9.4 to 0.10.1's tracking (github.com/swirllyman/DoesItDie, `git diff v0.9.4 v0.10.1`), ported
+with it, none yet seen in game here:
+- Immolation Trap only sprang on a first tick whose amount was readable, which in combat it never is, so it was never
+  tracked there; `springTrapHidden` springs it on school and timing, and its first tick goes in the tally so the meter
+  can teach its size (DoesItDie leaves that tick out). Not ported: its preview from the target's `UNIT_AURA` (the marker
+  a tick sooner), which needs that event on every aura change and showed the trap's damage on and off on the mob being
+  fought until a later fix limited it.
+- An avoided cast (`dot.avoided`) never ticks, and blocked learning for its spell for the whole fight; it no longer
+  does when the avoid was surely its own (`avoidConfirmed`: a spell's in its own school, or a builder's or finisher's
+  that its readable combo points confirmed). DoesItDie lets any avoid through, but a bleed's may have been a white
+  swing's, and a bleed that landed and ticked unseen would leave the meter damage the tally hasn't (found in review).
+  An avoided cast's upfront hit (`dot.directPart`, per cast now) is no longer taken off the meter's total.
+- A trap with its amount hidden springs on any Fire hit an interval after placing (as in DoesItDie): another player's
+  Fire on the mob can spring it there, and the real spring is then missed. Kept: without it the trap never shows in
+  combat. Not yet seen in game: whether the damage meter lists the trap's damage under the trap's spell ID (13795) or
+  its effect's (Classic's "Immolation Trap Effect", 13797 and up), and whether it has the pet's Scorpid Poison at all;
+  if not, those are never taught their size ("no readable damage meter total" in `/sab dots`).
+- Lacerate stacks for a druid (`STACKING_DOTS`, `stackOnto`): a recast is one more application on the running beat (seen
+  in game by DoesItDie), ticks times the stacks, sizes learned per application; a tick that landed a little early
+  isn't counted again by the refreshed schedule, one due at the recast that lands a moment after it is the new stack's
+  first, and a DoT that already ran out isn't stacked onto (the last two found in review; DoesItDie has neither).
+- The pet's Scorpid Poison (`Dots.PetCast`, on a frame of its own for the pet's `UNIT_SPELLCAST_SUCCEEDED`), stacking
+  on the pet's target.
+- Our parser misread "1,002" as 2 until 1.14.0, as DoesItDie's did until 0.10.0, which found sizes learned then stayed
+  wrong: the first cast of a spell whose tooltip reads 1000 or more forgets them once (`Dots.ForgetPreFix`,
+  `dotOverThousand`).
+
+Not ported, as features of their own: sharing DoTs with the party over addon messages, and the execute kill icon
+(Execute, Eviscerate and the like, on the target and plates). Its marker, layering and options fixes are its own UI's.
+
 Reported by a player: Health Bar Text Forever (github.com/Pirson-s-Addons/HealthBarTextForever) puts its own texts on
 the target's health bar (`bar:CreateFontString`) and fades the game's to alpha 0, so under the raised liquid its text
 was hidden and the copies of the game's showed nothing. Every other FontString on a raised bar is copied too

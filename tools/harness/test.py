@@ -880,7 +880,7 @@ sf.execute("__settings.targetHealthColor:SetValue('fire')")
 run(sf, 0.2)
 r, g, b = sf.eval("__tint(FocusFrame.healthbar)")
 pr, pg, pb = sf.eval("__tint(PetFrameHealthBar)")
-check(r > 0.8 and b < 0.3 and pb > 0.5, "the focus follows the target's Fire; the pet keeps yours")
+check(r > 0.6 and r > g + 0.3 and b < 0.3 and pb > 0.5, "the focus follows the target's Fire; the pet keeps yours")
 sf.execute("__settings.focusHealthColor:SetValue('frost'); __settings.petHealthColor:SetValue('fire')")
 run(sf, 0.2)
 r, g, b = sf.eval("__tint(FocusFrame.healthbar)")
@@ -3978,6 +3978,146 @@ dd.execute("__mob(6); __comboPoints = 5; __cast(1079, 'Cast-8'); __fire('UNIT_CO
 run(dd, 0.6)
 check(dd.eval("__total()") == 0 and "it missed" in dd.eval("__log()"),
       "a Rip that kept its combo points missed: it stays dropped")
+# Garrote opens from stealth and starts the white swings with it: a swing's miss in that instant dropped Garrotes that
+# had landed (reported by a player: Garrote never showed). A builder that landed gained its point.
+dd.execute("""__spells[703] = { 'Garrote', 'Garrote the enemy, causing 144 damage over 18 sec, increased by your Attack '
+        .. 'Power.  Must be stealthed and behind the target.  Awards 1 combo point.' }
+    __mob(7); __comboPoints = 0; __cast(703, 'Cast-9'); __fire('UNIT_COMBAT', 'target', 'MISS', '', 0, 1)""")
+run(dd, 0.05)
+check(dd.eval("__total()") == 0, "a Garrote with a white swing's miss right after it is dropped at first")
+dd.execute("__comboPoints = 1")
+run(dd, 0.6)
+check(dd.eval("__total()") == 144 and "awarded: it landed, restored" in dd.eval("__log()"),
+      f"its combo point came, so it landed: it's put back ({dd.eval('__total()')})")
+dd.execute("__mob(8); __comboPoints = 0; __cast(703, 'Cast-10'); __fire('UNIT_COMBAT', 'target', 'MISS', '', 0, 1)")
+run(dd, 0.6)
+check(dd.eval("__total()") == 0 and dd.eval("__log()").count("it missed") == 2,
+      "a Garrote that gained no point missed: it stays dropped")
+dd.execute("__mob(9); __comboPoints = 0; __cast(703, 'Cast-11')")
+run(dd, 0.6)
+check(dd.eval("__total()") == 144, "a Garrote with no miss after it shows as before")
+dd.execute("__mob(0); __comboPoints = 5; __cast(703, 'Cast-12'); __fire('UNIT_COMBAT', 'target', 'MISS', '', 0, 1)")
+run(dd, 0.6)
+check(dd.eval("__total()") == 0 and "already 5 points, can't tell, stays dropped" in dd.eval("__log()"),
+      "a Garrote cast at five combo points can't be told by them: it stays dropped, and /sab dots says why")
+
+# Ported from DoesItDie 0.10.x.
+# Immolation Trap in combat: its first tick's amount is hidden there, and only a readable amount sprang it.
+dd.execute("""__spells[13795] = { 'Immolation Trap', 'Place a fire trap that will burn the first enemy to approach for '
+        .. '105 Fire damage over 15 sec.  Trap will exist for 1 min.' }
+    __mob(11); __combat = true; __cast(13795, 'Cast-20')""")
+run(dd, 4)  # a mob walks in, and the first tick comes an interval later
+dd.execute("__fire('UNIT_COMBAT', 'target', 'WOUND', '', __secret(), 4)")
+run(dd, 0.1)
+check(dd.eval("__total()") == 84 and "TRAP Immolation Trap sprung on target (amount hidden)" in dd.eval("__log()"),
+      f"Immolation Trap springs on a Fire hit with its amount hidden, as in combat: four ticks of 21 left "
+      f"({dd.eval('__total()')})")
+
+# Lacerate stacks for a druid: a recast is one more application on the running beat, not a new schedule.
+dd.execute("""__player.class = 'DRUID'
+    __spells[1328617] = { 'Lacerate', 'Lacerates the enemy for 20 damage and an additional 75 damage over 15 sec.  '
+        .. 'Stacks up to 5 times.' }
+    __mob(12); __cast(1328617, 'Cast-21')""")
+run(dd, 0.1)
+one = dd.eval("__total()")
+run(dd, 1.4)
+dd.execute("__cast(1328617, 'Cast-22')")
+run(dd, 0.1)
+check(dd.eval("__total()") == 150 and "stack 2 (ticks kept on the beat, next at +1.5s)" in dd.eval("__log()"),
+      f"a druid's second Lacerate is a second stack on the first's beat: twice the damage to come ({one} then "
+      f"{dd.eval('__total()')})")
+# A recast just after a tick was due, with that tick landing a moment later: it is the new stack's first, not nobody's.
+dd.execute("__mob(18); __cast(1328617, 'Cast-29')")
+run(dd, 3.02)
+dd.execute("__cast(1328617, 'Cast-30')")
+run(dd, 0.04)
+dd.execute("__fire('UNIT_COMBAT', 'target', 'WOUND', '', __secret(), 1)")
+run(dd, 0.05)
+check("TICK Lacerate (amount hidden) on target (tick 1/5)" in dd.eval("__log()"),
+      "a Lacerate tick landing just after a recast is the new stack's first tick, not lost between the two")
+dd.execute("__mob(19); __cast(1328617, 'Cast-31')")
+run(dd, 15.2)  # ran out at 15, still on the books until housekeep drops it at 15.45 (found in review)
+dd.execute("__cast(1328617, 'Cast-32')")
+run(dd, 0.1)
+check(dd.eval("__total()") == 75,
+      f"a Lacerate that ran out isn't stacked onto: the recast starts again at one stack, not two ({dd.eval('__total()')})")
+dd.execute("__player.class = 'PALADIN'")
+
+# The pet's Scorpid Poison: its casts never reached the tracking.
+dd.execute("""__spells[24583] = { 'Scorpid Poison', 'Stings the target, causing 10 Nature damage over 10 sec.  Stacks '
+        .. 'up to 5 times.' }
+    __mob(13)
+    __fire('UNIT_SPELLCAST_SUCCEEDED', 'pet', 'Cast-23', 24583); __fire('UNIT_SPELLCAST_SUCCEEDED', 'pet', 'Cast-24', 24583)""")
+run(dd, 0.1)
+check(dd.eval("__total()") == 20 and "PETDOT Scorpid Poison (id 24583): stacks 2/5" in dd.eval("__log()"),
+      f"the pet's Scorpid Poison is tracked on its target, two casts two stacks ({dd.eval('__total()')})")
+
+# Sizes learned under the old reading of "1,140" (read as 140) are forgotten once, on that spell's first cast.
+dd.execute("""__spells[10894] = { "Shadow Word: Pain", 'A word of darkness that causes 1,140 Shadow damage over 24 sec.' }
+    SmoothAnimatedBarsDB.dotTicks[10894] = 23; SmoothAnimatedBarsDB.dotTickWeights[10894] = 6
+    __mob(14); __cast(10894, 'Cast-25')""")
+run(dd, 0.1)
+check(dd.eval("SmoothAnimatedBarsDB.dotTicks[10894]") is None and dd.eval("__total()") == 1140
+      and "forgot sizes learned under the old reading" in dd.eval("__log()"),
+      f"a spell whose tooltip now reads over 999 forgets the size learned when it was misread ({dd.eval('__total()')})")
+dd.execute("SmoothAnimatedBarsDB.dotTicks[10894] = 200; __mob(15); __cast(10894, 'Cast-26')")
+run(dd, 0.1)
+check(dd.eval("SmoothAnimatedBarsDB.dotTicks[10894]") == 200, "and only once: what it learns after stays")
+dd.execute("SmoothAnimatedBarsDB.dotTicks[10894] = nil; __combat = false; __fire('PLAYER_REGEN_ENABLED')")
+run(dd, 0.7)
+
+# An avoided cast dealt nothing: it no longer stops the fight teaching its spell, and its upfront hit isn't taken off.
+dd.execute("""__spells[1822] = { 'Rake', 'Rakes the target for 20 damage and an additional 30 damage over 9 sec.  Awards 1 '
+        .. 'combo point.' }
+    __meter.spells = nil
+    __mob(16); __combat = true; __comboPoints = 0; __cast(1822, 'Cast-27'); __fire('UNIT_COMBAT', 'target', 'DODGE', '', 0, 1)""")
+run(dd, 0.6)
+dd.execute("__mob(17); __cast(1822, 'Cast-28')")
+for _ in range(3):
+    run(dd, 3)
+    dd.execute("__fire('UNIT_COMBAT', 'target', 'WOUND', '', __secret(), 1)")
+dd.execute("""__meter.spells = { { spellID = 1822, totalAmount = 50 } }
+    __combat = false; __fire('PLAYER_REGEN_ENABLED')""")
+run(dd, 0.7)
+check(dd.eval("SmoothAnimatedBarsDB.dotTicks[1822]") == 10
+      and "LEARN Rake: meter 50 over 3 tick(s) minus upfront hit = 10.0 per tick" in dd.eval("__log()"),
+      f"a dodged Rake doesn't stop the fight teaching Rake, and only the Rake that landed has its upfront hit taken off: "
+      f"(50 - 20) / 3 = 10 ({dd.eval('SmoothAnimatedBarsDB.dotTicks[1822]')})")
+# A bleed dropped for a miss that may have been a white swing's (no combo points to say) may have landed and ticked
+# unseen: the meter would hold damage the tally doesn't, so that fight still teaches it nothing.
+dd.execute("""__spells[772] = { 'Rend', 'Wounds the target causing them to bleed for 15 damage over 9 sec.' }
+    __meter.spells = nil
+    __mob(20); __combat = true; __cast(772, 'Cast-33'); __fire('UNIT_COMBAT', 'target', 'PARRY', '', 0, 1)""")
+run(dd, 0.3)
+dd.execute("__mob(21); __cast(772, 'Cast-34')")
+for _ in range(3):
+    run(dd, 3)
+    dd.execute("__fire('UNIT_COMBAT', 'target', 'WOUND', '', __secret(), 1)")
+dd.execute("""__meter.spells = { { spellID = 772, totalAmount = 30 } }
+    __combat = false; __fire('PLAYER_REGEN_ENABLED')""")
+run(dd, 0.7)
+check(dd.eval("SmoothAnimatedBarsDB.dotTicks[772]") is None and "LEARN Rend skipped: a cast was dropped for an avoid"
+      in dd.eval("__log()"), "a Rend dropped for a parry that may have been a white swing's still keeps that fight from "
+      "teaching Rend (it may have ticked unseen)")
+# The same for a Lacerate stack: dropped, it carries the earlier stacks' ticks, so "never ticked" didn't catch it and a
+# fight where it landed after all taught twice the real tick (found in review).
+dd.execute("""__player.class = 'DRUID'; __meter.spells = nil
+    __mob(22); __combat = true; __cast(1328617, 'Cast-35')""")
+for _ in range(2):
+    run(dd, 3)
+    dd.execute("__fire('UNIT_COMBAT', 'target', 'WOUND', '', __secret(), 1)")
+run(dd, 0.5)
+dd.execute("__cast(1328617, 'Cast-36'); __fire('UNIT_COMBAT', 'target', 'MISS', '', 0, 1)")
+for _ in range(3):
+    run(dd, 3)
+    dd.execute("__fire('UNIT_COMBAT', 'target', 'WOUND', '', __secret(), 1)")
+dd.execute("""__meter.spells = { { spellID = 1328617, totalAmount = 190 } }
+    __combat = false; __fire('PLAYER_REGEN_ENABLED')""")
+run(dd, 0.7)
+check(dd.eval("SmoothAnimatedBarsDB.dotTicks[1328617]") is None
+      and "LEARN Lacerate skipped: a cast was dropped for an avoid" in dd.eval("__log()"),
+      "a Lacerate stack dropped for a miss that may have been a white swing's keeps that fight from teaching Lacerate")
+dd.execute("__player.class = 'PALADIN'")
 check(not any("Error" in m for m in chat(dd)), "no errors")
 
 print("== shield")

@@ -17,6 +17,19 @@ Sections are `### New` and `### Fixed`; skip one that would be empty.
   default; each has its own switch, under Nameplates and under Target.
 
 ### Fixed
+- Garrote often did not show on the DoT Marker: a white swing missing as
+  it landed was taken for Garrote missing. Now a Garrote (or a cat's Rake)
+  that earned its combo point stays on the marker.
+- Immolation Trap now shows on the DoT Marker when it springs in combat.
+- A druid's Lacerate keeps its stacks on the DoT Marker instead of
+  starting over at each cast, and a hunter's pet's Scorpid Poison shows
+  there too.
+- The DoT Marker learns your DoTs' real damage more often: a spell that was
+  resisted, or a Rake or Garrote that surely missed, no longer stops it
+  learning from that fight, and the upfront hit of Rake or Immolate is
+  counted only when it landed.
+- Damage learned for high-rank DoTs while their tooltips over 999 were
+  misread is forgotten and learned again.
 - The bars use much less CPU, with no visible change to how they look: well
   under half as much in combat and while resting, more so with Bar Height on,
   and fights no longer have the odd slow frame.
